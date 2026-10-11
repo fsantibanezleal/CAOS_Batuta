@@ -3,7 +3,7 @@
   "contract_id": "C13",
   "contract_version": "1.0",
   "title": "Memory topics",
-  "description": "Per-project pinned memories and topic groupings used to generate the memory index (port of the CAOS_MANAGE implementation, versioned here).",
+  "description": "Per-project pinned memories and topic groupings used to generate the memory index.",
   "type": "object",
   "properties": {
     "contract_version": {
