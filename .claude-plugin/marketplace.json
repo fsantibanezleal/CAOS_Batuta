@@ -1,0 +1,14 @@
+{
+  "name": "caos-agentic-harness",
+  "owner": {
+    "name": "Felipe A. Santibanez-Leal"
+  },
+  "description": "CAOS_AGENTIC_HARNESS: governed, test-driven AI-assisted engineering with Claude Code.",
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./plugins/harness",
+      "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code (pre-release)."
+    }
+  ]
+}
