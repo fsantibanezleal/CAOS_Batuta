@@ -1,0 +1,8 @@
+{
+  "_why": "projects is required",
+  "_expect": "'projects'",
+  "contract_version": "1.0",
+  "version": 1,
+  "hook_max_chars": 110,
+  "title_max_chars": 60
+}

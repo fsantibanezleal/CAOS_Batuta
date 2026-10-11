@@ -1,0 +1,14 @@
+{
+  "_why": "values is required",
+  "_expect": "'values'",
+  "contract_version": "1.0",
+  "history": [
+    {
+      "date": "2026-10-11",
+      "name": "coverage_branch_min",
+      "from": 70,
+      "to": 80,
+      "reason": "ratchet after U3"
+    }
+  ]
+}

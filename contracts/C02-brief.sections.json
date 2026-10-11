@@ -1,0 +1,43 @@
+{
+  "contract_id": "C02",
+  "contract_version": "1.0",
+  "front_matter": "required",
+  "sections": [
+    "Goal",
+    "Context and background",
+    "Definitions",
+    "Spec",
+    "Out of scope",
+    "Deliverables",
+    "Checks",
+    "Report layout",
+    "Hard constraints",
+    "Return message"
+  ],
+  "line_rules": {
+    "Deliverables": {
+      "pattern": "^- D\\d+: .+",
+      "min": 1
+    },
+    "Checks": {
+      "pattern": "^- C\\d+: .+",
+      "min": 1
+    }
+  },
+  "rules": [
+    {
+      "type": "nonempty_sections",
+      "when": {
+        "kind": [
+          "implement",
+          "test",
+          "docs"
+        ]
+      },
+      "sections": [
+        "Definitions",
+        "Spec"
+      ]
+    }
+  ]
+}

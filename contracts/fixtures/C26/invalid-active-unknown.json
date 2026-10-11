@@ -1,0 +1,29 @@
+{
+  "_why": "active names a listed provider",
+  "_expect": "active",
+  "contract_version": "1.0",
+  "interfaces": [
+    {
+      "id": "sensor-feed",
+      "contract": "contracts/C30-sensor-feed.schema.json",
+      "active": "ghost",
+      "flag": "SENSOR_PROVIDER",
+      "providers": [
+        {
+          "name": "plant-historian",
+          "kind": "real",
+          "status": "planned",
+          "degraded": false,
+          "behaviour_when_missing": "503 with retry-after"
+        },
+        {
+          "name": "recorded-sample",
+          "kind": "fixture",
+          "status": "available",
+          "degraded": true,
+          "behaviour_when_missing": "serve recorded sample, mark degraded"
+        }
+      ]
+    }
+  ]
+}

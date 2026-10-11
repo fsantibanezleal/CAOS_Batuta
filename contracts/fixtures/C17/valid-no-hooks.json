@@ -1,0 +1,16 @@
+{
+  "contract_version": "1.0",
+  "env": {
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "permissions": {
+    "deny": [
+      "Agent(Explore)",
+      "Agent(model:fable)"
+    ],
+    "ask": [
+      "Agent(model:opus)"
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "_why": "availability outside the enum",
+  "_expect": "/external_dependencies/0/availability",
+  "contract_version": "1.0",
+  "system": "ore-tracking",
+  "repositories": [
+    {
+      "id": "ore-api",
+      "purpose": "HTTP API",
+      "components": [
+        {
+          "id": "api",
+          "kind": "api",
+          "purpose": "serve ore tracks",
+          "modules": [
+            {
+              "id": "routes",
+              "functions_estimate": 12,
+              "size": "M",
+              "risk": "low",
+              "owner_role": "implementer",
+              "interfaces": [
+                "tracks-api"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "external_dependencies": [
+    {
+      "id": "sensor-feed",
+      "kind": "data",
+      "availability": "later",
+      "interface": "sensor-feed"
+    }
+  ]
+}

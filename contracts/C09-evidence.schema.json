@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C09",
+  "contract_version": "1.0",
+  "title": "Gate evidence",
+  "description": "Evidence file of one gate: verdict, commands and output, findings table, waivers.",
+  "type": "object",
+  "properties": {
+    "gate": {
+      "type": "string",
+      "enum": [
+        "P0-research",
+        "P1-spec",
+        "P1b-contracts",
+        "P2-freeze",
+        "P3-red",
+        "P4-green",
+        "P5-verify",
+        "P6-promote"
+      ]
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^\\d{3}-[a-z0-9-]+$"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "PASS-WITH-FIXES"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "adversary",
+        "reviewer",
+        "script"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "commit": {
+      "type": "string",
+      "minLength": 1
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "gate",
+    "feature",
+    "verdict",
+    "role",
+    "model",
+    "commit",
+    "date"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "finding_row": {
+      "type": "object",
+      "properties": {
+        "Id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ]
+        },
+        "Claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Reproduction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "fixed",
+            "dropped-no-repro"
+          ]
+        }
+      },
+      "required": [
+        "Id",
+        "Severity",
+        "Claim",
+        "Reproduction",
+        "Status"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

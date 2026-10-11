@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C26",
+  "contract_version": "1.0",
+  "title": "Provider registry",
+  "description": "Per interface: real, fixture and baseline providers, the active one, a flag, and the declared behaviour when a provider is missing.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "interfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interface"
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "interfaces"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "real",
+            "fixture",
+            "baseline"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "available",
+            "failing",
+            "retired"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "behaviour_when_missing": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "status",
+        "degraded",
+        "behaviour_when_missing"
+      ],
+      "additionalProperties": true
+    },
+    "interface": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract": {
+          "type": "string",
+          "pattern": "^[^/\\\\:][^\\\\:]*$",
+          "minLength": 1
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provider"
+          },
+          "minItems": 1
+        },
+        "active": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flag": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "contract",
+        "providers",
+        "active",
+        "flag"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

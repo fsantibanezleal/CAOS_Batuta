@@ -1,0 +1,8 @@
+{
+  "_why": "SessionStart input needs source",
+  "_expect": "'source'",
+  "session_id": "sess-0001",
+  "cwd": "work/project",
+  "transcript_path": "transcripts/s1.jsonl",
+  "hook_event_name": "SessionStart"
+}

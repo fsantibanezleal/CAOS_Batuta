@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C27",
+  "contract_version": "1.0",
+  "title": "Readiness matrix",
+  "description": "Per interface: contract frozen, fixture provider, real provider status, contract tests, preview.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "interfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    },
+    "as_of": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "contract_version",
+    "interfaces",
+    "as_of"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "row": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract_frozen": {
+          "type": "boolean"
+        },
+        "fixture_provider": {
+          "type": "boolean"
+        },
+        "real_provider": {
+          "type": "string",
+          "enum": [
+            "none",
+            "partial",
+            "ready"
+          ]
+        },
+        "contract_tests": {
+          "type": "string",
+          "enum": [
+            "none",
+            "failing",
+            "passing"
+          ]
+        },
+        "preview": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "contract_frozen",
+        "fixture_provider",
+        "real_provider",
+        "contract_tests",
+        "preview"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

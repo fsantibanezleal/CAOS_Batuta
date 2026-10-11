@@ -1,0 +1,30 @@
+{
+  "_why": "topic id is a slug",
+  "_expect": "/id",
+  "contract_version": "1.0",
+  "version": 1,
+  "hook_max_chars": 110,
+  "title_max_chars": 60,
+  "projects": {
+    "ExampleProject": {
+      "pinned": [
+        "feedback_decide_and_act"
+      ],
+      "topics": [
+        {
+          "id": "Deploy Topic",
+          "title": "Deploy",
+          "when": "before deploying",
+          "match": [
+            "deploy",
+            "vps"
+          ]
+        }
+      ],
+      "other": {
+        "title": "Other",
+        "when": "when no topic above fits"
+      }
+    }
+  }
+}

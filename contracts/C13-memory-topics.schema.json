@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C13",
+  "contract_version": "1.0",
+  "title": "Memory topics",
+  "description": "Per-project pinned memories and topic groupings used to generate the memory index (port of the CAOS_MANAGE implementation, versioned here).",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "hook_max_chars": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title_max_chars": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/project"
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "projects"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "topic": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "when",
+        "match"
+      ],
+      "additionalProperties": true
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "pinned": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/topic"
+          }
+        },
+        "other": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "when": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "pinned",
+        "topics"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

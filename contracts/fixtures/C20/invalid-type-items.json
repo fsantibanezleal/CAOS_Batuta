@@ -1,0 +1,11 @@
+{
+  "_why": "items is an array",
+  "_expect": "/items",
+  "contract_version": "1.0",
+  "tool": "harness",
+  "area": "contract",
+  "verb": "lint",
+  "exit_code": 0,
+  "items": "none",
+  "summary": "1 ok"
+}

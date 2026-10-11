@@ -1,0 +1,24 @@
+{
+  "_why": "no timestamps: the output is deterministic, unknown keys are rejected",
+  "_expect": "unexpected property",
+  "contract_version": "1.0",
+  "spec_id": "001-example",
+  "requirements": [
+    {
+      "id": "REQ-AUTH-001",
+      "gate": "pytest tests/test_auth.py",
+      "tests": [
+        "tests/test_auth.py::test_login"
+      ],
+      "tasks": [
+        "T-001"
+      ],
+      "status": "active"
+    }
+  ],
+  "orphans": [],
+  "unknown_ids": [],
+  "untagged_tests": [],
+  "ok": true,
+  "generated_at": "2026-10-11T00:00:00Z"
+}

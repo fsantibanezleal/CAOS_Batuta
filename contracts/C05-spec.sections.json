@@ -1,0 +1,45 @@
+{
+  "contract_id": "C05",
+  "contract_version": "1.0",
+  "front_matter": "required",
+  "sections": [
+    "Problem",
+    "Scope and out of scope",
+    "Requirements",
+    "Interfaces",
+    "Edge cases",
+    "Open questions"
+  ],
+  "tables": [
+    {
+      "name": "Requirements",
+      "headers": [
+        "Id",
+        "Kind",
+        "EARS text",
+        "Gate",
+        "Verification",
+        "Status"
+      ],
+      "row_def": "requirement_row",
+      "min_rows": 0
+    }
+  ],
+  "rules": [
+    {
+      "type": "unique_column",
+      "table": "Requirements",
+      "column": "Id"
+    },
+    {
+      "type": "forbid_text",
+      "when": {
+        "status": [
+          "Review",
+          "Frozen"
+        ]
+      },
+      "pattern": "\\[NEEDS CLARIFICATION\\]"
+    }
+  ]
+}

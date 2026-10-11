@@ -1,0 +1,31 @@
+{
+  "_why": "decision is a candidate name or open",
+  "_expect": "decision",
+  "contract_version": "1.0",
+  "id": "api-framework",
+  "concern": "HTTP API framework",
+  "candidates": [
+    {
+      "name": "fastapi",
+      "version": "0.115.2",
+      "license": "MIT",
+      "maturity": {
+        "last_release": "2026-09-01",
+        "maintainers": 5,
+        "stars": 80000
+      },
+      "fit": "async API with typed models",
+      "risks": [
+        "major version churn"
+      ],
+      "risky": false,
+      "spike": {
+        "command": "python spike.py",
+        "result": "pass",
+        "evidence": "docs/design/tech/evidence/fastapi.txt"
+      }
+    }
+  ],
+  "decision": "flask",
+  "adr": "ADR-0003"
+}

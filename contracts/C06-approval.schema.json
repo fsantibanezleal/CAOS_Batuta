@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C06",
+  "contract_version": "1.0",
+  "title": "Spec approval record",
+  "description": "Hash-bound approval written when a human approves a frozen spec; any later change of a hashed file voids it.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "spec_id": {
+      "type": "string",
+      "pattern": "^\\d{3}-[a-z0-9-]+$"
+    },
+    "spec_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "contracts_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "named_tests_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "approved_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_excerpt": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "approved_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "contract_version",
+    "spec_id",
+    "spec_sha256",
+    "contracts_sha256",
+    "named_tests_sha256",
+    "approved_by",
+    "prompt_excerpt",
+    "approved_at",
+    "tool_version"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C23",
+  "contract_version": "1.0",
+  "title": "System map",
+  "description": "Sizing and decomposition of a system: repositories, components, modules (with size, risk, owner role, interfaces) and external dependencies.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "system": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/repo"
+      }
+    },
+    "external_dependencies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dep"
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "system",
+    "repositories",
+    "external_dependencies"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "module": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "functions_estimate": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "risk": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "owner_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "id",
+        "functions_estimate",
+        "size",
+        "risk",
+        "owner_role",
+        "interfaces"
+      ],
+      "additionalProperties": true
+    },
+    "component": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "frontend",
+            "api",
+            "service",
+            "pipeline",
+            "training",
+            "model",
+            "library",
+            "store",
+            "docs",
+            "infra"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "purpose",
+        "modules"
+      ],
+      "additionalProperties": true
+    },
+    "repo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "purpose",
+        "components"
+      ],
+      "additionalProperties": true
+    },
+    "dep": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "data",
+            "model",
+            "service",
+            "credential",
+            "hardware"
+          ]
+        },
+        "availability": {
+          "type": "string",
+          "enum": [
+            "available",
+            "partial",
+            "missing",
+            "pending"
+          ]
+        },
+        "interface": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "availability",
+        "interface"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
