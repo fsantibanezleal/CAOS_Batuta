@@ -1,0 +1,12 @@
+{
+  "_why": "python is required",
+  "_expect": "'python'",
+  "contract_version": "1.0",
+  "deploy_root": "/opt/harness",
+  "temp_root": "/var/tmp/harness",
+  "data_root": "/srv/data",
+  "models_root": "/srv/models",
+  "worktrees_root": "/srv/worktrees",
+  "harness_version": "0.01.000",
+  "deployed_from": "CAOS_AGENTIC_HARNESS@v0.01.000"
+}

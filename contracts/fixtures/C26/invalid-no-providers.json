@@ -1,0 +1,14 @@
+{
+  "_why": "at least one provider",
+  "_expect": "/interfaces/0/providers",
+  "contract_version": "1.0",
+  "interfaces": [
+    {
+      "id": "sensor-feed",
+      "contract": "contracts/C30-sensor-feed.schema.json",
+      "active": "recorded-sample",
+      "flag": "SENSOR_PROVIDER",
+      "providers": []
+    }
+  ]
+}

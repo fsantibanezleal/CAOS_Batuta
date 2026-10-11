@@ -1,0 +1,11 @@
+{
+  "_why": "stop_hook_active must be a boolean",
+  "_expect": "stop_hook_active",
+  "session_id": "sess-0001",
+  "cwd": "work/project",
+  "transcript_path": "transcripts/s1.jsonl",
+  "hook_event_name": "SubagentStop",
+  "agent_type": "x",
+  "last_assistant_message": "m",
+  "stop_hook_active": "no"
+}

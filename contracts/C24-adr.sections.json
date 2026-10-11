@@ -1,0 +1,25 @@
+{
+  "contract_id": "C24",
+  "contract_version": "1.0",
+  "front_matter": "required",
+  "sections": [
+    "Context",
+    "Decision",
+    "Alternatives considered",
+    "Consequences",
+    "Validation"
+  ],
+  "rules": [
+    {
+      "type": "require_keys",
+      "when": {
+        "status": [
+          "Superseded"
+        ]
+      },
+      "keys": [
+        "superseded_by"
+      ]
+    }
+  ]
+}

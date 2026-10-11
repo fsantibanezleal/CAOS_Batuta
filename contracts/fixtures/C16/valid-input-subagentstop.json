@@ -1,0 +1,10 @@
+{
+  "session_id": "sess-0001",
+  "cwd": "work/project",
+  "transcript_path": "transcripts/s1.jsonl",
+  "hook_event_name": "SubagentStop",
+  "agent_type": "implementer",
+  "last_assistant_message": "done",
+  "stop_hook_active": false,
+  "agent_transcript_path": "transcripts/a1.jsonl"
+}

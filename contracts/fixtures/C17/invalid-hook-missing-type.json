@@ -1,0 +1,41 @@
+{
+  "_why": "a hook command needs a type",
+  "_expect": "'type'",
+  "contract_version": "1.0",
+  "env": {
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "permissions": {
+    "deny": [
+      "Agent(Explore)",
+      "Agent(model:fable)"
+    ],
+    "ask": [
+      "Agent(model:opus)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "python hook.py doctor",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hook.py guard"
+          }
+        ]
+      }
+    ]
+  }
+}

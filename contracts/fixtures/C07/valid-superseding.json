@@ -1,0 +1,27 @@
+{
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "path": "tests/test_a.py",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "task_id": "T-001",
+      "req_ids": [
+        "REQ-AUTH-001"
+      ],
+      "locked_commit": "abc1234",
+      "locked_at": "2026-10-11T12:00:00Z"
+    },
+    {
+      "path": "tests/test_a.py",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "task_id": "T-001",
+      "req_ids": [
+        "REQ-AUTH-001"
+      ],
+      "locked_commit": "abc1234",
+      "locked_at": "2026-10-11T12:00:00Z",
+      "supersedes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "change_request": "specs/001-x/test-change-requests.md#1"
+    }
+  ]
+}

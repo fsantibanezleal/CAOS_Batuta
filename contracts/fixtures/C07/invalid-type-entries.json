@@ -1,0 +1,6 @@
+{
+  "_why": "entries must be an array",
+  "_expect": "/entries",
+  "contract_version": "1.0",
+  "entries": {}
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C24",
+  "contract_version": "1.0",
+  "title": "Architecture decision record",
+  "description": "ADR front matter (status, review trigger, supersession, technology evaluations) and required sections.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ADR-\\d{4}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Proposed",
+        "Accepted",
+        "Superseded",
+        "Deprecated"
+      ]
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "deciders": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "supersedes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^ADR-\\d{4}$"
+      }
+    },
+    "superseded_by": {
+      "type": "string",
+      "pattern": "^ADR-\\d{4}$"
+    },
+    "review_trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tech_evaluations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]+$"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "status",
+    "date",
+    "deciders",
+    "review_trigger",
+    "tech_evaluations"
+  ],
+  "additionalProperties": true
+}

@@ -1,0 +1,13 @@
+{
+  "_why": "device roots are absolute paths",
+  "_expect": "/temp_root",
+  "contract_version": "1.0",
+  "python": "/usr/bin/python3",
+  "deploy_root": "/opt/harness",
+  "temp_root": "tmp/harness",
+  "data_root": "/srv/data",
+  "models_root": "/srv/models",
+  "worktrees_root": "/srv/worktrees",
+  "harness_version": "0.01.000",
+  "deployed_from": "CAOS_AGENTIC_HARNESS@v0.01.000"
+}

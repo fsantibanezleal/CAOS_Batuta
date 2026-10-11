@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C17",
+  "contract_version": "1.0",
+  "title": "Settings preset fragment",
+  "description": "A fragment merged append-only into Claude Code settings; it never removes user entries.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "ask": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "deny",
+        "ask"
+      ],
+      "additionalProperties": true
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/group"
+        }
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "env",
+    "permissions"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "group": {
+      "type": "object",
+      "properties": {
+        "matcher": {
+          "type": "string"
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "hooks"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

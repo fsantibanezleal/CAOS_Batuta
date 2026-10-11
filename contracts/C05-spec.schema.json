@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C05",
+  "contract_version": "1.0",
+  "title": "Specification",
+  "description": "Spec front matter, required sections and the Requirements (EARS) table.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^\\d{3}-[a-z0-9-]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Review",
+        "Frozen",
+        "Retired"
+      ]
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "status",
+    "tier",
+    "owner",
+    "created"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "requirement_row": {
+      "type": "object",
+      "properties": {
+        "Id": {
+          "type": "string",
+          "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+        },
+        "Kind": {
+          "type": "string",
+          "enum": [
+            "ubiquitous",
+            "event",
+            "state",
+            "unwanted",
+            "optional"
+          ]
+        },
+        "EARS text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Gate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Verification": {
+          "type": "string"
+        },
+        "Status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "retired"
+          ]
+        }
+      },
+      "required": [
+        "Id",
+        "Kind",
+        "EARS text",
+        "Gate",
+        "Verification",
+        "Status"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "contract_id": "C18",
+  "contract_version": "1.0",
+  "front_matter": "required",
+  "sections": [],
+  "rules": [
+    {
+      "type": "forbid_keys",
+      "keys": [
+        "hooks"
+      ]
+    }
+  ]
+}

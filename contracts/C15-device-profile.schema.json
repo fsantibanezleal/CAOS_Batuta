@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C15",
+  "contract_version": "1.0",
+  "title": "Device profile",
+  "description": "Per-device absolute paths and versions; written by device deploy on that device and never committed.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "python": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deploy_root": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/|\\\\\\\\)"
+    },
+    "temp_root": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/|\\\\\\\\)"
+    },
+    "data_root": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/|\\\\\\\\)"
+    },
+    "models_root": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/|\\\\\\\\)"
+    },
+    "worktrees_root": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/|\\\\\\\\)"
+    },
+    "harness_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d{2}\\.\\d{3}$"
+    },
+    "deployed_from": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "contract_version",
+    "python",
+    "deploy_root",
+    "temp_root",
+    "data_root",
+    "models_root",
+    "worktrees_root",
+    "harness_version"
+  ],
+  "additionalProperties": true
+}

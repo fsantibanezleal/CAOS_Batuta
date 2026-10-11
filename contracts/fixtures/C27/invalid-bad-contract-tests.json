@@ -1,0 +1,16 @@
+{
+  "_why": "contract_tests outside the enum",
+  "_expect": "/contract_tests",
+  "contract_version": "1.0",
+  "as_of": "abc1234",
+  "interfaces": [
+    {
+      "id": "sensor-feed",
+      "contract_frozen": true,
+      "fixture_provider": true,
+      "real_provider": "none",
+      "contract_tests": "green",
+      "preview": true
+    }
+  ]
+}

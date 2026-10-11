@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C07",
+  "contract_version": "1.0",
+  "title": "Test lock",
+  "description": "Append-only list of locked test files with their normalized SHA-256; a superseding entry names the old sha and a change request.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "entries"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^T-\\d{3}$"
+        },
+        "req_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+          }
+        },
+        "locked_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locked_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+        },
+        "supersedes": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "change_request": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "task_id",
+        "req_ids",
+        "locked_commit"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

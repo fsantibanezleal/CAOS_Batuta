@@ -1,0 +1,17 @@
+{
+  "_why": "req_ids match REQ pattern",
+  "_expect": "/entries/0/req_ids/0",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "path": "tests/test_a.py",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "task_id": "T-001",
+      "req_ids": [
+        "REQ-1"
+      ],
+      "locked_commit": "abc1234",
+      "locked_at": "2026-10-11T12:00:00Z"
+    }
+  ]
+}

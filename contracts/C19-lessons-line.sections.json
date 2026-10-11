@@ -1,0 +1,7 @@
+{
+  "contract_id": "C19",
+  "contract_version": "1.0",
+  "mode": "lines",
+  "line_prefix": "- ",
+  "min_lines": 1
+}

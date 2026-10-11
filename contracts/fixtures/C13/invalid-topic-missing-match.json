@@ -1,0 +1,26 @@
+{
+  "_why": "topic match is required",
+  "_expect": "'match'",
+  "contract_version": "1.0",
+  "version": 1,
+  "hook_max_chars": 110,
+  "title_max_chars": 60,
+  "projects": {
+    "ExampleProject": {
+      "pinned": [
+        "feedback_decide_and_act"
+      ],
+      "topics": [
+        {
+          "id": "deploy",
+          "title": "Deploy",
+          "when": "before deploying"
+        }
+      ],
+      "other": {
+        "title": "Other",
+        "when": "when no topic above fits"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "_why": "date is YYYY-MM-DD",
+  "_expect": "/entries/0/date",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "env": "preview",
+      "url": "https://preview.example.org",
+      "commit": "abc1234",
+      "providers": {
+        "sensor-feed": "recorded-sample"
+      },
+      "date": "today"
+    }
+  ]
+}

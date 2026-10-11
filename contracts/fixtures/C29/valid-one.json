@@ -1,0 +1,14 @@
+{
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "env": "preview",
+      "url": "https://preview.example.org",
+      "commit": "abc1234",
+      "providers": {
+        "sensor-feed": "recorded-sample"
+      },
+      "date": "2026-10-11"
+    }
+  ]
+}

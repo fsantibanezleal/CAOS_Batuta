@@ -1,0 +1,10 @@
+{
+  "_why": "tool_input must be an object",
+  "_expect": "tool_input",
+  "session_id": "sess-0001",
+  "cwd": "work/project",
+  "transcript_path": "transcripts/s1.jsonl",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": "ls"
+}

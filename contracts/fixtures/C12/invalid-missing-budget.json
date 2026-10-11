@@ -1,0 +1,43 @@
+{
+  "_why": "budget is required",
+  "_expect": "'budget'",
+  "contract_version": "1.0",
+  "units": [
+    {
+      "id": "never-stop",
+      "title": "Never stop to wait",
+      "kind": "rule",
+      "file": "rules/never-stop.md",
+      "summary": "Decide and act; ask only for a prerequisite only the user can give.",
+      "load": "always",
+      "updated": "2026-10-11"
+    },
+    {
+      "id": "deploy-vps",
+      "title": "Deploy to the VPS",
+      "kind": "procedure",
+      "file": "procedures/deploy-vps.md",
+      "summary": "Steps to deploy a product to the production host.",
+      "load": "trigger",
+      "triggers": [
+        "deploy",
+        "vps"
+      ],
+      "requires": [
+        "never-stop"
+      ],
+      "related": []
+    },
+    {
+      "id": "ui-rules",
+      "title": "UI rules",
+      "kind": "reference",
+      "file": "reference/ui.md",
+      "summary": "Layout and navigation floor for web UIs.",
+      "load": "path",
+      "paths": [
+        "web/**"
+      ]
+    }
+  ]
+}

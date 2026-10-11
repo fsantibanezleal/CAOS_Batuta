@@ -1,0 +1,14 @@
+{
+  "contract_version": "1.0",
+  "tool": "harness",
+  "area": "contract",
+  "verb": "lint",
+  "exit_code": 1,
+  "items": [
+    {
+      "tag": "FAIL",
+      "message": "C01 schema loads"
+    }
+  ],
+  "summary": "1 ok"
+}

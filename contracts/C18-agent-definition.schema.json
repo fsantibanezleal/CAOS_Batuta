@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C18",
+  "contract_version": "1.0",
+  "title": "Agent definition",
+  "description": "Front matter of a plugin agent file. The name equals the file stem (checked by the linter that walks the agents folder).",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "effort": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ]
+    },
+    "tools": {
+      "type": [
+        "string",
+        "array"
+      ]
+    },
+    "disallowedTools": {
+      "type": [
+        "string",
+        "array"
+      ]
+    },
+    "maxTurns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "omitClaudeMd": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "model"
+  ],
+  "additionalProperties": true
+}
