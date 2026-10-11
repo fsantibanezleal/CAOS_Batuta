@@ -1,0 +1,30 @@
+{
+  "name": "caos-agentic-harness",
+  "version": "0.1.0",
+  "description": "A public, device-agnostic harness that governs AI-assisted engineering with Claude Code: routing, specs, tests, gates and context.",
+  "license": "Apache-2.0",
+  "author": "Felipe A. Santibanez-Leal",
+  "homepage": "https://github.com/fsantibanezleal/CAOS_AGENTIC_HARNESS",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fsantibanezleal/CAOS_AGENTIC_HARNESS.git"
+  },
+  "type": "module",
+  "bin": {
+    "harness": "bin/harness.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "plugins/harness/scripts",
+    "plugins/harness/.claude-plugin",
+    "VERSION",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "python -m unittest discover -s tests -p \"test_*.py\"",
+    "standards": "python scripts/check_content_standards.py"
+  }
+}
