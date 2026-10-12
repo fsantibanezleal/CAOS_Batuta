@@ -4,11 +4,15 @@ Front matter subset (contracts.md section 2), between two lines of three dashes:
 
     key: value                 scalar: quoted string, integer, true/false, null, or a plain string
     key: [a, b, 'c, d']        inline list of scalars
-    key:                       block list of scalars or of inline maps, or a one-level map
+    key: {k: v, n: [1, 2]}     inline map: scalars, or inline lists of scalars
+    key:                       block list of scalars or of inline maps
       - item
       - {k: v, k2: "v, 2"}
-    key:
+    key:                       one-level map (values: scalars or inline lists of scalars)
       sub: value
+
+Nothing nests deeper than one level: a map in a map, a list in a list and a map in an inline list are refused with
+an error (never read as something else).
 
 A plain string may contain colons (`review_trigger: review-by: 2027-04-11`). Leading HTML comment lines and blank
 lines before the opening line are skipped (fixtures carry their `why` there). Errors raise ValueError that start
@@ -32,8 +36,8 @@ def _lines(text):
 
 
 def _split_top(s, n):
-    """Split a flow body on commas outside quotes."""
-    parts, cur, quote, i = [], [], None, 0
+    """Split a flow body on commas outside quotes and outside nested brackets."""
+    parts, cur, quote, i, depth = [], [], None, 0, 0
     while i < len(s):
         ch = s[i]
         if quote:
@@ -50,10 +54,14 @@ def _split_top(s, n):
         elif ch in "\"'":
             quote = ch
             cur.append(ch)
-        elif ch == ",":
+        elif ch == "," and depth == 0:
             parts.append("".join(cur).strip())
             cur = []
         else:
+            if ch in "[{":
+                depth += 1
+            elif ch in "]}":
+                depth -= 1
             cur.append(ch)
         i += 1
     if quote:
@@ -87,17 +95,25 @@ def _quoted(v, n):
     raise ValueError(f"line {n}: unterminated quoted string")
 
 
-def _scalar(v, n):
+_DEEP = "line {n}: structures deeper than one level are not supported (nested maps, lists of lists, maps in inline lists)"
+
+
+def _scalar(v, n, allow="both"):
+    """Parse one value. `allow` says which inline containers this position may hold: both, list, map or none."""
     v = v.strip()
     if v == "":
         return ""
     if v[0] in "\"'":
         return _quoted(v, n)
     if v[0] == "[":
+        if allow not in ("both", "list"):
+            raise ValueError(_DEEP.format(n=n))
         if not v.endswith("]"):
             raise ValueError(f"line {n}: unterminated inline list (missing ']')")
-        return [_scalar(p, n) for p in _split_top(v[1:-1], n)]
+        return [_scalar(p, n, "none") for p in _split_top(v[1:-1], n)]
     if v[0] == "{":
+        if allow not in ("both", "map"):
+            raise ValueError(_DEEP.format(n=n))
         return _flow_map(v, n)
     if _INT.match(v):
         return int(v)
@@ -130,7 +146,7 @@ def _flow_map(v, n):
         key = tok[:idx].strip()
         if key in out:
             raise ValueError(f"line {n}: duplicate key '{key}'")
-        out[key] = _scalar(tok[idx + 1:], n)
+        out[key] = _scalar(tok[idx + 1:], n, "list")
     return out
 
 
@@ -155,7 +171,7 @@ def _block(block):
         for n, raw in block:
             s = raw.strip()
             if s == "-" or s.startswith("- "):
-                items.append(_scalar(s[1:].strip(), n))
+                items.append(_scalar(s[1:].strip(), n, "map"))
             elif _KEY.match(s):
                 raise ValueError(f"line {n}: cannot mix list items and key: value entries")
             else:
@@ -168,14 +184,14 @@ def _block(block):
         if s == "-" or s.startswith("- "):
             raise ValueError(f"line {n}: cannot mix list items and key: value entries")
         if _indent(raw) != base:
-            raise ValueError(f"line {n}: nested maps deeper than one level are not supported")
+            raise ValueError(_DEEP.format(n=n))
         m = _KEY.match(s)
         if not m:
             raise ValueError(f"line {n}: expected 'key: value'")
         key, val = m.group(1), (m.group(2) or "").strip()
         if key in out:
             raise ValueError(f"line {n}: duplicate key '{key}'")
-        out[key] = _scalar(val, n)
+        out[key] = _scalar(val, n, "list")
     return out
 
 
