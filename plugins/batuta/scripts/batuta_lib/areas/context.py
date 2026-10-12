@@ -15,6 +15,7 @@ Claude Code loads user and project CLAUDE.md files and unscoped rules in full, a
 Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
 import json
+import os
 import re
 from pathlib import Path
 
@@ -114,7 +115,25 @@ def _check_units(manifest_path, doc):
     return problems, texts
 
 
-def _index_line(u):
+def _same_file(u):
+    return u["file"]
+
+
+def _linker(base, folder):
+    """A function mapping a unit to its file path relative to `folder` (`base` holds the unit files), so a link in a
+    rendered page resolves from where the page is written. Falls back to the manifest-relative path across drives."""
+    base, folder = Path(base).resolve(), Path(folder).resolve()
+
+    def link(u):
+        try:
+            return Path(os.path.relpath(base / u["file"], folder)).as_posix()
+        except ValueError:
+            return u["file"]
+
+    return link
+
+
+def _index_line(u, link=_same_file):
     notes = [f"Load: {u['load']}"]
     if u.get("triggers"):
         notes.append("Triggers: " + ", ".join(u["triggers"]))
@@ -122,16 +141,16 @@ def _index_line(u):
         notes.append("Paths: " + ", ".join(u["paths"]))
     if u.get("requires"):
         notes.append("Requires: " + ", ".join(sorted(u["requires"])))
-    return f"- [{u['title']}]({u['file']}): {u['summary']} ({'; '.join(notes)})"
+    return f"- [{u['title']}]({link(u)}): {u['summary']} ({'; '.join(notes)})"
 
 
-def render_index(units):
+def render_index(units, link=_same_file):
     out = [INDEX_HEADER]
     for kind, heading in KIND_SECTIONS:
         members = sorted((u for u in units if u["kind"] == kind), key=lambda u: u["id"])
         if members:
             out.append(f"## {heading}\n")
-            out.extend(_index_line(u) for u in members)
+            out.extend(_index_line(u, link) for u in members)
             out.append("")
     return "\n".join(out).rstrip("\n") + "\n"
 
@@ -147,11 +166,11 @@ def _yaml_quote(text):
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def render_stub(u, by_id):
+def render_stub(u, by_id, link=_same_file):
     lines = ["---", "paths:", *[f"  - {_yaml_quote(p)}" for p in u["paths"]], "---", STUB_MARK,
-             f"# {u['title']}", "", u["summary"], "", f"Full text: `{u['file']}`; read it when this rule applies."]
+             f"# {u['title']}", "", u["summary"], "", f"Full text: `{link(u)}`; read it when this rule applies."]
     if u.get("requires"):
-        lines.append("Also read: " + ", ".join(f"`{by_id[r]['file']}`" for r in sorted(u["requires"])) + ".")
+        lines.append("Also read: " + ", ".join(f"`{link(by_id[r])}`" for r in sorted(u["requires"])) + ".")
     return "\n".join(lines) + "\n"
 
 
@@ -189,10 +208,11 @@ def _build(args):
     units = doc["units"]
     by_id = {u["id"]: u for u in units}
     out_dir = Path(args.out) if args.out else manifest.parent / "rendered"
-    files = {out_dir / "INDEX.md": render_index(units), out_dir / "CORE.md": render_core(units, texts)}
+    files = {out_dir / "INDEX.md": render_index(units, _linker(manifest.parent, out_dir)),
+             out_dir / "CORE.md": render_core(units, texts)}
     for u in units:
         if u["load"] == "path":
-            files[out_dir / "rules" / f"{u['id']}.md"] = render_stub(u, by_id)
+            files[out_dir / "rules" / f"{u['id']}.md"] = render_stub(u, by_id, _linker(manifest.parent, out_dir / "rules"))
 
     core_bytes = len(files[out_dir / "CORE.md"].encode("utf-8"))
     index_bytes = len(files[out_dir / "INDEX.md"].encode("utf-8"))
@@ -207,6 +227,9 @@ def _build(args):
         refused = True
     if refused:
         return done("context build: refused, nothing written")
+    if core_bytes > cfg["budgets"]["user_core_bytes"]:
+        items.append(item("WARN", f"core is {core_bytes} bytes, over the C01 budget user_core_bytes "
+                                  f"{cfg['budgets']['user_core_bytes']}; `context check` fails once it is installed as the user core"))
 
     stale = []
     rules_dir = out_dir / "rules"
@@ -255,6 +278,27 @@ class Entry:
     def __init__(self, group, path, size, lines, layer, text="", mine=True):
         self.group, self.path, self.size, self.lines, self.layer, self.text = group, Path(path), size, lines, layer, text
         self.mine = mine  # a memory index of this project (False: another project's)
+        self.relation = "mine" if mine else "other"  # memory only: mine, ancestor (an ancestor folder's) or other
+        self.imports = []  # (path, bytes, hop) of every `@import` loaded eagerly with this file
+        self.notes = []  # import problems: cycles and imports beyond the hop limit
+
+    @property
+    def imported(self):
+        return sum(size for _, size, _ in self.imports)
+
+    @property
+    def total(self):
+        """Bytes this file puts into the session: its own text plus everything it imports."""
+        return self.size + self.imported
+
+    def detail(self):
+        return f" (own {self.size} bytes + {len(self.imports)} import(s) {self.imported} bytes)" if self.imports else ""
+
+
+def count_lines(text):
+    """Lines as `\\n` separators count them, plus an unterminated last line (not `str.splitlines`, which also splits
+    on U+2028 and other separators Claude Code is not known to count)."""
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
 
 
 def _read_entry(group, path, layer):
@@ -263,7 +307,56 @@ def _read_entry(group, path, layer):
     except OSError:
         return None
     text = data.decode("utf-8", errors="replace")
-    return Entry(group, path, len(data), len(text.splitlines()), layer, text)
+    return Entry(group, path, len(data), count_lines(text), layer, text)
+
+
+# `@path` imports: Claude Code loads them eagerly, relative to the importing file, up to 4 hops deep.
+MAX_HOPS = 4
+IMPORT_RE = re.compile(r"(?<![\w`@])@(~?[^\s`'\"<>()\[\]{}]+)")
+FENCE_RE = re.compile(r"^(```|~~~).*?^\1[^\n]*$", re.S | re.M)
+SPAN_RE = re.compile(r"`[^`\n]*`")
+
+
+def _import_targets(text, base, home):
+    """Existing files named by `@path` tokens outside code blocks and code spans, resolved from `base`."""
+    text = SPAN_RE.sub("", FENCE_RE.sub("", text))
+    found = []
+    for token in IMPORT_RE.findall(text):
+        token = token.rstrip(".,;:!?")
+        target = home / token[2:] if token.startswith("~/") else base / token
+        try:
+            if token and target.is_file():
+                found.append(target.resolve())
+        except OSError:
+            continue
+    return found
+
+
+def _attach_imports(entry, home):
+    """Fill `entry.imports` and `entry.notes` by following the entry's `@imports` (cycles and depth reported)."""
+    root = entry.path.resolve()
+    seen = {root}
+
+    def walk(path, text, hop, chain):
+        for target in _import_targets(text, path.parent, home):
+            if target in chain:
+                entry.notes.append(f"import cycle: {path.name} imports {target.name}, already being loaded")
+                continue
+            if target in seen:
+                continue
+            if hop + 1 > MAX_HOPS:
+                entry.notes.append(f"import of {target.name} from {path.name} is {hop + 1} hops deep, beyond the "
+                                   f"{MAX_HOPS} hops Claude Code follows; not counted")
+                continue
+            try:
+                data = target.read_bytes()
+            except OSError:
+                continue
+            seen.add(target)
+            entry.imports.append((target, len(data), hop + 1))
+            walk(target, data.decode("utf-8", errors="replace"), hop + 1, chain + [target])
+
+    walk(root, entry.text, 0, [root])
 
 
 def _scoped(text):
@@ -325,18 +418,22 @@ def _chain(project, chain_root, exclude):
 
 
 def _memory_dirs(home, project, explicit):
-    """[(memory dir, is this project's)] for the explicit folders and every project folder under `<home>/.claude/projects`."""
-    wanted = {sanitize(d).lower() for d in (Path(project).resolve(), *Path(project).resolve().parents)}
+    """[(memory dir, relation)] for the explicit folders and every project folder under `<home>/.claude/projects`;
+    relation is `mine` (the project's own folder or an explicit one), `ancestor` (an ancestor folder's) or `other`."""
+    start = Path(project).resolve()
+    own_key = sanitize(start).lower()
+    ancestors = {sanitize(d).lower() for d in start.parents}
     found, seen = [], set()
     for d in explicit or []:
-        found.append((Path(d), True))
+        found.append((Path(d), "mine"))
         seen.add(Path(d).resolve())
     base = Path(home) / ".claude" / "projects"
     if base.is_dir():
         for p in sorted(base.iterdir()):
             mem = p / "memory"
             if mem.is_dir() and mem.resolve() not in seen:
-                found.append((mem, p.name.lower() in wanted))
+                key = p.name.lower()
+                found.append((mem, "mine" if key == own_key else "ancestor" if key in ancestors else "other"))
     return found
 
 
@@ -350,17 +447,22 @@ def _collect(args, cfg):
     entries["user rules"] = _rules("user rules", home / ".claude" / "rules")
     for e in _chain(args.project, args.chain_root, home / ".claude"):
         entries[e.group].append(e)
+    for group in ("user core", "user rules", "project core", "project rules"):
+        for e in entries[group]:
+            if e.layer == "L0":
+                _attach_imports(e, home)
     skipped, own = [], 0
-    for mem, mine in _memory_dirs(home, args.project, args.memory_dir):
+    names = {"mine": "memory", "ancestor": "ancestor-folder memory", "other": "other memory"}
+    for mem, relation in _memory_dirs(home, args.project, args.memory_dir):
         idx = mem / "MEMORY.md"
-        e = _read_entry("memory" if mine else "other memory", idx, "L0") if idx.is_file() else None
+        e = _read_entry(names[relation], idx, "L0") if idx.is_file() else None
         if e is None:
-            if mine:
+            if relation == "mine":
                 skipped.append(mem)
             continue
-        e.mine = mine
+        e.relation, e.mine = relation, relation == "mine"
         entries["memory"].append(e)
-        own += 1 if mine else 0
+        own += 1 if relation != "other" else 0
     return user_core, entries, skipped, own
 
 
@@ -373,13 +475,15 @@ def _advice_sections(entries):
     for e in entries:
         for heading, size in largest_sections(e.text, 2):
             parts.append((size, f'"{heading}" in {e.path.name}'))
+        for path, size, _ in e.imports:
+            parts.append((size, f"import @{path.name} of {e.path.name}"))
     parts.sort(reverse=True)
     return "largest sections: " + ", ".join(f"{name} ({size} bytes)" for size, name in parts[:3]) + "; " + ADVICE_CORE
 
 
 def _advice_files(entries):
-    top = sorted(entries, key=lambda e: (-e.size, e.path.name))[:3]
-    return ("largest files: " + ", ".join(f"{e.path.name} ({e.size} bytes)" for e in top)
+    top = sorted(entries, key=lambda e: (-e.total, e.path.name))[:3]
+    return ("largest files: " + ", ".join(f"{e.path.name} ({e.total} bytes)" for e in top)
             + "; add `paths` front matter to scope a rule to files (L1) or move it to a reference file (L2)")
 
 
@@ -399,30 +503,36 @@ def _check(args):
 
     if entries["user core"]:
         e = entries["user core"][0]
-        label = f"user core ({e.path.name})"
-        if e.size > budgets["user_core_bytes"]:
-            items.append(item("FAIL", _fail_text(label, e.size, budgets["user_core_bytes"], _advice_sections([e])), e.path.as_posix()))
+        label = f"user core ({e.path.name}){e.detail()}"
+        if e.total > budgets["user_core_bytes"]:
+            items.append(item("FAIL", _fail_text(label, e.total, budgets["user_core_bytes"], _advice_sections([e])), e.path.as_posix()))
         else:
-            items.append(item("OK", f"{label}: {e.size} of {budgets['user_core_bytes']} bytes (about {estimate_tokens(e.size)} tokens, estimate)", e.path.as_posix()))
+            items.append(item("OK", f"{label}: {e.total} of {budgets['user_core_bytes']} bytes (about {estimate_tokens(e.total)} tokens, estimate)", e.path.as_posix()))
     else:
         items.append(item("MISSING", f"user core not found: {user_core.as_posix()}"))
 
     for group in ("user rules", "project rules"):
         loaded = [e for e in entries[group] if e.layer == "L0"]
-        total = sum(e.size for e in loaded)
+        total = sum(e.total for e in loaded)
         if total > budgets["unscoped_rules_bytes"]:
             items.append(item("FAIL", _fail_text(f"unscoped {group}", total, budgets["unscoped_rules_bytes"], _advice_files(loaded))))
         elif loaded:
             items.append(item("OK", f"unscoped {group}: {total} of {budgets['unscoped_rules_bytes']} bytes in {len(loaded)} file(s)"))
 
     chain = entries["project core"]
-    total = sum(e.size for e in chain)
+    total = sum(e.total for e in chain)
+    n_imports = sum(len(e.imports) for e in chain)
+    chain_label = "project CLAUDE.md chain" + (f" (including {n_imports} import(s) of {sum(e.imported for e in chain)} bytes)" if n_imports else "")
     if total > budgets["project_core_bytes"]:
-        items.append(item("FAIL", _fail_text("project CLAUDE.md chain", total, budgets["project_core_bytes"], _advice_sections(chain))))
+        items.append(item("FAIL", _fail_text(chain_label, total, budgets["project_core_bytes"], _advice_sections(chain))))
     elif chain:
-        items.append(item("OK", f"project CLAUDE.md chain: {total} of {budgets['project_core_bytes']} bytes in {len(chain)} file(s)"))
+        items.append(item("OK", f"{chain_label}: {total} of {budgets['project_core_bytes']} bytes in {len(chain)} file(s)"))
     else:
         items.append(item("OK", "SKIP no project CLAUDE.md found in the chain"))
+
+    for group in ("user core", "user rules", "project core", "project rules"):
+        for e in entries[group]:
+            items.extend(item("WARN", note, e.path.as_posix()) for note in e.notes)
 
     for e in entries["memory"]:
         where = e.path.as_posix()
@@ -433,8 +543,11 @@ def _check(args):
         if over_cap:
             items.append(item("FAIL", f"{e.group} index {measured}: over Claude Code's load cap of {MEMORY_CAP_LINES} lines or "
                                       f"{MEMORY_CAP_BYTES} bytes, the rest is silently dropped; run `memory index` so topic pages (L2) absorb entries", where))
-        elif over_budget and e.mine:
+        elif over_budget and e.relation == "mine":
             items.append(item("FAIL", f"{e.group} index {measured}: over the {budget_text}; run `memory index --apply` so topic pages (L2) absorb entries", where))
+        elif over_budget and e.relation == "ancestor":
+            items.append(item("WARN", f"{e.group} index {measured}: over the {budget_text}; it belongs to an ancestor folder of the project, "
+                                      "and whether Claude Code keys memory by the repository root is UNVERIFIED, so it is not counted as this project's", where))
         elif over_budget:
             items.append(item("WARN", f"{e.group} index {measured}: over the {budget_text} (under the load cap); run `memory index`", where))
         else:
@@ -460,6 +573,11 @@ def _measure(args):
             if e.layer == "L0":
                 total += size
             items.append(item("OK", f"{e.layer} {e.group}: {size} bytes, about {estimate_tokens(size)} tokens (estimate)", e.path.as_posix()))
+            if e.layer == "L0":
+                for path, isize, hop in e.imports:
+                    total += isize
+                    items.append(item("OK", f"L0 import via {e.path.name} (hop {hop}): {isize} bytes, about {estimate_tokens(isize)} tokens (estimate)", path.as_posix()))
+                items.extend(item("WARN", note, e.path.as_posix()) for note in e.notes)
     return emit(AREA, "measure", items, f"total at session start (L0): {total} bytes, about {estimate_tokens(total)} tokens "
                                          "(estimate: bytes / 4); L1 files load only with a matching file", as_json)
 

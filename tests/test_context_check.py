@@ -213,6 +213,102 @@ class MemoryIndex(Case):
         self.assertEqual(self.check("--memory-dir", str(d))[0], 1)
 
 
+class Imports(Case):
+    """`@path` imports load eagerly, relative to the importing file, up to 4 hops; cycles are reported."""
+
+    def test_a_big_import_counts_against_the_user_core(self):
+        (self.home / ".claude" / "big.md").write_bytes(sized(100000).encode())
+        self.core("@big.md\n")
+        code, text = self.check()
+        self.assertEqual(code, 1, text)
+        self.assertIn("import", text)
+        self.assertIn("100008", text)
+
+    def test_a_big_import_counts_against_the_project_chain(self):
+        (self.proj / "big2.md").write_bytes(sized(100000).encode())
+        (self.proj / "CLAUDE.md").write_bytes(b"See @big2.md for detail.\n")
+        code, text = self.check()
+        self.assertEqual(code, 1, text)
+        self.assertIn("import", text)
+
+    def test_imports_resolve_relative_to_the_importing_file_and_nest(self):
+        sub = self.home / ".claude" / "sub"
+        sub.mkdir()
+        (sub / "a.md").write_bytes(b"@b.md\n" + b"a" * 100 + b"\n")
+        (sub / "b.md").write_bytes(b"b" * 200 + b"\n")
+        self.core("@sub/a.md\n")
+        code, text = self.measure()
+        self.assertEqual(code, 0, text)
+        self.assertIn("import", text)
+        self.assertIn("a.md", text)
+        self.assertIn("b.md", text)
+        self.assertIn(f"total at session start (L0): {10 + 107 + 201} bytes", text)
+
+    def test_only_four_hops_load_and_the_rest_is_reported(self):
+        d = self.home / ".claude"
+        for i in range(1, 7):
+            nxt = f"@h{i + 1}.md\n" if i < 6 else ""
+            (d / f"h{i}.md").write_bytes((nxt + "x" * 100 + "\n").encode())
+        self.core("@h1.md\n")
+        code, text = self.measure()
+        self.assertIn("h4.md", text)
+        self.assertNotIn("h5.md)", text)
+        self.assertIn("WARN", text)
+        self.assertIn("hop", text)
+
+    def test_cycles_are_reported_and_terminate(self):
+        d = self.home / ".claude"
+        (d / "x.md").write_bytes(b"@y.md\nxx\n")
+        (d / "y.md").write_bytes(b"@x.md\nyy\n")
+        self.core("@x.md\n")
+        code, text = self.check()
+        self.assertEqual(code, 2, text)
+        self.assertIn("cycle", text)
+
+    def test_code_spans_blocks_emails_and_missing_files_are_not_imports(self):
+        (self.home / ".claude" / "big.md").write_bytes(sized(9000).encode())
+        self.core("Use `@big.md` inline.\n\n```\n@big.md\n```\n\nMail me@big.md.example or @missing.md\n")
+        code, text = self.check()
+        self.assertEqual(code, 0, text)
+
+    def test_home_relative_import(self):
+        (self.home / "shared.md").write_bytes(sized(9000).encode())
+        self.core("@~/shared.md\n")
+        self.assertEqual(self.check()[0], 1)
+
+    def test_imports_in_a_scoped_rule_are_not_session_start(self):
+        (self.home / ".claude" / "big.md").write_bytes(sized(9000).encode())
+        self.rule("scoped.md", '---\npaths:\n  - "web/**"\n---\n@big.md\n')
+        self.assertEqual(self.check()[0], 0)
+
+
+class LineCountAndAncestors(Case):
+    def test_only_newlines_count_as_lines(self):
+        other = self.root / "elsewhere" / "other"
+        other.mkdir(parents=True)
+        self.memory("", project=other, raw=("a b\n" * 101).encode("utf-8"))
+        code, text = self.check()
+        self.assertNotIn("FAIL", text)
+        self.assertIn("101 lines", text)
+
+    def test_unterminated_last_line_counts(self):
+        self.memory("", raw=b"a\nb")
+        _, text = self.check()
+        self.assertIn("2 lines", text)
+
+    def test_an_ancestor_folders_memory_is_a_warning_naming_the_uncertainty(self):
+        parent = self.proj.parent
+        self.memory("", project=parent, raw=b"x\n" * 100)
+        code, text = self.check()
+        self.assertEqual(code, 2, text)
+        self.assertNotIn("FAIL", text)
+        self.assertIn("UNVERIFIED", text)
+
+    def test_an_ancestor_folders_memory_over_the_cap_still_fails(self):
+        self.memory("", project=self.proj.parent, raw=b"x\n" * 201)
+        self.assertEqual(self.check()[0], 1)
+
+
 class Output(Case):
     def test_json_is_c20(self):
         self.core(sized(7001))

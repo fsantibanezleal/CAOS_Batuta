@@ -6,6 +6,7 @@ file (C13) and the memory budget of C01 (or a C14 file). Dry run by default; `--
 1 failure or an index over budget (nothing written), 2 the project is not opted in, or a dangling entry or a
 missing pin was reported.
 """
+import re
 from pathlib import Path
 
 from batuta_lib import config
@@ -75,6 +76,9 @@ def _index(args):
 
     try:
         index_text, pages, report = mi.build(memory_dir, project_cfg, cfg)
+    except re.error as exc:
+        items.append(item("FAIL", f"C13 match pattern is not a valid regular expression: {exc}"))
+        return done("memory index: failed")
     except (OSError, RuntimeError, UnicodeDecodeError) as exc:
         items.append(item("FAIL", f"cannot build the index: {exc}"))
         return done("memory index: failed")
@@ -94,7 +98,15 @@ def _index(args):
     targets = {memory_dir / "MEMORY.md": index_text}
     targets.update({memory_dir / "topics" / f"{tid}.md": text for tid, text in pages.items()})
     topics_dir = memory_dir / "topics"
-    stale = [p for p in sorted(topics_dir.iterdir()) if p.is_file() and p not in targets] if topics_dir.is_dir() else []
+    # Only pages this tool generated may go: a page carrying the generation mark, or one named like a topic id of
+    # the topics file (pages written before the mark existed). Hand-written files are never touched.
+    topic_ids = {t["id"] for t in project_cfg.get("topics", [])} | {"other"}
+    stale = []
+    if topics_dir.is_dir():
+        for p in sorted(topics_dir.glob("*.md")):
+            if p.is_file() and p not in targets and (
+                    p.stem in topic_ids or mi.PAGE_MARK in p.read_text(encoding="utf-8", errors="replace")):
+                stale.append(p)
     for path, text in targets.items():
         items.append(item(render.status(path, text), path.relative_to(memory_dir).as_posix()))
     for path in stale:

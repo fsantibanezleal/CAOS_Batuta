@@ -173,6 +173,44 @@ class Build(Case):
         self.assertEqual((data["area"], data["verb"], data["exit_code"]), ("context", "build", code))
 
 
+class Links(Case):
+    def test_every_index_and_stub_link_resolves_in_the_default_layout(self):
+        path = self.sample()
+        code, text = run("context", "build", "--manifest", str(path), "--apply")
+        self.assertEqual(code, 0, text)
+        out = path.parent / "rendered"
+        import re as _re
+        for page in (out / "INDEX.md", out / "rules" / "ui-rules.md"):
+            body = page.read_text(encoding="utf-8")
+            links = _re.findall(r"\]\(([^)]+)\)", body) + _re.findall(r"`([^`]+\.md)`", body)
+            self.assertTrue(links, page.name)
+            for link in links:
+                self.assertTrue((page.parent / link).resolve().is_file(), f"{page.name}: {link}")
+
+    def test_links_do_not_depend_on_the_working_directory(self):
+        path = self.sample()
+        run("context", "build", "--manifest", str(path), "--out", str(self.out), "--apply")
+        first = self.tree()
+        cwd = os.getcwd()
+        os.chdir(self.dir)
+        try:
+            run("context", "build", "--manifest", "manifest.json", "--out", "rendered", "--apply")
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(first, self.tree())
+
+
+class CoreVersusUserBudget(Case):
+    def test_core_over_the_c01_user_core_budget_warns_at_build(self):
+        units = [unit("big")]
+        path = self.manifest(units, core=100000, bodies={"big": "x" * 8000 + "\n"})
+        code, text = self.build(path, "--apply")
+        self.assertEqual(code, 2, text)
+        self.assertIn("WARN", text)
+        self.assertIn("user_core_bytes", text)
+        self.assertTrue((self.out / "CORE.md").is_file())
+
+
 class Stale(Case):
     def test_generated_stub_of_a_unit_that_left_the_path_load_is_removed_but_a_foreign_file_stays(self):
         path = self.sample()

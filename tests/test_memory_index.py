@@ -195,7 +195,7 @@ class Build(Fixture):
         self.standard()
         _, pages, _ = mi.build(self.mem, PROJECT, CFG)
         self.assertEqual(pages["git"].splitlines(), [
-            "# Git", "", "Read when: committing.", "",
+            "# Git", mi.PAGE_MARK, "", "Read when: committing.", "",
             "- [Feedback commit two](../feedback_commit_two.md) - Commit thing",
             "- [Feedback git one](../feedback_git_one.md) - Git thing"])
 
@@ -344,12 +344,57 @@ class Verb(Fixture):
     def test_stale_topic_page_removed_on_apply_reported_on_dry_run(self):
         self.standard()
         self.cli("--apply")
-        (self.mem / "topics" / "retired.md").write_text("old\n", encoding="utf-8")
+        (self.mem / "topics" / "retired.md").write_text("# Old\n" + mi.PAGE_MARK + "\n", encoding="utf-8")
         _, out = self.cli()
         self.assertIn("REMOVED topics/retired.md", out)
         self.assertTrue((self.mem / "topics" / "retired.md").exists())
         self.cli("--apply")
         self.assertFalse((self.mem / "topics" / "retired.md").exists())
+
+    def test_hand_written_files_in_topics_are_never_deleted(self):
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "handnotes.md").write_text("important hand-written content\n", encoding="utf-8")
+        (topics / "scratch.txt").write_text("scratch\n", encoding="utf-8")
+        _, out = self.cli("--apply")
+        self.assertNotIn("REMOVED", out)
+        self.assertEqual((topics / "handnotes.md").read_text(encoding="utf-8"), "important hand-written content\n")
+        self.assertTrue((topics / "scratch.txt").exists())
+        self.cli("--apply")
+        self.assertTrue((topics / "handnotes.md").exists())
+
+    def test_hand_written_page_named_like_a_topic_id_without_the_mark_is_replaced_not_orphaned(self):
+        # a page of a configured topic id is regenerated (legacy pages carry no mark); an unknown name is kept
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "git.md").write_text("legacy page\n", encoding="utf-8")
+        self.cli("--apply")
+        self.assertIn(mi.PAGE_MARK, (topics / "git.md").read_text(encoding="utf-8"))
+
+    def test_legacy_page_of_an_emptied_topic_is_removed(self):
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "ui.md").write_text("legacy page without a mark\n", encoding="utf-8")
+        (self.mem / "app_chart.md").unlink()
+        self.cli("--apply")
+        self.assertFalse((topics / "ui.md").exists())
+
+    def test_invalid_match_pattern_fails_cleanly(self):
+        self.standard()
+        bad = dict(CLEAN, topics=[{"id": "git", "title": "Git", "when": "w", "match": ["(unclosed"]}])
+        code, out = self.cli(topics=self.topics_file({"P": bad}))
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL", out)
+        self.assertIn("pattern", out)
+
+    def test_star_and_plus_bullets_keep_title_and_hook(self):
+        entries, other = mi.parse_index("* [Star](a.md) - star hook\n+ [Plus](b.md): plus hook\n")
+        self.assertEqual(entries["a"], ("Star", "star hook"))
+        self.assertEqual(entries["b"], ("Plus", "plus hook"))
+        self.assertEqual(other, [])
 
     def test_topic_page_removed_when_topic_empties(self):
         self.standard()
