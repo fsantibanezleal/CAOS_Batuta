@@ -29,12 +29,14 @@ maintainer's own setup, which sits as a private overlay on top of a pinned Batut
 
 ## What ships today
 
-Only the repository skeleton and the command dispatcher. The dispatcher discovers area modules and reports one
-that fails to load as a warning instead of crashing. Only the `version` area is implemented:
+The repository skeleton, the command dispatcher and two areas: `version`, and `contract` (the data contracts C01 to
+C32 in `plugins/batuta/contracts/`, with `contract lint`, `contract validate` and `contract graph`). The dispatcher
+discovers area modules and reports one that fails to load as a warning instead of crashing:
 
 ```
 python plugins/batuta/scripts/batuta.py version show      # prints 0.01.000
-node bin/batuta.mjs version show                           # same, through the npx entry
+python plugins/batuta/scripts/batuta.py contract lint     # checks every contract and its fixtures
+node bin/batuta.mjs version show                           # same as the first, through the npx entry
 ```
 
 Every other area in the design (routing, briefs, reports, specs, test locks, gates, context, device, guards,
@@ -61,13 +63,16 @@ plugins/batuta/                  the plugin
   .claude-plugin/plugin.json      plugin manifest (semver form of VERSION)
   scripts/batuta.py              single CLI entry, stdlib Python 3.10+
   scripts/batuta_lib/areas/      one module per command area, discovered at start
+  scripts/batuta_lib/            shared helpers: config (batuta.json), output (tag lines, C20), contract validator
+  contracts/                     data contracts C01 to C32 with fixtures
 bin/batuta.mjs                   npx entry (Node 18+, no dependencies); runs batuta.py
 scripts/                          repository maintenance scripts (content standards check)
 docs/                             wiki: concepts, guides, reference, decisions
 tests/                            unit tests (stdlib unittest)
 ```
 
-Planned, not present yet: `plugins/batuta/agents/`, `skills/`, `hooks/`, `templates/`, `contracts/`.
+Planned, not present yet: `plugins/batuta/agents/`, `skills/`, `hooks/`, `templates/`. The data contracts are in
+`plugins/batuta/contracts/`.
 
 ## Develop and test
 

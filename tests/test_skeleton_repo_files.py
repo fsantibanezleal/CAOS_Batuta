@@ -66,8 +66,9 @@ class ReadmeHonestyTests(unittest.TestCase):
             self.assertIn(needle, self.text)
 
     def test_does_not_claim_unshipped_areas_as_available(self):
-        # Only `version` ships in U1; every other area must be listed as planned.
-        self.assertRegex(self.text, r"(?i)only the `version` area")
+        # `version` and `contract` ship; every other area must be listed as planned.
+        self.assertRegex(self.text, r"(?i)two areas: `version`, and `contract`")
+        self.assertRegex(self.text, r"(?i)is planned and is not available yet")
 
 
 class DocsSkeletonTests(unittest.TestCase):
