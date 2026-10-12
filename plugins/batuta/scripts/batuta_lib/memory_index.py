@@ -104,8 +104,12 @@ def _words(name):
     return text[:1].upper() + text[1:]
 
 
-def _load_old(memory_dir):
-    """Old entries from MEMORY.md and from the topic pages, and the Notes lines of the old index."""
+def _load_old(memory_dir, page_ids):
+    """Old entries from MEMORY.md and from the topic pages, and the Notes lines of the old index.
+
+    Only pages this tool wrote are read: a page carrying the mark, or, when migrating (`page_ids` not empty), an
+    unmarked page named like a topic id (pages written before the mark existed). A hand-written file in `topics/` is
+    never a source of entries."""
     entries, notes = {}, []
     index = memory_dir / "MEMORY.md"
     if index.is_file():
@@ -115,18 +119,24 @@ def _load_old(memory_dir):
     topics = memory_dir / "topics"
     if topics.is_dir():
         for page in sorted(topics.glob("*.md")):
-            for stem, value in parse_index(_read(page))[0].items():
+            text = _read(page)
+            if page.stem not in page_ids and PAGE_MARK not in text:
+                continue
+            for stem, value in parse_index(text)[0].items():
                 entries.setdefault(stem, value)
     return entries, notes
 
 
-def build(memory_dir, project_cfg, cfg):
-    """Return `(index_text, pages, report)` for one memory folder. Writes nothing."""
+def build(memory_dir, project_cfg, cfg, adopt_legacy=False):
+    """Return `(index_text, pages, report)` for one memory folder. Writes nothing.
+
+    `adopt_legacy` also reads unmarked pages named like a topic id (pages written before the generation mark)."""
     memory_dir = Path(memory_dir)
     hook_max = int(cfg.get("hook_max_chars", 110))
     title_max = int(cfg.get("title_max_chars", 60))
     stems = sorted(p.stem for p in memory_dir.glob("*.md") if p.name != "MEMORY.md")
-    old, notes = _load_old(memory_dir)
+    page_ids = ({t["id"] for t in project_cfg.get("topics", [])} | {"other"}) if adopt_legacy else set()
+    old, notes = _load_old(memory_dir, page_ids)
 
     lines = {}
     for stem in stems:

@@ -364,23 +364,63 @@ class Verb(Fixture):
         self.cli("--apply")
         self.assertTrue((topics / "handnotes.md").exists())
 
-    def test_hand_written_page_named_like_a_topic_id_without_the_mark_is_replaced_not_orphaned(self):
-        # a page of a configured topic id is regenerated (legacy pages carry no mark); an unknown name is kept
+    def test_links_in_a_hand_written_topics_file_are_not_read_as_old_entries(self):
         self.standard()
         topics = self.mem / "topics"
         topics.mkdir()
-        (topics / "git.md").write_text("legacy page\n", encoding="utf-8")
-        self.cli("--apply")
-        self.assertIn(mi.PAGE_MARK, (topics / "git.md").read_text(encoding="utf-8"))
+        (topics / "handnotes.md").write_text("- [Somewhere else](../not_a_memory.md) - my link\n", encoding="utf-8")
+        _, _, report = mi.build(self.mem, PROJECT, CFG)
+        self.assertEqual(report["dangling"], [])
+        code, out = self.cli("--apply")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("DANGLING", out)
 
-    def test_legacy_page_of_an_emptied_topic_is_removed(self):
+    def test_unmarked_file_named_like_a_topic_id_is_never_overwritten(self):
         self.standard()
         topics = self.mem / "topics"
         topics.mkdir()
-        (topics / "ui.md").write_text("legacy page without a mark\n", encoding="utf-8")
+        (topics / "git.md").write_text("my own hand-written notes\n", encoding="utf-8")
+        before = self.snapshot()
+        code, out = self.cli("--apply")
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL", out)
+        self.assertIn("topics/git.md", out)
+        self.assertIn("--adopt-legacy", out)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_unmarked_file_of_an_emptied_topic_id_is_kept_without_the_flag(self):
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "ui.md").write_text("hand-written, named like a topic\n", encoding="utf-8")
         (self.mem / "app_chart.md").unlink()
-        self.cli("--apply")
+        code, out = self.cli("--apply")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((topics / "ui.md").exists())
+
+    def test_links_in_an_unmarked_page_named_like_a_topic_are_read_only_when_adopting(self):
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "ui.md").write_text("- [Old](../gone_memory.md) - a link of my own\n", encoding="utf-8")
+        (self.mem / "app_chart.md").unlink()
+        self.assertEqual(mi.build(self.mem, PROJECT, CFG)[2]["dangling"], [])
+        self.assertEqual(mi.build(self.mem, PROJECT, CFG, adopt_legacy=True)[2]["dangling"], ["gone_memory"])
+
+    def test_adopt_legacy_migrates_unmarked_generated_pages(self):
+        self.standard()
+        topics = self.mem / "topics"
+        topics.mkdir()
+        (topics / "git.md").write_text("legacy generated page\n", encoding="utf-8")
+        (topics / "ui.md").write_text("legacy page of an emptied topic\n", encoding="utf-8")
+        (self.mem / "app_chart.md").unlink()
+        code, out = self.cli("--apply", "--adopt-legacy")
+        self.assertEqual(code, 0, out)
+        self.assertIn(mi.PAGE_MARK, (topics / "git.md").read_text(encoding="utf-8"))
         self.assertFalse((topics / "ui.md").exists())
+        (topics / "handnotes.md").write_text("kept\n", encoding="utf-8")
+        self.cli("--apply", "--adopt-legacy")
+        self.assertTrue((topics / "handnotes.md").exists())
 
     def test_invalid_match_pattern_fails_cleanly(self):
         self.standard()

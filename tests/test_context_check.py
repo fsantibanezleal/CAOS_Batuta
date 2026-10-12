@@ -271,6 +271,15 @@ class Imports(Case):
         code, text = self.check()
         self.assertEqual(code, 0, text)
 
+    def test_escaped_spaces_in_an_import_path_are_followed(self):
+        d = self.home / ".claude" / "Design Docs"
+        d.mkdir()
+        (d / "big.md").write_bytes(sized(100000).encode())
+        self.core("See @Design\\ Docs/big.md for detail.\n")
+        code, text = self.check()
+        self.assertEqual(code, 1, text)
+        self.assertIn("big.md", text)
+
     def test_home_relative_import(self):
         (self.home / "shared.md").write_bytes(sized(9000).encode())
         self.core("@~/shared.md\n")

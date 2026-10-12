@@ -312,7 +312,7 @@ def _read_entry(group, path, layer):
 
 # `@path` imports: Claude Code loads them eagerly, relative to the importing file, up to 4 hops deep.
 MAX_HOPS = 4
-IMPORT_RE = re.compile(r"(?<![\w`@])@(~?[^\s`'\"<>()\[\]{}]+)")
+IMPORT_RE = re.compile(r"(?<![\w`@])@((?:\\ |[^\s`'\"<>()\[\]{}])+)")
 FENCE_RE = re.compile(r"^(```|~~~).*?^\1[^\n]*$", re.S | re.M)
 SPAN_RE = re.compile(r"`[^`\n]*`")
 
@@ -322,7 +322,7 @@ def _import_targets(text, base, home):
     text = SPAN_RE.sub("", FENCE_RE.sub("", text))
     found = []
     for token in IMPORT_RE.findall(text):
-        token = token.rstrip(".,;:!?")
+        token = token.rstrip(".,;:!?").replace("\\ ", " ")
         target = home / token[2:] if token.startswith("~/") else base / token
         try:
             if token and target.is_file():

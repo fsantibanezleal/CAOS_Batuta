@@ -29,15 +29,18 @@ python scripts/batuta.py memory index --memory-dir DIR --project NAME [--topics 
   over the C01 budget but under the cap is a warning (exit 2). A missing user core is `MISSING`; a project without a
   memory folder is reported `SKIP`.
 - `@path` imports in the user core, the project CLAUDE.md chain and unscoped rules are counted the way Claude Code loads
-  them: eagerly, relative to the importing file (`~/` is the home folder), up to 4 hops; code blocks, code spans and
-  missing files are not imports. An import cycle or an import beyond 4 hops is a `WARN`. `measure` lists each import
-  as its own L0 row.
+  them: eagerly, relative to the importing file (`~/` is the home folder), up to 4 hops; a space in a path is written
+  as `\ ` (`@Design\ Docs/notes.md`); code blocks, code spans and missing files are not imports. An import cycle or an
+  import beyond 4 hops is a `WARN`. `measure` lists each import as its own L0 row.
 - A memory index that belongs to an ancestor folder of the project is a warning, not a failure, because whether
   Claude Code keys memory by the repository root is UNVERIFIED. Lines are counted by `\n`, not by Unicode separators.
 - `context build` writes the links of `INDEX.md` and of the stubs relative to where each page is written, and warns
   when the core exceeds the C01 `user_core_bytes`.
-- `memory index --apply` removes only pages it generated (a page with the generation mark, or one named like a topic
-  id of the topics file); hand-written files in `topics/` are never touched.
+- `memory index` writes, replaces and removes only pages that carry its generation mark. A file in `topics/` without
+  the mark is the owner's: it is never read as a source of entries, never removed, and when its name is the page of a
+  topic that has members the run fails (`FAIL`, exit 1, nothing written) and names the file. Pages written by an
+  older version of the tool, before the mark existed, are migrated with `--adopt-legacy`, which treats unmarked
+  pages named like a topic id as generated.
 - `context measure` always exits 0 and prints each file's layer, bytes and estimated tokens (bytes divided by 4) and
   the L0 total.
 - `memory index` needs a topics file (C13) listing the project; a project that is not listed exits 2 with nothing

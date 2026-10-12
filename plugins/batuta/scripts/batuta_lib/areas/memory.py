@@ -75,7 +75,7 @@ def _index(args):
         return done("memory index: failed")
 
     try:
-        index_text, pages, report = mi.build(memory_dir, project_cfg, cfg)
+        index_text, pages, report = mi.build(memory_dir, project_cfg, cfg, getattr(args, "adopt_legacy", False))
     except re.error as exc:
         items.append(item("FAIL", f"C13 match pattern is not a valid regular expression: {exc}"))
         return done("memory index: failed")
@@ -98,15 +98,24 @@ def _index(args):
     targets = {memory_dir / "MEMORY.md": index_text}
     targets.update({memory_dir / "topics" / f"{tid}.md": text for tid, text in pages.items()})
     topics_dir = memory_dir / "topics"
-    # Only pages this tool generated may go: a page carrying the generation mark, or one named like a topic id of
-    # the topics file (pages written before the mark existed). Hand-written files are never touched.
+    adopt = getattr(args, "adopt_legacy", False)
     topic_ids = {t["id"] for t in project_cfg.get("topics", [])} | {"other"}
+
+    def generated(p):
+        # A page this tool wrote carries the mark. With --adopt-legacy, a page named like a topic id is also taken
+        # as generated (pages written before the mark existed); without it, an unmarked file is the owner's.
+        return mi.PAGE_MARK in p.read_text(encoding="utf-8", errors="replace") or (adopt and p.stem in topic_ids)
+
+    collisions = [p for p in targets if p.parent == topics_dir and p.is_file() and not generated(p)]
+    if collisions:
+        for p in collisions:
+            items.append(item("FAIL", f"{p.relative_to(memory_dir).as_posix()} exists without the generation mark; "
+                                      f"refusing to overwrite a hand-written file; move it, or pass --adopt-legacy "
+                                      f"if it is a page written by an older version of this tool"))
+        return done("memory index: failed, nothing written")
     stale = []
     if topics_dir.is_dir():
-        for p in sorted(topics_dir.glob("*.md")):
-            if p.is_file() and p not in targets and (
-                    p.stem in topic_ids or mi.PAGE_MARK in p.read_text(encoding="utf-8", errors="replace")):
-                stale.append(p)
+        stale = [p for p in sorted(topics_dir.glob("*.md")) if p.is_file() and p not in targets and generated(p)]
     for path, text in targets.items():
         items.append(item(render.status(path, text), path.relative_to(memory_dir).as_posix()))
     for path in stale:
@@ -128,4 +137,7 @@ def register(subparsers):
     p.add_argument("--topics", help=f"topics file (C13; default: <BATUTA_HOME>/{TOPICS_FILE})")
     p.add_argument("--budget", help="a C14 budget file; default: the budgets of the resolved batuta.json (C01)")
     p.add_argument("--apply", action="store_true", help="write the files (default: dry run)")
+    p.add_argument("--adopt-legacy", action="store_true",
+                   help="treat unmarked topic pages named like a topic id as generated (migrates pages written "
+                        "before the generation mark); without it such a file is never overwritten or removed")
     p.set_defaults(func=_index)
