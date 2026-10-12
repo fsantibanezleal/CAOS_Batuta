@@ -25,3 +25,4 @@ Pre-release, under construction toward 0.01.000.
   standards check; push to `develop` and `main` and manual dispatch only.
 - Tests for the dispatcher, the version area, the manifests, the root files, the workflow and the content
   standards script.
+- Contracts aligned with the dimensioned contract-first method (ADR-0002): C23 inventory, C25 evaluations, C26 availability (declaration and runtime block), C27 readiness, C28 model registry and C21 units, `contract graph --inventory`, one-level maps in the front matter, and the contracts moved into `plugins/harness/contracts/`.
