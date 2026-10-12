@@ -10,12 +10,12 @@ import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib import contract  # noqa: E402
-from harness_lib.areas import contract as area  # noqa: E402
+from batuta_lib import contract  # noqa: E402
+from batuta_lib.areas import contract as area  # noqa: E402
 
-OWN = ROOT / "plugins" / "harness" / "contracts"
+OWN = ROOT / "plugins" / "batuta" / "contracts"
 G = ROOT / "tests" / "contracts" / "graph"
 
 
@@ -139,7 +139,7 @@ class Lint(unittest.TestCase):
 
     def test_lint_resolves_c22_rows_in_specs(self):
         with tempfile.TemporaryDirectory() as d:
-            root = self._spec_root(d, "| config | contracts/C01-harness-config.schema.json | init | all | 1.0 |")
+            root = self._spec_root(d, "| config | contracts/C01-batuta-config.schema.json | init | all | 1.0 |")
             code, out = call("lint", "--root", str(root))
             self.assertEqual(code, 0, out)
             self.assertIn("001-x", out)
@@ -153,7 +153,7 @@ class Lint(unittest.TestCase):
 
     def test_lint_fails_on_an_invalid_c22_row(self):
         with tempfile.TemporaryDirectory() as d:
-            root = self._spec_root(d, "| config | contracts/C01-harness-config.schema.json | init | all | v1 |")
+            root = self._spec_root(d, "| config | contracts/C01-batuta-config.schema.json | init | all | v1 |")
             code, out = call("lint", "--root", str(root))
             self.assertEqual(code, 1)
             self.assertIn("/Version", out)
@@ -166,7 +166,7 @@ class Lint(unittest.TestCase):
 
 
 class PluginResolution(unittest.TestCase):
-    """The harness's own contracts resolve inside the plugin, whatever the working directory or install location."""
+    """Batuta's own contracts resolve inside the plugin, whatever the working directory or install location."""
 
     def test_own_contracts_dir_is_inside_the_plugin(self):
         self.assertEqual(area._own_contracts_dir().resolve(), OWN.resolve())
@@ -195,7 +195,7 @@ class PluginResolution(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("C01", out)
 
-    def test_validate_resolves_a_harness_contract_without_root_from_anywhere(self):
+    def test_validate_resolves_a_batuta_contract_without_root_from_anywhere(self):
         import os
         with tempfile.TemporaryDirectory() as d:
             old = os.getcwd()
@@ -223,9 +223,9 @@ class PluginResolution(unittest.TestCase):
     def test_the_plugin_folder_alone_lints_clean(self):
         import subprocess
         with tempfile.TemporaryDirectory() as d:
-            dst = pathlib.Path(d) / "harness"
+            dst = pathlib.Path(d) / "batuta"
             shutil.copytree(OWN.parent, dst, ignore=shutil.ignore_patterns("__pycache__"))
-            r = subprocess.run([sys.executable, str(dst / "scripts" / "harness.py"), "contract", "lint"],
+            r = subprocess.run([sys.executable, str(dst / "scripts" / "batuta.py"), "contract", "lint"],
                                capture_output=True, text=True, cwd=d)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("C27", r.stdout)

@@ -5,17 +5,17 @@ import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib import contract  # noqa: E402
+from batuta_lib import contract  # noqa: E402
 
-CONTRACTS = ROOT / "plugins" / "harness" / "contracts"
+CONTRACTS = ROOT / "plugins" / "batuta" / "contracts"
 IDS = [f"C{n:02d}" for n in range(1, 30)]
 MD_IDS = {"C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C24"}
 STATES = ["available", "partial", "stale", "synthetic", "training", "missing"]
 RINGS = ["adopt", "trial", "assess", "caution"]
 MODEL_STATUS = ["planned", "training", "candidate", "released", "retired"]
-# Contracts whose artifacts are not harness-owned files and carry no contract_version of their own.
+# Contracts whose artifacts are not batuta-owned files and carry no contract_version of their own.
 NO_ARTIFACT_VERSION = {"C16", "C14", "C27", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C24"}
 UNKNOWN_KEYS_REJECTED = {"C04", "C06", "C07", "C08"}
 
@@ -168,7 +168,7 @@ class KnownSemanticChecks(unittest.TestCase):
 
 
 class AlignedVocabulary(unittest.TestCase):
-    """The harness speaks the vocabulary of the dimensioned contract-first method (availability states, rings)."""
+    """Batuta speaks the vocabulary of the dimensioned contract-first method (availability states, rings)."""
 
     def schema(self, cid):
         return json.loads(schema_path(cid).read_text(encoding="utf-8"))

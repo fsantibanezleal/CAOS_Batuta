@@ -49,7 +49,7 @@ python -m unittest discover -s tests -p "test_*.py"
 python scripts/check_content_standards.py
 ```
 
-No dependencies are installed: the harness is stdlib Python and dependency-free Node.
+No dependencies are installed: Batuta is stdlib Python and dependency-free Node.
 
 ## License of contributions
 

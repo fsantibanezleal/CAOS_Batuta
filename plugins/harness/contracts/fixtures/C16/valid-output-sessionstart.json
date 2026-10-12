@@ -1,7 +1,0 @@
-{
-  "_recorded": false,
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "Harness: OK"
-  }
-}

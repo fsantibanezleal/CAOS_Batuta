@@ -1,12 +1,12 @@
-"""Front matter parser, sections and tables (harness_lib.frontmatter)."""
+"""Front matter parser, sections and tables (batuta_lib.frontmatter)."""
 import pathlib
 import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib import frontmatter as fmx  # noqa: E402
+from batuta_lib import frontmatter as fmx  # noqa: E402
 
 
 def doc(*lines):

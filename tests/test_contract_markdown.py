@@ -4,9 +4,9 @@ import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib import contract  # noqa: E402
+from batuta_lib import contract  # noqa: E402
 
 SCHEMA = {"type": "object", "required": ["kind"],
           "properties": {"kind": {"type": "string", "enum": ["a", "b"]}, "status": {"type": "string"}},

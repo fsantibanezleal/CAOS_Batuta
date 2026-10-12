@@ -1,0 +1,50 @@
+{
+  "_why": "max_concurrent_agents must be >= 1",
+  "_expect": "/caps/max_concurrent_agents",
+  "contract_version": "1.0",
+  "version": 1,
+  "roots": {
+    "temp": "$BATUTA_TEMP",
+    "data": "$BATUTA_DATA",
+    "worktrees": "$BATUTA_WORKTREES"
+  },
+  "roles": {
+    "searcher": {
+      "model": "haiku",
+      "effort": "low",
+      "omit_claude_md": true
+    },
+    "implementer": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "reviewer": {
+      "model": "opus",
+      "effort": "high"
+    }
+  },
+  "caps": {
+    "max_concurrent_agents": 0,
+    "max_agents_per_task": 8,
+    "max_opus_reviews_per_task": 1,
+    "spawn_depth": 1
+  },
+  "gates": {
+    "critical": [
+      "spec-freeze",
+      "build",
+      "release"
+    ],
+    "adversary_model_critical": "opus",
+    "adversary_model_routine": "sonnet"
+  },
+  "coordination_root": ".batuta",
+  "knowledge_manifest": ".batuta/knowledge/manifest.json",
+  "budgets": {
+    "user_core_bytes": 7000,
+    "project_core_bytes": 7000,
+    "unscoped_rules_bytes": 2000,
+    "memory_index_bytes": 4000,
+    "memory_index_lines": 60
+  }
+}

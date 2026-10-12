@@ -4,9 +4,9 @@ import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib.areas import contract as area  # noqa: E402
+from batuta_lib.areas import contract as area  # noqa: E402
 
 G = ROOT / "tests" / "contracts" / "graph"
 

@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C01",
+  "contract_version": "1.0",
+  "title": "Batuta configuration",
+  "description": "batuta.json: roots, roles (model and effort per role), caps, gates, context budgets.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "roots": {
+      "type": "object",
+      "properties": {
+        "temp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktrees": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "temp",
+        "data",
+        "worktrees"
+      ],
+      "additionalProperties": true
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/role"
+      }
+    },
+    "caps": {
+      "type": "object",
+      "properties": {
+        "max_concurrent_agents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_agents_per_task": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_opus_reviews_per_task": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "spawn_depth": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "max_concurrent_agents",
+        "max_agents_per_task",
+        "max_opus_reviews_per_task",
+        "spawn_depth"
+      ],
+      "additionalProperties": true
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "critical": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "adversary_model_critical": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        },
+        "adversary_model_routine": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        }
+      },
+      "required": [
+        "critical",
+        "adversary_model_critical",
+        "adversary_model_routine"
+      ],
+      "additionalProperties": true
+    },
+    "coordination_root": {
+      "type": "string",
+      "pattern": "^[^/\\\\:][^\\\\:]*$"
+    },
+    "knowledge_manifest": {
+      "type": "string",
+      "pattern": "^[^/\\\\:][^\\\\:]*$"
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "user_core_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "project_core_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unscoped_rules_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_index_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_index_lines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "user_core_bytes",
+        "project_core_bytes",
+        "unscoped_rules_bytes",
+        "memory_index_bytes",
+        "memory_index_lines"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "contract_version",
+    "roots",
+    "roles",
+    "caps",
+    "gates",
+    "budgets"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "role": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        },
+        "omit_claude_md": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model",
+        "effort"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

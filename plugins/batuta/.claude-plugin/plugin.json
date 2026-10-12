@@ -1,0 +1,12 @@
+{
+  "name": "batuta",
+  "version": "0.1.0",
+  "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code (pre-release, under construction toward 0.01.000).",
+  "author": {
+    "name": "Felipe A. Santibanez-Leal"
+  },
+  "homepage": "https://github.com/fsantibanezleal/CAOS_Batuta",
+  "repository": "https://github.com/fsantibanezleal/CAOS_Batuta",
+  "license": "Apache-2.0",
+  "keywords": ["agents", "governance", "tdd", "sdd", "claude-code"]
+}

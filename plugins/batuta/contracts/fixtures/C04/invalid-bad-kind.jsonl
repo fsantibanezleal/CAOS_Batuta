@@ -1,0 +1,3 @@
+# why: kind outside the enum
+# expect: /kind
+{"contract_version": "1.0", "id": "u0-data-contracts-2026-10-11", "agent": "implementer", "model": "sonnet", "kind": "build", "brief": ".batuta/delegation/u0.brief.md", "report": "reports/u0.md", "status": "accepted", "accepted_by": "main", "accepted_at": "2026-10-11", "notes": "checked"}
