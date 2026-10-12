@@ -13,21 +13,24 @@
     "phase": {
       "type": "string",
       "enum": [
-        "P0-research",
-        "P1-spec",
-        "P1b-contracts",
-        "P2-freeze",
-        "P3-red",
-        "P4-green",
-        "P5-verify",
-        "P6-promote",
+        "L0-understand",
+        "L1-size",
+        "L2-decide",
+        "L3-contracts",
+        "L4-boundaries",
+        "L5-freeze",
+        "L6-skeleton",
+        "L7-build",
+        "L8-integrate",
+        "L9-promote",
+        "L10-lessons",
         "done"
       ]
     },
     "gates": {
       "type": "object",
       "properties": {
-        "P0-research": {
+        "L0-understand": {
           "type": "string",
           "enum": [
             "pending",
@@ -36,7 +39,7 @@
             "waived"
           ]
         },
-        "P1-spec": {
+        "L1-size": {
           "type": "string",
           "enum": [
             "pending",
@@ -45,7 +48,7 @@
             "waived"
           ]
         },
-        "P1b-contracts": {
+        "L2-decide": {
           "type": "string",
           "enum": [
             "pending",
@@ -54,7 +57,7 @@
             "waived"
           ]
         },
-        "P2-freeze": {
+        "L3-contracts": {
           "type": "string",
           "enum": [
             "pending",
@@ -63,7 +66,7 @@
             "waived"
           ]
         },
-        "P3-red": {
+        "L4-boundaries": {
           "type": "string",
           "enum": [
             "pending",
@@ -72,7 +75,7 @@
             "waived"
           ]
         },
-        "P4-green": {
+        "L5-freeze": {
           "type": "string",
           "enum": [
             "pending",
@@ -81,7 +84,7 @@
             "waived"
           ]
         },
-        "P5-verify": {
+        "L6-skeleton": {
           "type": "string",
           "enum": [
             "pending",
@@ -90,7 +93,34 @@
             "waived"
           ]
         },
-        "P6-promote": {
+        "L7-build": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "waived"
+          ]
+        },
+        "L8-integrate": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "waived"
+          ]
+        },
+        "L9-promote": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "waived"
+          ]
+        },
+        "L10-lessons": {
           "type": "string",
           "enum": [
             "pending",
@@ -110,14 +140,17 @@
           "gate": {
             "type": "string",
             "enum": [
-              "P0-research",
-              "P1-spec",
-              "P1b-contracts",
-              "P2-freeze",
-              "P3-red",
-              "P4-green",
-              "P5-verify",
-              "P6-promote"
+              "L0-understand",
+              "L1-size",
+              "L2-decide",
+              "L3-contracts",
+              "L4-boundaries",
+              "L5-freeze",
+              "L6-skeleton",
+              "L7-build",
+              "L8-integrate",
+              "L9-promote",
+              "L10-lessons"
             ]
           },
           "reason": {

@@ -40,6 +40,42 @@
         ]
       },
       "pattern": "\\[NEEDS CLARIFICATION\\]"
+    },
+    {
+      "type": "min_rows",
+      "when": {
+        "status": [
+          "Frozen"
+        ]
+      },
+      "table": "Requirements",
+      "min": 1,
+      "message": "a Frozen spec has at least one requirement row"
+    },
+    {
+      "type": "nonempty_sections",
+      "when": {
+        "status": [
+          "Review",
+          "Frozen"
+        ]
+      },
+      "sections": [
+        "Interfaces"
+      ]
+    },
+    {
+      "type": "item_rule",
+      "when": {
+        "status": [
+          "Review",
+          "Frozen"
+        ]
+      },
+      "section": "Interfaces",
+      "item_pattern": ".",
+      "require": "^[a-z0-9][a-z0-9-]*(\\s|:|$)",
+      "message": "an Interfaces item starts with a catalog contract id (or the word none)"
     }
   ]
 }

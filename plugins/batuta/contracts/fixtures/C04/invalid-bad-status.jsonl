@@ -1,3 +1,0 @@
-# why: status outside the enum
-# expect: /status
-{"contract_version": "1.0", "id": "u0-data-contracts-2026-10-11", "agent": "implementer", "model": "sonnet", "kind": "implement", "brief": ".batuta/delegation/u0.brief.md", "report": "reports/u0.md", "status": "done", "accepted_by": "main", "accepted_at": "2026-10-11", "notes": "checked"}

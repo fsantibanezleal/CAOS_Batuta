@@ -10,14 +10,14 @@ sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from batuta_lib import contract  # noqa: E402
 
 CONTRACTS = ROOT / "plugins" / "batuta" / "contracts"
-IDS = [f"C{n:02d}" for n in range(1, 30)]
-MD_IDS = {"C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C24"}
-STATES = ["available", "partial", "stale", "synthetic", "training", "missing"]
+IDS = [f"C{n:02d}" for n in range(1, 33)]
+MD_IDS = {"C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+STATES = ["available", "partial", "stale", "provider", "training", "missing"]
 RINGS = ["adopt", "trial", "assess", "caution"]
 MODEL_STATUS = ["planned", "training", "candidate", "released", "retired"]
 # Contracts whose artifacts are not batuta-owned files and carry no contract_version of their own.
-NO_ARTIFACT_VERSION = {"C16", "C14", "C27", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C24"}
-UNKNOWN_KEYS_REJECTED = {"C04", "C06", "C07", "C08"}
+NO_ARTIFACT_VERSION = {"C16", "C14", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+UNKNOWN_KEYS_REJECTED = {"C04", "C06", "C07", "C08", "C27"}
 
 
 def schema_path(cid):
@@ -31,7 +31,7 @@ def fixtures(cid, kind):
 
 
 class EveryContractIsPresent(unittest.TestCase):
-    def test_c01_to_c29_each_have_one_schema_and_enough_fixtures(self):
+    def test_c01_to_c32_each_have_one_schema_and_enough_fixtures(self):
         for cid in IDS:
             with self.subTest(contract=cid):
                 self.assertIsNotNone(schema_path(cid), f"{cid} schema file missing")
@@ -132,7 +132,7 @@ class KnownSemanticChecks(unittest.TestCase):
 
     def test_c26_age_is_null_only_for_available_and_missing(self):
         sp = contract.load_schema(schema_path("C26"))
-        for state in ("partial", "stale", "synthetic", "training"):
+        for state in ("partial", "stale", "provider", "training"):
             with self.subTest(state=state):
                 blk = {"state": state, "reason": "r", "source": "s", "age": None}
                 self.assertTrue(any("age" in e for e in contract.validate_instance("C26", blk, sp)))
@@ -147,14 +147,6 @@ class KnownSemanticChecks(unittest.TestCase):
         self.assertEqual(contract.validate_instance("C28", doc, sp), [])
         del doc["serving"]
         self.assertTrue(any("serving" in e for e in contract.validate_instance("C28", doc, sp)))
-
-    def test_c23_a_unit_cannot_consume_a_contract_nobody_provides(self):
-        sp = contract.load_schema(schema_path("C23"))
-        doc = self.load("C23", "valid-full.json")
-        self.assertEqual(contract.validate_instance("C23", doc, sp), [])
-        doc["contracts"].append({"id": "x", "kind": "json-schema", "path": "x.json", "version": "1.0", "frozen": False})
-        doc["units"][0]["consumes"] = ["x"]
-        self.assertTrue(any("nobody provides" in e for e in contract.validate_instance("C23", doc, sp)))
 
     def test_c27_accepts_the_product_template_readiness_fixture(self):
         sp = contract.load_schema(schema_path("C27"))
@@ -185,30 +177,14 @@ class AlignedVocabulary(unittest.TestCase):
         self.assertTrue(any("runtime" in n for n in names))
         self.assertTrue(any("declaration" in n for n in names))
 
-    def test_c27_states_are_the_six_states_plus_the_template_alias(self):
-        enum = self.schema("C27")["$defs"]["entry"]["properties"]["state"]["enum"]
-        self.assertEqual(enum[:6], STATES)
-        self.assertEqual(enum[6:], ["provider"])
+    def test_c27_states_are_exactly_the_six_states_with_no_alias(self):
+        self.assertEqual(self.schema("C27")["$defs"]["entry"]["properties"]["state"]["enum"], STATES)
 
-    def test_rings_are_adopt_trial_assess_caution_everywhere(self):
+    def test_rings_are_adopt_trial_assess_caution(self):
         self.assertEqual(self.schema("C25")["properties"]["ring"]["enum"], RINGS)
-        self.assertEqual(self.schema("C23")["$defs"]["stack_entry"]["properties"]["ring"]["enum"], RINGS)
 
     def test_c28_status_is_the_registry_enum(self):
         self.assertEqual(self.schema("C28")["properties"]["status"]["enum"], MODEL_STATUS)
-
-    def test_c23_component_kinds(self):
-        kinds = self.schema("C23")["$defs"]["component"]["properties"]["kind"]["enum"]
-        self.assertEqual(kinds, ["frontend", "api", "pipeline-stage", "engine", "model", "connector", "dataset", "job",
-                                 "library", "docs", "infra"])
-
-    def test_c23_availability_entries_are_the_c26_state_declarations(self):
-        c23 = self.schema("C23")["$defs"]["availability_entry"]
-        c26 = self.schema("C26")["$defs"]["state_declaration"]
-        self.assertEqual(c23["required"], c26["required"])
-        self.assertEqual(c23["required"], c26["required"])
-        self.assertEqual(c23["properties"]["state"], c26["properties"]["state"])
-        self.assertEqual(self.schema("C23")["$defs"]["state"]["enum"], self.schema("C26")["$defs"]["state"]["enum"])
 
 
 class SchemaMetadata(unittest.TestCase):

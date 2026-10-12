@@ -1,16 +1,21 @@
 {
-  "_why": "partial says what is missing",
-  "_expect": "missing",
-  "contract_version": "1.0",
-  "components": [
+  "_why": "a partial entry lists what is missing",
+  "_expect": "a partial entry lists what is missing",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
     {
-      "id": "sensor-connector",
-      "status": "stub",
-      "state": "partial",
+      "id": "alert-list",
+      "version": "1.0.0",
+      "status": "real",
       "provenance": "real",
-      "reason": "some",
-      "missing": [],
-      "as_of_commit": "0a1b2c3"
+      "state": "partial",
+      "reason": {
+        "en": "two of three source files are present",
+        "es": "two of three source files are present (es)"
+      },
+      "missing": []
     }
   ]
 }

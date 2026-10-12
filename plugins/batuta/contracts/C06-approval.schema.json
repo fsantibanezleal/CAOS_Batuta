@@ -3,7 +3,7 @@
   "contract_id": "C06",
   "contract_version": "1.0",
   "title": "Spec approval record",
-  "description": "Hash-bound approval written when a human approves a frozen spec; any later change of a hashed file voids it.",
+  "description": "Hash-bound approval written when a human approves a frozen spec. It proves the freeze: the SHA-256 of the spec, of every contract and accepted ADR it references and of every test file the gates name. Any later change of a hashed file voids it. Map keys are POSIX relative paths.",
   "type": "object",
   "properties": {
     "contract_version": {
@@ -23,7 +23,8 @@
       "additionalProperties": {
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
-      }
+      },
+      "description": "SHA-256 of every contract file the spec references, keyed by POSIX relative path."
     },
     "named_tests_sha256": {
       "type": "object",
@@ -47,6 +48,14 @@
     "tool_version": {
       "type": "string",
       "minLength": 1
+    },
+    "adrs_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "description": "SHA-256 of every accepted ADR the spec references, keyed by POSIX relative path."
     }
   },
   "required": [
@@ -55,6 +64,7 @@
     "spec_sha256",
     "contracts_sha256",
     "named_tests_sha256",
+    "adrs_sha256",
     "approved_by",
     "prompt_excerpt",
     "approved_at",

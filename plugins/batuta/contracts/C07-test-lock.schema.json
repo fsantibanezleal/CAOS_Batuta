@@ -3,7 +3,7 @@
   "contract_id": "C07",
   "contract_version": "1.0",
   "title": "Test lock",
-  "description": "Append-only list of locked test files with their normalized SHA-256; a superseding entry names the old sha and a change request.",
+  "description": "Append-only list of locked test files with their normalized SHA-256; an entry that supersedes another names the old sha and the approved change request, and the two go together.",
   "type": "object",
   "properties": {
     "contract_version": {
@@ -28,7 +28,8 @@
       "properties": {
         "path": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(?!\\./)(?!.*(^|/)\\.\\.?(/|$))(?!.*//)[^/\\\\:][^\\\\:]*$",
+          "description": "POSIX relative path of the locked test file: no leading slash or ./, no backslash, drive letter or .."
         },
         "sha256": {
           "type": "string",
@@ -59,7 +60,8 @@
         },
         "change_request": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+          "description": "The id of the approved change request in specs/<feature>/test-change-requests.md."
         }
       },
       "required": [

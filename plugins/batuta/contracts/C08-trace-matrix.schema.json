@@ -83,7 +83,11 @@
         },
         "status": {
           "type": "string",
-          "minLength": 1
+          "enum": [
+            "active",
+            "retired"
+          ],
+          "description": "The requirement's Status in the spec (C05)."
         }
       },
       "required": [

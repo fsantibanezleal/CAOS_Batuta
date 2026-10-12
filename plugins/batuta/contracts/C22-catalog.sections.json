@@ -1,0 +1,70 @@
+{
+  "contract_id": "C22",
+  "contract_version": "1.0",
+  "front_matter": "none",
+  "tables": [
+    {
+      "name": "Catalog",
+      "headers": [
+        "id",
+        "version",
+        "owner",
+        "schema file",
+        "example",
+        "producer test",
+        "consumer test",
+        "missing-data behavior",
+        "provider",
+        "swap test"
+      ],
+      "optional_headers": [
+        "model io",
+        "status",
+        "frozen"
+      ],
+      "headers_match": "contains",
+      "row_def": null,
+      "min_rows": 1,
+      "coerce": {
+        "producer test": "list",
+        "consumer test": "list",
+        "swap test": "list"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "type": "unique_column",
+      "table": "Catalog",
+      "column": "id"
+    },
+    {
+      "type": "row_requires",
+      "table": "Catalog",
+      "when_column": "model io",
+      "when_not_in": [
+        "",
+        "-",
+        "n/a",
+        "na",
+        "none",
+        "no"
+      ],
+      "column": "provider",
+      "pattern": "^baseline:",
+      "message": "a model slot (a non-empty model io) needs a baseline provider"
+    },
+    {
+      "type": "relpath_columns",
+      "table": "Catalog",
+      "columns": [
+        "schema file",
+        "example",
+        "producer test",
+        "consumer test",
+        "provider",
+        "swap test"
+      ]
+    }
+  ]
+}

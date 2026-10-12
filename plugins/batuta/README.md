@@ -6,9 +6,14 @@ The Claude Code plugin of CAOS_Batuta. Status: pre-release, under construction t
 
 - `.claude-plugin/plugin.json`, the plugin manifest (name `batuta`, version in semver form).
 - `scripts/batuta.py`, the single command line entry (stdlib Python 3.10 or newer).
-  `python scripts/batuta.py version show` prints the version; no other area ships yet.
+  `python scripts/batuta.py version show` prints the version; `python scripts/batuta.py contract lint` checks the
+  contracts; the other areas ship in later units.
 - `scripts/batuta_lib/areas/`, the folder the dispatcher scans: one module per area, each defining `AREA`,
-  `HELP` and `register(subparsers)`.
+  `HELP` and `register(subparsers)`. Shipped: `version` and `contract` (lint, validate, graph).
+- `scripts/batuta_lib/config.py` and `output.py`, the helpers every area uses: the configuration (`--config`,
+  `BATUTA_CONFIG`, project `.batuta/batuta.json`, user `<BATUTA_HOME>/batuta.json`, defaults) and the tag lines, the
+  C20 object and the exit codes.
+- `contracts/`, the data contracts C01 to C32 with their fixtures (see `contracts/README.md`).
 
 ## What is planned
 
@@ -20,12 +25,14 @@ The plugin declares none of them, so enabling it today adds nothing to a session
 Create `scripts/batuta_lib/areas/<name>.py`:
 
 ```python
+from batuta_lib.output import emit, item
+
 AREA = "example"
 HELP = "one line shown in `batuta.py --help`"
 
 def _run(args):
-    print("hello")
-    return 0  # exit code: 0 ok, 1 failure or refusal, 2 warnings or honest partial
+    items = [item("OK", "hello")]
+    return emit(AREA, "run", items, "run: 1 ok", getattr(args, "json", False))  # 0 ok, 1 failure, 2 warnings
 
 def register(subparsers):
     parser = subparsers.add_parser("run", help="say hello")

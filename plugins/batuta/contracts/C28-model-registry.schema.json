@@ -24,7 +24,7 @@
     },
     "io_contract": {
       "type": "string",
-      "pattern": "^[^/\\\\:][^\\\\:]*$",
+      "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
       "minLength": 1
     },
     "status": {

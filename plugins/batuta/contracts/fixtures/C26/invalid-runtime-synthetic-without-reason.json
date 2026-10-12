@@ -1,8 +1,0 @@
-{
-  "_why": "a synthetic artifact states why",
-  "_expect": "reason",
-  "state": "synthetic",
-  "reason": null,
-  "source": "synthetic fixture",
-  "age": "PT0S"
-}

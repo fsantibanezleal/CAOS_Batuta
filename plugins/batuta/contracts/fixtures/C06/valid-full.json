@@ -8,6 +8,9 @@
   "named_tests_sha256": {
     "tests/test_x.py": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   },
+  "adrs_sha256": {
+    "docs/decisions/ADR-0003-contracts-after-review.md": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
   "approved_by": "alex",
   "prompt_excerpt": "approve spec 001",
   "approved_at": "2026-10-11T12:00:00-03:00",

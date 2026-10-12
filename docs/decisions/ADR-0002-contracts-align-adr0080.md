@@ -1,16 +1,16 @@
 ---
 id: ADR-0002
 title: Align the data contracts with the dimensioned contract-first method and ship them inside the plugin
-status: Accepted
+status: Superseded in part by ADR-0003
 date: 2026-10-11
 review_trigger: before release 0.01.000, and whenever the method's availability states or evaluation rings change
 supersedes: none
-superseded_by: none
+superseded_by: ADR-0003 (in part)
 ---
 
 # ADR-0002: Contracts aligned with ADR-0080 and shipped inside the plugin
 
-Status: Accepted, 2026-10-11. Revises the contracts C21, C23, C25, C26, C27 and C28 of the first contract set (U0)
+Status: Superseded in part by ADR-0003 (2026-10-12); what it supersedes is listed in ADR-0003. Accepted 2026-10-11. Revises the contracts C21, C23, C25, C26, C27 and C28 of the first contract set (U0)
 before they are frozen, so the harness speaks the same method and vocabulary as the dimensioned, contract-first
 design (CAOS ADR-0080) and the tooling already in use for it. No amendment to ADR-0001 is needed.
 

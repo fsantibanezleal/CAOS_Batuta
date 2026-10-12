@@ -15,11 +15,11 @@
           "test": "test_availability_missing"
         },
         {
-          "state": "synthetic",
-          "adapter_returns": "what the adapter returns when synthetic",
-          "response_block": "block with state synthetic",
-          "ui_shows": "what the page shows when synthetic",
-          "test": "test_availability_synthetic"
+          "state": "provider",
+          "adapter_returns": "what the adapter returns when provider",
+          "response_block": "block with state provider",
+          "ui_shows": "what the page shows when provider",
+          "test": "test_availability_provider"
         }
       ]
     },

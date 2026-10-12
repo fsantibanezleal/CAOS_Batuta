@@ -29,11 +29,11 @@
         "available",
         "partial",
         "stale",
-        "synthetic",
+        "provider",
         "training",
         "missing"
       ],
-      "description": "available, partial, stale, synthetic, training or missing (case-sensitive)."
+      "description": "available, partial, stale, provider, training or missing (case-sensitive): the six states of the dimensioned contract-first method. A provider answer carries the provider kind as provenance."
     },
     "state_declaration": {
       "type": "object",
@@ -112,7 +112,7 @@
         "source": {
           "type": "string",
           "minLength": 1,
-          "description": "The provider: real, cached snapshot, synthetic fixture, model version or baseline."
+          "description": "What answered: the real producer, a cached snapshot, the provider's path, a model version or the baseline."
         },
         "age": {
           "type": [
@@ -121,6 +121,17 @@
           ],
           "pattern": "^P(?!$)(\\d+(\\.\\d+)?Y)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?W)?(\\d+(\\.\\d+)?D)?(T(?=\\d)(\\d+(\\.\\d+)?H)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?S)?)?$",
           "description": "An ISO 8601 duration, or null (allowed only for available and missing)."
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "real",
+            "stub",
+            "simulator",
+            "fixture",
+            "baseline"
+          ],
+          "description": "Required when state is provider: the kind of provider that answered (stub, simulator, fixture or baseline)."
         }
       },
       "required": [

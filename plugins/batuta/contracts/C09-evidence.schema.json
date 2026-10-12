@@ -9,19 +9,24 @@
     "gate": {
       "type": "string",
       "enum": [
-        "P0-research",
-        "P1-spec",
-        "P1b-contracts",
-        "P2-freeze",
-        "P3-red",
-        "P4-green",
-        "P5-verify",
-        "P6-promote"
-      ]
+        "L0-understand",
+        "L1-size",
+        "L2-decide",
+        "L3-contracts",
+        "L4-boundaries",
+        "L5-freeze",
+        "L6-skeleton",
+        "L7-build",
+        "L8-integrate",
+        "L9-promote",
+        "L10-lessons"
+      ],
+      "description": "A lifecycle gate: L0-understand to L10-lessons (the retired P-names are refused)."
     },
     "feature": {
       "type": "string",
-      "pattern": "^\\d{3}-[a-z0-9-]+$"
+      "pattern": "^(\\d{3}-[a-z0-9-]+|[a-z0-9][a-z0-9-]*)$",
+      "description": "A spec id (NNN-slug) or a product slug (a feature of the product itself, for example batuta)."
     },
     "verdict": {
       "type": "string",

@@ -195,9 +195,44 @@ def _block(block):
     return out
 
 
+_BULLET = re.compile(r"^\s*[-*]\s+([A-Za-z][A-Za-z ]*?)\s*:\s*(.*?)\s*$")
+
+
+def header_bullets(text):
+    """Metadata written as bullets under the title, before the first `## ` heading (the format of delegation briefs):
+
+        # Brief: title
+        - id: x-2026-10-12
+        - write scope: src/a/, docs/
+
+    Keys are lowercased with single spaces; a value wrapped in one pair of backticks is unwrapped. A repeated key is
+    refused. Fenced code is ignored. Returns a dict of strings."""
+    meta, fence = {}, None
+    for n, line in enumerate(_lines(text.lstrip("﻿")), 1):
+        m = _FENCE.match(line)
+        if m:
+            fence = None if fence == m.group(1) else (fence or m.group(1))
+            continue
+        if fence is not None:
+            continue
+        if line.startswith("## "):
+            break
+        b = _BULLET.match(line)
+        if not b:
+            continue
+        key = " ".join(b.group(1).lower().split())
+        value = b.group(2)
+        if len(value) > 1 and value.startswith("`") and value.endswith("`") and value.count("`") == 2:
+            value = value[1:-1]
+        if key in meta:
+            raise ValueError(f"line {n}: duplicate header key '{key}'")
+        meta[key] = value
+    return meta
+
+
 def parse(text):
     """Return (meta, body). meta is a dict; body is the text after the closing dashes line."""
-    lines = _lines(text)
+    lines = _lines(text.lstrip("﻿"))
     i = 0
     while i < len(lines) and (not lines[i].strip() or _COMMENT.match(lines[i])):
         i += 1

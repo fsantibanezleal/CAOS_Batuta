@@ -130,11 +130,17 @@ class Tables(unittest.TestCase):
         self.assertEqual(contract.validate_markdown(with_table(["| `R-1` | 1 | `a`, `b` |"]), SCHEMA, TBL), [])
 
     def test_root_schema_as_row_schema(self):
-        schema = {"type": "object", "required": ["A"], "properties": {"A": {"type": "string", "minLength": 1}}}
+        schema = {"type": "object", "required": ["A"], "properties": {"A": {"type": "string", "pattern": "^x$"}}}
         spec = {"front_matter": "none", "sections": [], "tables": [{"name": "T", "headers": ["A"], "row_def": None}]}
         self.assertEqual(contract.validate_markdown("| A |\n|---|\n| x |\n", schema, spec), [])
-        out = contract.validate_markdown("| A |\n|---|\n|  |\n", schema, spec)
+        out = contract.validate_markdown("| A |\n|---|\n| y |\n", schema, spec)
         self.assertIn("/A", out[0])
+
+    def test_blank_rows_are_dropped_like_the_sizing_and_catalog_checks_do(self):
+        schema = {"type": "object", "required": ["A"], "properties": {"A": {"type": "string", "minLength": 1}}}
+        spec = {"front_matter": "none", "sections": [], "tables": [{"name": "T", "headers": ["A"], "row_def": None, "min_rows": 1}]}
+        self.assertEqual(contract.validate_markdown("| A |\n|---|\n| x |\n|  |\n", schema, spec), [])
+        self.assertTrue(any("at least 1 row" in e for e in contract.validate_markdown("| A |\n|---|\n|  |\n", schema, spec)))
 
 
 RULE_SCHEMA = {"type": "object"}

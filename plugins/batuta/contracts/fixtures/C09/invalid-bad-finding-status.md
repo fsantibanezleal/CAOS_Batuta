@@ -1,7 +1,7 @@
 <!-- why: Status outside the enum -->
 <!-- expect: /Status -->
 ---
-gate: P4-green
+gate: L7-build
 feature: 001-validator
 verdict: PASS
 role: adversary

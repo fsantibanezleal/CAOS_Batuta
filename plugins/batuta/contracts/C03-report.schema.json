@@ -3,7 +3,7 @@
   "contract_id": "C03",
   "contract_version": "1.0",
   "title": "Delegation report",
-  "description": "A report: required sections, one D section per deliverable, the Completeness table, and the final BRIEF and REPORT lines.",
+  "description": "A report as the brief's Report layout asks for it and as check_report.py reads it: a `## Completeness` table with one row per deliverable, one `## D<n>` section per deliverable, no placeholder text in the prose. The BRIEF and REPORT lines belong to the agent's final message, not to the report file. Sections that depend on the brief's kind (Red run and Green run for implement, Sources for research and docs, Production path) are checked for their shape when present; that they are present is `report check`'s job, which knows the brief.",
   "type": "object",
   "$defs": {
     "completeness_row": {
@@ -23,7 +23,8 @@
         },
         "Evidence": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(?!(-|[Nn]/[Aa])$).+$",
+          "description": "Where the evidence is; for PARTIAL or BLOCKED what is missing and why."
         }
       },
       "required": [

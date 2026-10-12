@@ -1,0 +1,9 @@
+{
+  "_why": "a blank reason is no reason",
+  "_expect": "reason",
+  "state": "provider",
+  "reason": "  ",
+  "source": "provider fixture",
+  "age": "PT0S",
+  "provenance": "fixture"
+}

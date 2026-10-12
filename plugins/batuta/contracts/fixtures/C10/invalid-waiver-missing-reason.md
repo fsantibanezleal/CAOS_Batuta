@@ -2,15 +2,15 @@
 <!-- expect: 'reason' -->
 ---
 feature: 001-validator
-phase: P3-red
+phase: L7-build
 gates:
-  P0-research: passed
-  P1-spec: passed
-  P1b-contracts: waived
-  P2-freeze: passed
-  P3-red: pending
+  L0-understand: passed
+  L2-decide: passed
+  L3-contracts: waived
+  L5-freeze: passed
+  L7-build: pending
 waivers:
-  - {gate: P1b-contracts, by: alex, date: 2026-10-11}
+  - {gate: L3-contracts, by: alex, date: 2026-10-11}
 blocked: false
 ---
 

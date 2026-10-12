@@ -1,0 +1,8 @@
+{
+  "_why": "a decision carries the date it was verified",
+  "_expect": "verified_date",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "0.115.2",
+  "primary_source_url": "https://fastapi.tiangolo.com/"
+}

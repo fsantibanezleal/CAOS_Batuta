@@ -1,7 +1,7 @@
 <!-- why: PASS requires no open critical or major finding -->
-<!-- expect: PASS requires -->
+<!-- expect: require no open critical or major finding -->
 ---
-gate: P4-green
+gate: L7-build
 feature: 001-validator
 verdict: PASS
 role: adversary

@@ -2,9 +2,9 @@
 <!-- expect: 'gates' -->
 ---
 feature: 001-validator
-phase: P3-red
+phase: L7-build
 waivers:
-  - {gate: P1b-contracts, reason: "no external interfaces", by: alex, date: 2026-10-11}
+  - {gate: L3-contracts, reason: "no external interfaces", by: alex, date: 2026-10-11}
 blocked: false
 ---
 

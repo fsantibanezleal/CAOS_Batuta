@@ -19,7 +19,8 @@
         "Status"
       ],
       "row_def": "finding_row",
-      "min_rows": 0
+      "min_rows": 0,
+      "section": "Findings"
     }
   ],
   "rules": [
@@ -27,7 +28,8 @@
       "type": "forbid_rows",
       "when": {
         "verdict": [
-          "PASS"
+          "PASS",
+          "PASS-WITH-FIXES"
         ]
       },
       "table": "Findings",
@@ -40,10 +42,10 @@
           "open"
         ]
       },
-      "message": "PASS requires no open critical or major finding"
+      "message": "PASS and PASS-WITH-FIXES require no open critical or major finding"
     },
     {
-      "type": "require_text_if_rows",
+      "type": "lines_per_row",
       "when": {
         "verdict": [
           "PASS-WITH-FIXES"
@@ -55,8 +57,8 @@
           "fixed"
         ]
       },
-      "pattern": "Re-check",
-      "message": "PASS-WITH-FIXES requires a Re-check line for the fixed findings"
+      "pattern": "^\\s*(?:[-*]\\s+)?Re-check:",
+      "message": "PASS-WITH-FIXES requires one 'Re-check:' line per fixed finding"
     }
   ]
 }

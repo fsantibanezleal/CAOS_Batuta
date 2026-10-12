@@ -1,0 +1,109 @@
+{
+  "contract_id": "C23",
+  "contract_version": "1.0",
+  "front_matter": "none",
+  "case_insensitive_titles": true,
+  "required_sections": [
+    "Problem",
+    "ADR constraints",
+    "Repositories",
+    "Components",
+    "Modules and functions",
+    "Boundaries",
+    "Technology matrix",
+    "Machine limits",
+    "Parallel units",
+    "Integrator and merge order",
+    "Reservations"
+  ],
+  "tables": [
+    {
+      "name": "Modules and functions",
+      "section": "Modules and functions",
+      "headers": [
+        "Module",
+        "Responsibility",
+        "Owner unit",
+        "Size estimate"
+      ],
+      "headers_match": "contains",
+      "row_def": "module_row",
+      "min_rows": 1
+    },
+    {
+      "name": "Boundaries",
+      "section": "Boundaries",
+      "headers": [
+        "ID",
+        "Producer",
+        "Consumer",
+        "Contract ID"
+      ],
+      "headers_match": "contains",
+      "row_def": "boundary_row",
+      "min_rows": 1
+    },
+    {
+      "name": "Technology matrix",
+      "section": "Technology matrix",
+      "headers": [
+        "Tool",
+        "Version",
+        "Primary source URL",
+        "Verified date"
+      ],
+      "headers_match": "contains",
+      "row_def": "technology_row",
+      "min_rows": 1
+    },
+    {
+      "name": "Parallel units",
+      "section": "Parallel units",
+      "headers": [
+        "Unit",
+        "Write scope",
+        "Depends on contract ids"
+      ],
+      "headers_match": "contains",
+      "row_def": "unit_row",
+      "min_rows": 1,
+      "coerce": {
+        "Depends on contract ids": "list"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "type": "nonempty_sections",
+      "sections": [
+        "Problem",
+        "ADR constraints",
+        "Repositories",
+        "Components",
+        "Modules and functions",
+        "Boundaries",
+        "Technology matrix",
+        "Machine limits",
+        "Parallel units",
+        "Integrator and merge order",
+        "Reservations"
+      ]
+    },
+    {
+      "type": "unique_column",
+      "table": "Boundaries",
+      "column": "ID"
+    },
+    {
+      "type": "unique_column",
+      "table": "Parallel units",
+      "column": "Unit"
+    },
+    {
+      "type": "disjoint_scopes",
+      "table": "Parallel units",
+      "owner_column": "Unit",
+      "scope_column": "Write scope"
+    }
+  ]
+}

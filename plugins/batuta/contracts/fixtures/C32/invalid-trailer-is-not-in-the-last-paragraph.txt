@@ -1,0 +1,7 @@
+# why: the override trailer is the last paragraph
+# expect: belongs in the last paragraph
+[green] T-001 update the locked test
+
+Test-Change-Approved: CR-001
+
+More text after the trailer.

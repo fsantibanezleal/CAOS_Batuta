@@ -1,0 +1,37 @@
+{
+  "_why": "a handler id appears once",
+  "_expect": "duplicate handler id",
+  "contract_version": "1.0",
+  "handlers": [
+    {
+      "id": "doctor",
+      "event": "SessionStart",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "doctor"
+      ],
+      "timeout_s": 2,
+      "failure": "fail-open",
+      "stdout": "sessionstart",
+      "exit_codes": {
+        "0": "ok, or the decision is on stdout"
+      }
+    },
+    {
+      "id": "doctor",
+      "event": "SessionStart",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "doctor"
+      ],
+      "timeout_s": 2,
+      "failure": "fail-open",
+      "stdout": "sessionstart",
+      "exit_codes": {
+        "0": "ok, or the decision is on stdout"
+      }
+    }
+  ]
+}

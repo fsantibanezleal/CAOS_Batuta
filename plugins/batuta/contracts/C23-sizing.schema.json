@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C23",
+  "contract_version": "1.0",
+  "title": "Sizing",
+  "description": "The contract of sizing.md (phase 1 of the contract-first method; template tools/agents/sizing-template.md): eleven sections, each non-empty, and four tables whose rows are validated here. Titles match case-insensitively; table columns match case-insensitively and may be followed by extra columns. Write scopes of the Parallel units table are pairwise disjoint. Cross-file rules (every contract id exists in the catalog) are checked by `contract lint --root`.",
+  "type": "object",
+  "$defs": {
+    "module_row": {
+      "type": "object",
+      "properties": {
+        "Module": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Responsibility": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Owner unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Size estimate": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "Module",
+        "Responsibility",
+        "Owner unit",
+        "Size estimate"
+      ],
+      "additionalProperties": true
+    },
+    "boundary_row": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "Producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Consumer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Contract ID": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "A row id of the contract catalog (C22)."
+        }
+      },
+      "required": [
+        "ID",
+        "Producer",
+        "Consumer",
+        "Contract ID"
+      ],
+      "additionalProperties": true
+    },
+    "technology_row": {
+      "type": "object",
+      "properties": {
+        "Tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+(\\.\\d+){0,2}(\\.?(a|b|rc|post|dev)\\d+)*(-[A-Za-z][0-9A-Za-z]*(\\.[0-9A-Za-z]+)*)?(\\+[0-9A-Za-z.-]+)?$",
+          "description": "An exact version: never a range, a wildcard or a bare major."
+        },
+        "Primary source URL": {
+          "type": "string",
+          "pattern": "^https?://\\S+$"
+        },
+        "Verified date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "required": [
+        "Tool",
+        "Version",
+        "Primary source URL",
+        "Verified date"
+      ],
+      "additionalProperties": true
+    },
+    "unit_row": {
+      "type": "object",
+      "properties": {
+        "Unit": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "Write scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Depends on contract ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
+        }
+      },
+      "required": [
+        "Unit",
+        "Write scope",
+        "Depends on contract ids"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

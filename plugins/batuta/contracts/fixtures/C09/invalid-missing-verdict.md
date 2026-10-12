@@ -1,7 +1,7 @@
 <!-- why: verdict is required -->
 <!-- expect: 'verdict' -->
 ---
-gate: P4-green
+gate: L7-build
 feature: 001-validator
 role: adversary
 model: sonnet

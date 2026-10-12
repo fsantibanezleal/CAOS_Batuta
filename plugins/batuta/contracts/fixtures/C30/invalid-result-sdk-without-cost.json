@@ -1,0 +1,12 @@
+{
+  "_why": "a billed lane records tokens and cost",
+  "_expect": "records tokens_in",
+  "contract_version": "1.0",
+  "kind": "result",
+  "run_id": "ingest-api-2026-10-12",
+  "lane": "sdk",
+  "status": "complete",
+  "report": "wip/alerts/ingest-api-2026-10-12.md",
+  "provider": "anthropic",
+  "model": "sonnet"
+}

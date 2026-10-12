@@ -1,0 +1,8 @@
+{
+  "_why": "at least one row",
+  "_expect": "fewer than minItems",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": []
+}

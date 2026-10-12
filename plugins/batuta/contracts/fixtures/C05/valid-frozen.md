@@ -24,9 +24,8 @@ In: validator. Out: deployment.
 
 ## Interfaces
 
-| Interface | Contract file | Producer | Consumers | Version |
-|---|---|---|---|---|
-| config | contracts/C01-batuta-config.schema.json | init | every area | 1.0 |
+- alert-event: produced by the pipeline, consumed by the API (catalog row alert-event).
+- alert-list
 
 ## Edge cases
 

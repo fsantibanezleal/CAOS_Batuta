@@ -31,9 +31,9 @@
   },
   "gates": {
     "critical": [
-      "spec-freeze",
-      "build",
-      "release"
+      "L2-decide",
+      "L5-freeze",
+      "L9-promote"
     ],
     "adversary_model_critical": "opus",
     "adversary_model_routine": "sonnet"

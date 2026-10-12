@@ -21,7 +21,7 @@
       "locked_commit": "abc1234",
       "locked_at": "2026-10-11T12:00:00Z",
       "supersedes": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "change_request": "specs/001-x/test-change-requests.md#1"
+      "change_request": "CR-001"
     }
   ]
 }

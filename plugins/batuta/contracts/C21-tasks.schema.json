@@ -3,7 +3,7 @@
   "contract_id": "C21",
   "contract_version": "1.0",
   "title": "Tasks table",
-  "description": "One row per task: requirements covered, contracts used, real ordering dependencies, computed wave, owner role and the inventory unit (C23) that carries it; a Unit of '-' or empty means none.",
+  "description": "One row per task: the requirements covered, the catalog contract ids used, the real ordering dependencies, the computed wave, the owner role and the row of the sizing's Parallel units table that carries it (`-` or empty: none). Waves share one numbering with `contract graph`: wave 0 is the contracts, wave 1 the walking skeleton, units and tasks start at wave 2.",
   "type": "object",
   "properties": {
     "Task": {
@@ -25,8 +25,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[^/\\\\:][^\\\\:]*$",
-        "minLength": 1
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
       }
     },
     "Depends": {
@@ -41,7 +40,7 @@
         "integer",
         "null"
       ],
-      "minimum": 1
+      "minimum": 2
     },
     "Owner role": {
       "type": "string",
