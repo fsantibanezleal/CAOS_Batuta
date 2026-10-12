@@ -4,6 +4,7 @@
   "contract_version": "1.0",
   "spec_id": "001-example",
   "spec_sha256": "abc",
+  "approved_spec_sha256_prefix": "aaaaaaaaaaaa",
   "contracts_sha256": {
     "contracts/C01-batuta-config.schema.json": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },

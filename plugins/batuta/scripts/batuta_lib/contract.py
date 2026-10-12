@@ -527,6 +527,9 @@ def _check_c01(inst, schema):
 
 def _check_c06(inst, schema):
     errs = []
+    if inst["approved_spec_sha256_prefix"] != inst["spec_sha256"][:12]:
+        errs.append(f"/approved_spec_sha256_prefix: '{inst['approved_spec_sha256_prefix']}' is not the first 12 characters "
+                    f"of spec_sha256 ('{inst['spec_sha256'][:12]}')")
     for key in ("contracts_sha256", "named_tests_sha256", "adrs_sha256"):
         for path in inst[key]:
             if _bad_relpath(path):

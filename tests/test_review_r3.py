@@ -747,6 +747,52 @@ class Minors(unittest.TestCase):
 # ------------------------------------------------------------------ the whole set
 
 
+class R19(unittest.TestCase):
+    """Decisions 11 and 12: the typed approval prefix, the test change requests contract, the hooks shell enum."""
+
+    def _c06(self):
+        doc = json.loads(read("C06", "valid-full.json"))
+        doc.pop("_why", None)
+        return doc
+
+    def test_R19_the_approval_carries_the_typed_prefix_of_the_spec_hash(self):
+        doc = self._c06()
+        self.assertEqual(doc["approved_spec_sha256_prefix"], doc["spec_sha256"][:12])
+        self.assertEqual(check_doc("C06", doc), [])
+
+    def test_R19_a_prefix_that_differs_from_the_spec_hash_is_refused(self):
+        doc = self._c06()
+        other = "0" if doc["spec_sha256"][0] != "0" else "1"
+        doc["approved_spec_sha256_prefix"] = other + doc["spec_sha256"][1:12]
+        self.assertTrue(mentions(check_doc("C06", doc), "first 12 characters"))
+
+    def test_R19_the_prefix_is_required_and_twelve_lowercase_hex(self):
+        doc = self._c06()
+        self.assertTrue(mentions(check_doc("C06", {k: v for k, v in doc.items() if k != "approved_spec_sha256_prefix"}), "approved_spec_sha256_prefix"))
+        for bad in (doc["spec_sha256"][:11], doc["spec_sha256"][:12].upper() + "A", "g" * 12):
+            self.assertTrue(check_doc("C06", {**doc, "approved_spec_sha256_prefix": bad}))
+
+    def test_R19_c33_is_the_markdown_table_of_test_change_requests(self):
+        self.assertIsNotNone(sp("C33"))
+        ok = read("C33", "valid-approved-and-rejected.md")
+        self.assertEqual(check_text("C33", ok), [])
+        self.assertTrue(mentions(check_text("C33", ok.replace("| approved | felipe |", "| approved |  |")), "decided"))
+        self.assertTrue(mentions(check_text("C33", ok.replace("CR-002", "CR-001")), "duplicate"))
+        self.assertTrue(check_text("C33", ok.replace("| rejected |", "| denied |")))
+
+    def test_R19_c33_id_is_the_c07_change_request_pattern(self):
+        c07 = json.loads(sp("C07").read_text(encoding="utf-8"))["$defs"]["entry"]["properties"]["change_request"]
+        c33 = json.loads(sp("C33").read_text(encoding="utf-8"))["$defs"]["request_row"]["properties"]["Id"]
+        self.assertEqual(c07["pattern"], c33["pattern"])
+        self.assertIn("C33", c07["description"])
+        self.assertIn("C33", (CONTRACTS / "README.md").read_text(encoding="utf-8"))
+
+    def test_R19_the_hooks_shell_is_bash_or_powershell(self):
+        for shell in ("bash", "powershell"):
+            self.assertEqual(check_doc("C31", hooks_doc(shell=shell)), [])
+        self.assertTrue(check_doc("C31", hooks_doc(shell="zsh")))
+
+
 class Skip(unittest.TestCase):
     def test_SKIP_is_a_c20_tag_and_an_output_tag(self):
         from batuta_lib import output

@@ -47,6 +47,15 @@ not touched. This ADR records them with the fixes that follow from them.
    a path field is an error that names the variable and the field; an unset root still falls back under `BATUTA_HOME`.
 10. **Partial freeze.** C12, C13, C14 and the `budgets` block of C01 are not touched by this revision and are frozen now.
 
+11. **The freeze approval is typed and the test change requests are contracted (finding R19).** The human types
+    `approve <spec id> <first 12 hex of the spec's sha256>`; C06 records it as the required `approved_spec_sha256_prefix`
+    (12 lowercase hex) which must equal the first 12 characters of `spec_sha256`. C33 is `specs/<feature>/test-change-requests.md`,
+    a table with Id (the C07 `change_request` pattern and the `Test-Change-Approved` trailer value), Date, Test path,
+    Requirement, Reason, Proposed change, Status (open, approved, rejected) and Decided by; C07's `change_request` and the
+    catalog README point to it.
+12. **The hooks.json `shell` field is an enum, `bash` or `powershell`** (the Claude Code settings JSON schema, field
+    `hooks.*.hooks[].shell`).
+
 The minor findings are fixed with them: C23 gains the Executive brief the method's sizing checker requires, with a dated
 copy of the checker's required sections recorded as a fixture and compared by a test, so an upstream change is a visible
 fixture update; C02 refuses unfilled `<fill: ...>` slots; one relative-path pattern (no control character, no `.` or `..`
@@ -88,8 +97,5 @@ is not counted inside a code block; a path has one live lock; the reserved trail
 
 ## Open points for the owner
 
-1. The grammar of a typed approval phrase and the format of `test-change-requests.md` (finding R19) are not contracted: they
-   are design questions for the units that build approval capture and the test-first protocol, with a proposed phrase
-   in the report of this revision.
-2. The plan's port-map row for the locked-test guard and the plan's unit row for U0 (findings R18 and R20) live in the
-   coordination repository, outside this repository.
+None in this repository. The plan's port-map row for the locked-test guard and the plan's unit row for U0 (findings R18 and
+R20) live in the coordination repository and were corrected there by the main session.

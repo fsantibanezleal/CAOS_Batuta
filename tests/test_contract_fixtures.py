@@ -10,13 +10,13 @@ sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from batuta_lib import contract  # noqa: E402
 
 CONTRACTS = ROOT / "plugins" / "batuta" / "contracts"
-IDS = [f"C{n:02d}" for n in range(1, 33)]
-MD_IDS = {"C02", "C03", "C04", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+IDS = [f"C{n:02d}" for n in range(1, 34)]
+MD_IDS = {"C02", "C03", "C04", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24", "C33"}
 STATES = ["available", "partial", "stale", "provider", "training", "missing"]
 RINGS = ["adopt", "trial", "assess", "caution"]
 MODEL_STATUS = ["planned", "training", "candidate", "released", "retired"]
 # Contracts whose artifacts are not batuta-owned files and carry no contract_version of their own.
-NO_ARTIFACT_VERSION = {"C04", "C16", "C14", "C26", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+NO_ARTIFACT_VERSION = {"C04", "C16", "C14", "C26", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24", "C33"}
 UNKNOWN_KEYS_REJECTED = {"C06", "C07", "C08", "C27"}
 
 

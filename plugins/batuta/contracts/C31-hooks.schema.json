@@ -121,7 +121,11 @@
         },
         "shell": {
           "type": "string",
-          "minLength": 1
+          "enum": [
+            "bash",
+            "powershell"
+          ],
+          "description": "The shell that runs a shell-form command: bash or powershell (the Claude Code settings schema, hooks.*.hooks[].shell)."
         },
         "onFailure": {
           "type": "string",

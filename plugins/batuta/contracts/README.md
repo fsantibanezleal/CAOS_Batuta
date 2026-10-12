@@ -24,7 +24,7 @@ is the CPD contract catalog. There is no second machine-readable inventory (ADR-
 | C03 | `C03-report.schema.json` | Report (path named by the brief): Completeness table, one `## D<n>` section per deliverable, Red and Green run, Sources, Production path when present | agents | `report check`, hook, ledger | 1.0 |
 | C04 | `C04-ledger.schema.json` | Ledger `ledger.md`: the Markdown table the CAOS delegation tool writes (ID, Agent, Model, Brief, Report, Status, Accepted) plus the optional columns Provider, Tokens in, Tokens out, Cost USD and Superseded by | `brief new`, `report ledger-status`, `dispatch run` | main session, `gate check` | 1.0 |
 | C05 | `C05-spec.schema.json` | Spec `specs/<NNN-slug>/spec.md`; its Interfaces section lists catalog ids | main session, `spec new` | `spec lint`, `spec trace`, `spec freeze`, test-author | 1.0 |
-| C06 | `C06-approval.schema.json` | Approval `specs/<NNN-slug>/approvals/<stamp>.json`: `spec_sha256`, `contracts_sha256`, `adrs_sha256` (every accepted ADR the spec references) and `named_tests_sha256` | approval hook, `spec approve` | `gate check`, approvals guard | 1.0 |
+| C06 | `C06-approval.schema.json` | Approval `specs/<NNN-slug>/approvals/<stamp>.json`: `spec_sha256`, `approved_spec_sha256_prefix` (the first 12 hex the human types in `approve <spec id> <first 12 hex of the spec's sha256>`; it must equal `spec_sha256[:12]`), `contracts_sha256`, `adrs_sha256` (every accepted ADR the spec references) and `named_tests_sha256` | approval hook, `spec approve` | `gate check`, approvals guard | 1.0 |
 | C07 | `C07-test-lock.schema.json` | Test lock `.batuta/test-locks.json` | `tdd lock` | locked-test guard, `tdd check` | 1.0 |
 | C08 | `C08-trace-matrix.schema.json` | Trace matrix `specs/<NNN-slug>/trace.json` | `spec trace` | `gate check`, CI | 1.0 |
 | C09 | `C09-evidence.schema.json` | Gate evidence `specs/<NNN-slug>/evidence/<gate>.md` | adversary, reviewer | `gate check`, `gate evidence-lint` | 1.0 |
@@ -51,6 +51,7 @@ is the CPD contract catalog. There is no second machine-readable inventory (ADR-
 | C30 | `C30-dispatch.schema.json` | Dispatch request and result (`kind` request or result) | `dispatch run` | lanes, ledger | 1.0 |
 | C31 | `C31-hooks.schema.json` | `plugins/batuta/hooks/hooks.json` (the registry and the file Claude Code reads, with the official entry fields), the handler discovery rule (`HOOKS = {id: handler}` in an area module) and the handler result | every unit that owns a hook (guards, SubagentStop, approval capture, SessionStart), distribution unit | `init`, the launcher, Claude Code | 1.0 |
 | C32 | `C32-commit-grammar.schema.json` | TDD commit message: `[red\|green\|refactor] T-NNN <title>` and the `Test-Change-Approved:` trailer | test-author, implementer | `tdd check`, the locked-test guard | 1.0 |
+| C33 | `C33-test-change-requests.schema.json` | Test change requests `specs/<NNN-slug>/test-change-requests.md`: Id (the C07 `change_request` and the `Test-Change-Approved` trailer value), Date, Test path, Requirement, Reason, Proposed change, Status (open, approved, rejected), Decided by | main session, `tdd` | `tdd check`, the locked-test guard | 1.0 |
 
 ## Layout
 
@@ -109,7 +110,7 @@ they are unknown keys like any other.
 
 ## Markdown contracts and the sections file
 
-C02, C03, C04, C05, C09, C10, C18, C19, C21, C22, C23 and C24 are Markdown. Their header is one of three kinds, named by
+C02, C03, C04, C05, C09, C10, C18, C19, C21, C22, C23, C24 and C33 are Markdown. Their header is one of three kinds, named by
 `front_matter` in the sections file:
 
 - `required`: the front matter subset read by `batuta_lib/frontmatter.py`: `key: value`, `key: [a, b]`, indented
@@ -120,7 +121,7 @@ C02, C03, C04, C05, C09, C10, C18, C19, C21, C22, C23 and C24 are Markdown. Thei
 - `bullets`: metadata bullets under the title, before the first `##` heading (`- id: x-2026-10-12`), the format of
   delegation briefs. Keys are lowercased with single spaces (`working directory`), a repeated key is refused, and the
   schema validates the resulting object of strings (`coerce` turns a comma separated value into a list).
-- `none`: no machine header (C03, C04, C21, C22, C23).
+- `none`: no machine header (C03, C04, C21, C22, C23, C33).
 
 The sections file next to the schema validates the body:
 
