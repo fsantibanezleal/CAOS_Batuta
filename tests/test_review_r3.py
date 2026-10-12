@@ -318,7 +318,7 @@ class R06(unittest.TestCase):
         self.assertTrue(check_doc("C31", hooks_doc(command="/usr/bin/python")))
 
     def test_R06_a_machine_path_launcher_is_refused(self):
-        doc = hooks_doc(command='python "/home/me/plugin/scripts/hook.py" report-check')
+        doc = hooks_doc(command='python "/opt/me/plugin/scripts/hook.py" report-check')
         doc["hooks"]["PreToolUse"][0]["hooks"][0].pop("args")
         self.assertTrue(check_doc("C31", doc))
 
@@ -600,7 +600,7 @@ RELPATH_FIELDS = (("C01", ("properties", "coordination_root")), ("C01", ("proper
                   ("C07", ("$defs", "entry", "properties", "path")), ("C30", ("$defs", "request", "properties", "brief")),
                   ("C30", ("$defs", "request", "properties", "report")), ("C30", ("$defs", "result", "properties", "report")),
                   ("C30", ("$defs", "result", "properties", "patch")), ("C30", ("$defs", "request", "properties", "write_scope", "items")),
-                  ("C28", ("properties", "path")))
+                  ("C28", ("properties", "io_contract")))
 
 
 class R10(unittest.TestCase):
@@ -726,11 +726,11 @@ class Minors(unittest.TestCase):
         doc.pop("_why", None)
         self.assertEqual(check_doc("C07", doc), [])
 
-    def test_R16_a_supersedes_that_names_no_entry_of_the_same_path_is_refused(self):
+    def test_R16_a_supersedes_that_names_no_entry_leaves_two_live_locks(self):
         doc = json.loads(read("C07", "valid-superseding.json"))
         doc.pop("_why", None)
         doc["entries"][1]["supersedes"] = "c" * 64
-        self.assertTrue(mentions(check_doc("C07", doc), "supersedes"))
+        self.assertTrue(mentions(check_doc("C07", doc), "live"))
 
     def test_R17_the_reserved_trailer_key_has_one_spelling(self):
         msg = "[green] T-001 add the parser\n\nbody\n\n{key}: CR-1\n"
@@ -745,6 +745,21 @@ class Minors(unittest.TestCase):
 
 
 # ------------------------------------------------------------------ the whole set
+
+
+class Skip(unittest.TestCase):
+    def test_SKIP_is_a_c20_tag_and_an_output_tag(self):
+        from batuta_lib import output
+        enum = json.loads(sp("C20").read_text(encoding="utf-8"))["$defs"]["item"]["properties"]["tag"]["enum"] \
+            if "item" in json.loads(sp("C20").read_text(encoding="utf-8")).get("$defs", {}) else None
+        if enum is None:
+            enum = re.search(r'"enum": \[([^\]]*"SAME"[^\]]*)\]', sp("C20").read_text(encoding="utf-8")).group(1)
+            enum = re.findall(r'"([A-Z]+)"', enum)
+        self.assertIn("SKIP", enum)
+        self.assertEqual(list(output.TAGS), enum)
+        self.assertEqual(output.item("SKIP", "nothing to do")["tag"], "SKIP")
+        self.assertEqual(output.exit_code([output.item("SKIP", "x"), output.item("OK", "y")]), 0)
+        self.assertEqual(check_text("C20", read("C20", "valid-skip-item.json")), [])
 
 
 class Whole(unittest.TestCase):

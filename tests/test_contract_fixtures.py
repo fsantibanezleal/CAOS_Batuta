@@ -11,13 +11,13 @@ from batuta_lib import contract  # noqa: E402
 
 CONTRACTS = ROOT / "plugins" / "batuta" / "contracts"
 IDS = [f"C{n:02d}" for n in range(1, 33)]
-MD_IDS = {"C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+MD_IDS = {"C02", "C03", "C04", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
 STATES = ["available", "partial", "stale", "provider", "training", "missing"]
 RINGS = ["adopt", "trial", "assess", "caution"]
 MODEL_STATUS = ["planned", "training", "candidate", "released", "retired"]
 # Contracts whose artifacts are not batuta-owned files and carry no contract_version of their own.
-NO_ARTIFACT_VERSION = {"C16", "C14", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
-UNKNOWN_KEYS_REJECTED = {"C04", "C06", "C07", "C08", "C27"}
+NO_ARTIFACT_VERSION = {"C04", "C16", "C14", "C26", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24"}
+UNKNOWN_KEYS_REJECTED = {"C06", "C07", "C08", "C27"}
 
 
 def schema_path(cid):
@@ -58,16 +58,16 @@ class EveryContractIsPresent(unittest.TestCase):
 
     def test_json_contracts_require_contract_version_in_the_artifact(self):
         for cid in IDS:
-            if cid in NO_ARTIFACT_VERSION or cid == "C04":
+            if cid in NO_ARTIFACT_VERSION:
                 continue
             with self.subTest(contract=cid):
                 s = json.loads(schema_path(cid).read_text(encoding="utf-8"))
                 self.assertIn("contract_version", s["required"])
                 self.assertEqual(s["properties"]["contract_version"]["const"], "1.0")
 
-    def test_c04_lines_require_contract_version(self):
+    def test_c04_is_a_markdown_table_whose_row_has_the_seven_columns_of_the_delegation_tool(self):
         s = json.loads(schema_path("C04").read_text(encoding="utf-8"))
-        self.assertIn("contract_version", s["required"])
+        self.assertEqual(s["$defs"]["ledger_row"]["required"], ["ID", "Agent", "Model", "Brief", "Report", "Status", "Accepted"])
 
     def test_integrity_records_reject_unknown_keys(self):
         for cid in UNKNOWN_KEYS_REJECTED:
@@ -118,17 +118,10 @@ class KnownSemanticChecks(unittest.TestCase):
         doc["units"][0]["requires"] = ["deploy-vps"]
         self.assertTrue(any("cycle" in e for e in contract.validate_instance("C12", doc, contract.load_schema(sp))))
 
-    def test_c26_dispatches_on_the_document_shape(self):
+    def test_c26_is_the_runtime_block(self):
         sp = contract.load_schema(schema_path("C26"))
         self.assertEqual(contract.validate_instance("C26", self.load("C26", "valid-runtime-missing.json"), sp), [])
-        self.assertEqual(contract.validate_instance("C26", self.load("C26", "valid-declaration-absent-components.json"), sp), [])
-        self.assertTrue(any("declaration" in e for e in contract.validate_instance("C26", {"x": 1}, sp)))
-
-    def test_c26_an_absent_component_needs_available_and_one_other_state_each_with_a_test(self):
-        sp = contract.load_schema(schema_path("C26"))
-        doc = self.load("C26", "valid-declaration-absent-components.json")
-        doc["components"][0]["states"] = [doc["components"][0]["states"][0]]
-        self.assertTrue(any("non-available" in e for e in contract.validate_instance("C26", doc, sp)))
+        self.assertTrue(any("state" in e for e in contract.validate_instance("C26", {"x": 1}, sp)))
 
     def test_c26_age_is_null_only_for_available_and_missing(self):
         sp = contract.load_schema(schema_path("C26"))
@@ -168,14 +161,12 @@ class AlignedVocabulary(unittest.TestCase):
     def test_c26_state_enum_is_the_six_states_in_order(self):
         self.assertEqual(self.schema("C26")["$defs"]["state"]["enum"], STATES)
 
-    def test_c26_has_the_declaration_and_the_runtime_block_in_one_file(self):
-        defs = self.schema("C26")["$defs"]
-        self.assertEqual(sorted(defs["runtime_block"]["required"]), ["age", "reason", "source", "state"])
-        self.assertEqual(sorted(defs["state_declaration"]["required"]),
-                         ["adapter_returns", "response_block", "state", "test", "ui_shows"])
+    def test_c26_has_the_vocabulary_and_the_runtime_block_only(self):
+        schema = self.schema("C26")
+        self.assertEqual(sorted(schema["required"]), ["age", "reason", "source", "state"])
+        self.assertEqual(sorted(schema["$defs"]), ["state"])
         names = [p.name for p in fixtures("C26", "valid")]
-        self.assertTrue(any("runtime" in n for n in names))
-        self.assertTrue(any("declaration" in n for n in names))
+        self.assertTrue(all("runtime" in n for n in names))
 
     def test_c27_states_are_exactly_the_six_states_with_no_alias(self):
         self.assertEqual(self.schema("C27")["$defs"]["entry"]["properties"]["state"]["enum"], STATES)

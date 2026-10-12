@@ -1,0 +1,22 @@
+{
+  "_why": "an entry carries only the official fields",
+  "_expect": "unexpected property 'retry'",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "automation-guard"
+            ],
+            "retry": 3
+          }
+        ]
+      }
+    ]
+  }
+}

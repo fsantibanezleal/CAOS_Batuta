@@ -1,5 +1,0 @@
-{
-  "_why": "a C31 document is a registry or a hooks file",
-  "_expect": "not a hook registry",
-  "contract_version": "1.0"
-}

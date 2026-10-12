@@ -47,12 +47,12 @@
         },
         "brief": {
           "type": "string",
-          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
           "description": "Path of the brief, relative to the project."
         },
         "report": {
           "type": "string",
-          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
           "description": "Where the report is written, relative to the project."
         },
         "lane": {
@@ -84,7 +84,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+            "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
           }
         },
         "max_turns": {
@@ -153,11 +153,11 @@
         },
         "report": {
           "type": "string",
-          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
         },
         "patch": {
           "type": "string",
-          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
           "description": "A provider lane without tool use returns a patch the main session applies after the gates."
         },
         "provider": {

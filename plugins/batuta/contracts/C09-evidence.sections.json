@@ -57,8 +57,9 @@
           "fixed"
         ]
       },
-      "pattern": "^\\s*(?:[-*]\\s+)?Re-check:",
-      "message": "PASS-WITH-FIXES requires one 'Re-check:' line per fixed finding"
+      "pattern": "^\\s*(?:[-*]\\s+)?Re-check:\\s*{id}\\b",
+      "message": "PASS-WITH-FIXES requires one 'Re-check: <finding id>' line (outside a code block) per fixed finding",
+      "id_column": "Id"
     }
   ]
 }

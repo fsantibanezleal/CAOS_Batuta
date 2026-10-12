@@ -50,6 +50,9 @@
       ]
     }
   ],
+  "forbidden": [
+    "(?i)<fill\\b[^>]*>"
+  ],
   "line_rules": {
     "Deliverables": {
       "pattern": "^\\s*(?:[-*+]|\\d+[.)])?\\s*\\**\\s*D\\d+\\b",

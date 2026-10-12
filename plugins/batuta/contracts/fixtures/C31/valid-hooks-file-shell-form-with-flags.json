@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" doctor",
+            "timeout": 20,
+            "statusMessage": "checking the install"
+          }
+        ]
+      }
+    ]
+  }
+}

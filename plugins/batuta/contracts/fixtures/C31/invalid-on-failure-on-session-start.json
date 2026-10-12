@@ -1,0 +1,22 @@
+{
+  "_why": "SessionStart cannot block, so onFailure is refused there",
+  "_expect": "cannot block through onFailure",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "doctor"
+            ],
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

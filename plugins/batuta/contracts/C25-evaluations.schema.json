@@ -25,7 +25,8 @@
     },
     "verified_date": {
       "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "format": "date"
     },
     "ring": {
       "type": "string",
@@ -98,7 +99,8 @@
         },
         "verified": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
         },
         "license": {
           "type": "string",
@@ -109,7 +111,8 @@
           "properties": {
             "last_release": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "format": "date"
             },
             "maintainers": {
               "type": "integer",

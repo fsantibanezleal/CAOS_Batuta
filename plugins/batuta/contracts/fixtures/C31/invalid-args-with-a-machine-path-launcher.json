@@ -1,0 +1,21 @@
+{
+  "_why": "the launcher is the plugin-root placeholder, never a machine path",
+  "_expect": "args must contain the launcher",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "/opt/plugin/scripts/hook.py",
+              "report-check"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

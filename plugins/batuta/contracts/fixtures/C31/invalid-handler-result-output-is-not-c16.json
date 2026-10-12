@@ -1,0 +1,10 @@
+{
+  "_why": "the output is a C16 output object",
+  "_expect": "/output",
+  "contract_version": "1.0",
+  "exit_code": 0,
+  "output": {
+    "decision": "maybe",
+    "reason": "x"
+  }
+}

@@ -28,7 +28,7 @@
       "properties": {
         "path": {
           "type": "string",
-          "pattern": "^(?!\\./)(?!.*(^|/)\\.\\.?(/|$))(?!.*//)[^/\\\\:][^\\\\:]*$",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
           "description": "POSIX relative path of the locked test file: no leading slash or ./, no backslash, drive letter or .."
         },
         "sha256": {
