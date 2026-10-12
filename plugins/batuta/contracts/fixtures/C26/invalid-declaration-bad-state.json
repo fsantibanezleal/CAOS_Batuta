@@ -1,0 +1,27 @@
+{
+  "_why": "synthetic is the retired word for provider: state is one of the six exact values",
+  "_expect": "not in enum",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "can_be_absent": true,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        },
+        {
+          "state": "synthetic",
+          "adapter_returns": "what the adapter returns when synthetic",
+          "response_block": "block with state synthetic",
+          "ui_shows": "what the page shows when synthetic",
+          "test": "test_availability_synthetic"
+        }
+      ]
+    }
+  ]
+}

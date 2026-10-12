@@ -1,0 +1,64 @@
+{
+  "contract_id": "C09",
+  "contract_version": "1.0",
+  "front_matter": "required",
+  "sections": [
+    "Definition of done restated",
+    "Commands and output",
+    "Findings",
+    "Waivers requested"
+  ],
+  "tables": [
+    {
+      "name": "Findings",
+      "headers": [
+        "Id",
+        "Severity",
+        "Claim",
+        "Reproduction",
+        "Status"
+      ],
+      "row_def": "finding_row",
+      "min_rows": 0,
+      "section": "Findings"
+    }
+  ],
+  "rules": [
+    {
+      "type": "forbid_rows",
+      "when": {
+        "verdict": [
+          "PASS",
+          "PASS-WITH-FIXES"
+        ]
+      },
+      "table": "Findings",
+      "match": {
+        "Severity": [
+          "critical",
+          "major"
+        ],
+        "Status": [
+          "open"
+        ]
+      },
+      "message": "PASS and PASS-WITH-FIXES require no open critical or major finding"
+    },
+    {
+      "type": "lines_per_row",
+      "when": {
+        "verdict": [
+          "PASS-WITH-FIXES"
+        ]
+      },
+      "table": "Findings",
+      "match": {
+        "Status": [
+          "fixed"
+        ]
+      },
+      "pattern": "^\\s*(?:[-*]\\s+)?Re-check:",
+      "message": "PASS-WITH-FIXES requires one 'Re-check:' line per fixed finding"
+    }
+  ]
+}

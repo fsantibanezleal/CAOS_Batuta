@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C02",
+  "contract_version": "1.0",
+  "title": "Delegation brief",
+  "description": "A brief as `brief new` writes it (template tools/agents/brief-template.md): a title, metadata bullets under it (`- id: ...`, the keys lowercased, read before the first `##` heading), then the sections. The header is validated here; the sections file lists the required sections (case-insensitive, matched by title prefix like the delegation lint), which depend on the kind: implement, job and skeleton briefs carry the contract-first sections.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+-\\d{4}-\\d{2}-\\d{2}(-\\d+)?$"
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "searcher",
+        "runner",
+        "implementer",
+        "doc-writer",
+        "reviewer",
+        "general-purpose"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "implement",
+        "job",
+        "skeleton",
+        "docs",
+        "review",
+        "research",
+        "lookup",
+        "run"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "pattern": "^(haiku|sonnet|opus|fable)( .*)?$",
+      "description": "The model first, then why (an escalation says why)."
+    },
+    "working directory": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path of the worktree or checkout."
+    },
+    "write scope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "`read-only`, or the files and folders the agent may change (comma separated)."
+    },
+    "budget": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Expected size, for example about 30 turns; the agent stops and reports past it."
+    },
+    "report": {
+      "type": "string",
+      "pattern": "^([A-Za-z]:[\\\\/]|/).+$",
+      "description": "Absolute path of the report."
+    },
+    "sizing": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The product's sizing.md, for a product unit."
+    },
+    "serves": {
+      "type": "string",
+      "minLength": 1
+    },
+    "depends": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(C\\d{2}|[a-z0-9][a-z0-9-]*)$"
+      },
+      "description": "Catalog contract ids (or a Batuta contract id such as C02) this unit depends on."
+    }
+  },
+  "required": [
+    "id",
+    "agent",
+    "kind",
+    "model",
+    "working directory",
+    "write scope",
+    "budget",
+    "report"
+  ],
+  "additionalProperties": true
+}

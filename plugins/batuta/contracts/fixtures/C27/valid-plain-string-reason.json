@@ -1,0 +1,16 @@
+{
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "stale",
+      "reason": "last bake is 3 days old",
+      "missing": []
+    }
+  ]
+}

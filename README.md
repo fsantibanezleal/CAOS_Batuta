@@ -1,7 +1,9 @@
-# CAOS_AGENTIC_HARNESS
+# Batuta
 
-A public, device-agnostic harness that governs AI-assisted engineering with Claude Code. You pick the main
-session's model and reasoning; the harness governs everything else: who does each task, on which model, under
+The conductor's baton: one hand directing many players to one score.
+
+Batuta is a public, device-agnostic toolkit that governs AI-assisted engineering with Claude Code. You pick the main
+session's model and reasoning; Batuta governs everything else: who does each task, on which model, under
 which spec, with which tests, guards and gates, what loads into context, and how a device is set up. Only results
 that pass deterministic gates and an independent adversarial check are approved and promoted.
 
@@ -10,7 +12,7 @@ published to a registry.
 
 ## What it is
 
-The harness is built on a few principles, each with a gate that checks it (full text in
+Batuta is built on a few principles, each with a gate that checks it (full text in
 [ADR-0001](docs/decisions/ADR-0001-architecture.md)):
 
 1. Enforce on artifacts, not prompts: locked tests, hash-bound approvals and gate checkers decide.
@@ -23,16 +25,18 @@ The harness is built on a few principles, each with a gate that checks it (full 
 8. Dry run by default, honest exit codes, idempotent writes.
 
 It has two consumers: anyone, through a plugin, a one-command installer or a project template; and the
-maintainer's own setup, which sits as a private overlay on top of a pinned harness version.
+maintainer's own setup, which sits as a private overlay on top of a pinned Batuta version.
 
 ## What ships today
 
-Only the repository skeleton and the command dispatcher. The dispatcher discovers area modules and reports one
-that fails to load as a warning instead of crashing. Only the `version` area is implemented:
+The repository skeleton, the command dispatcher and two areas: `version`, and `contract` (the data contracts C01 to
+C32 in `plugins/batuta/contracts/`, with `contract lint`, `contract validate` and `contract graph`). The dispatcher
+discovers area modules and reports one that fails to load as a warning instead of crashing:
 
 ```
-python plugins/harness/scripts/harness.py version show      # prints 0.01.000
-node bin/harness.mjs version show                           # same, through the npx entry
+python plugins/batuta/scripts/batuta.py version show      # prints 0.01.000
+python plugins/batuta/scripts/batuta.py contract lint     # checks every contract and its fixtures
+node bin/batuta.mjs version show                           # same as the first, through the npx entry
 ```
 
 Every other area in the design (routing, briefs, reports, specs, test locks, gates, context, device, guards,
@@ -44,8 +48,8 @@ All install channels are planned and not yet available:
 
 | Channel | Status |
 |---|---|
-| Claude Code plugin marketplace (`.claude-plugin/marketplace.json`, plugin `harness`) | planned, not yet available |
-| `npx github:fsantibanezleal/CAOS_AGENTIC_HARNESS#<tag> <command>` | planned, not yet available |
+| Claude Code plugin marketplace (`.claude-plugin/marketplace.json`, plugin `batuta`) | planned, not yet available |
+| `npx github:fsantibanezleal/CAOS_Batuta#<tag> <command>` | planned, not yet available |
 | GitHub and copier project template | planned, not yet available |
 
 The manifests and the npx entry exist in this repository so that the channels can be tested, but no release has
@@ -54,18 +58,21 @@ been cut and no channel is supported.
 ## Layout
 
 ```
-.claude-plugin/marketplace.json   marketplace listing for the plugin "harness"
-plugins/harness/                  the plugin
+.claude-plugin/marketplace.json   marketplace listing for the plugin "batuta"
+plugins/batuta/                  the plugin
   .claude-plugin/plugin.json      plugin manifest (semver form of VERSION)
-  scripts/harness.py              single CLI entry, stdlib Python 3.10+
-  scripts/harness_lib/areas/      one module per command area, discovered at start
-bin/harness.mjs                   npx entry (Node 18+, no dependencies); runs harness.py
+  scripts/batuta.py              single CLI entry, stdlib Python 3.10+
+  scripts/batuta_lib/areas/      one module per command area, discovered at start
+  scripts/batuta_lib/            shared helpers: config (batuta.json), output (tag lines, C20), contract validator
+  contracts/                     data contracts C01 to C32 with fixtures
+bin/batuta.mjs                   npx entry (Node 18+, no dependencies); runs batuta.py
 scripts/                          repository maintenance scripts (content standards check)
 docs/                             wiki: concepts, guides, reference, decisions
 tests/                            unit tests (stdlib unittest)
 ```
 
-Planned, not present yet: `plugins/harness/agents/`, `skills/`, `hooks/`, `templates/`, `contracts/`.
+Planned, not present yet: `plugins/batuta/agents/`, `skills/`, `hooks/`, `templates/`. The data contracts are in
+`plugins/batuta/contracts/`.
 
 ## Develop and test
 

@@ -1,0 +1,20 @@
+{
+  "_why": "an ADR hash is 64 lowercase hex characters",
+  "_expect": "/adrs_sha256",
+  "contract_version": "1.0",
+  "spec_id": "001-example",
+  "spec_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts_sha256": {
+    "contracts/C01-batuta-config.schema.json": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "named_tests_sha256": {
+    "tests/test_x.py": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "adrs_sha256": {
+    "docs/decisions/ADR-0001.md": "xyz"
+  },
+  "approved_by": "alex",
+  "prompt_excerpt": "approve spec 001",
+  "approved_at": "2026-10-11T12:00:00-03:00",
+  "tool_version": "0.01.000"
+}

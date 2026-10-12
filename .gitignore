@@ -22,5 +22,5 @@ desktop.ini
 .idea/
 .vscode/
 
-# Harness local state (per device, never committed)
-.harness/local/
+# Batuta local state (per device, never committed)
+.batuta/local/

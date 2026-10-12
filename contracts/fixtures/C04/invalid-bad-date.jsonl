@@ -1,3 +1,0 @@
-# why: accepted_at is YYYY-MM-DD
-# expect: /accepted_at
-{"contract_version": "1.0", "id": "u0-data-contracts-2026-10-11", "agent": "implementer", "model": "sonnet", "kind": "implement", "brief": ".harness/delegation/u0.brief.md", "report": "reports/u0.md", "status": "accepted", "accepted_by": "main", "accepted_at": "11/10/2026", "notes": "checked"}

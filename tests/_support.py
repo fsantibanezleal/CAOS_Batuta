@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "plugins" / "harness" / "scripts"
+SCRIPTS = ROOT / "plugins" / "batuta" / "scripts"
 
 
 def load_module(name: str, path: Path):
@@ -18,11 +18,11 @@ def load_module(name: str, path: Path):
     return module
 
 
-def load_harness():
+def load_batuta():
     """Import the dispatcher module with its folder on sys.path, as the CLI does."""
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
-    return load_module("harness_cli_under_test", SCRIPTS / "harness.py")
+    return load_module("batuta_cli_under_test", SCRIPTS / "batuta.py")
 
 
 def display_to_semver(display: str) -> str:

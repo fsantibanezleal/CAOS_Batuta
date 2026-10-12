@@ -1,7 +1,0 @@
-{
-  "session_id": "sess-0001",
-  "cwd": "work/project",
-  "transcript_path": "transcripts/s1.jsonl",
-  "hook_event_name": "UserPromptSubmit",
-  "prompt": "approve spec 001"
-}

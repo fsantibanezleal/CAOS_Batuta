@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C27",
+  "contract_version": "1.0",
+  "title": "Readiness",
+  "description": "What is real in a build, per catalog row (ADR-0080 decision 4): the readiness document the walking skeleton shows. A pure function of the repository: the product version and the SHA-256 of the catalog identify it, no timestamp. It is a product-owned document identified by `schema` (<product>.readiness/v<N>), so it carries no `contract_version`; the product template's readiness document validates unchanged. Closed: unknown keys are refused. The rules the state implies (reason, provenance, missing) are semantic checks.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+\\.readiness/v\\d+$"
+    },
+    "product_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "catalog_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "product_version",
+    "catalog_sha256",
+    "contracts"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "The catalog row id."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "The catalog row's contract version (semver)."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "real",
+            "active",
+            "stub",
+            "simulator",
+            "fixture",
+            "baseline"
+          ],
+          "description": "real once the real producer serves the row; active (the catalog's word) or the provider kind while a provider does."
+        },
+        "provenance": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "real",
+            "stub",
+            "simulator",
+            "fixture",
+            "baseline",
+            null
+          ],
+          "description": "What actually served the row in this build; null when nothing did (state missing)."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "available",
+            "partial",
+            "stale",
+            "provider",
+            "training",
+            "missing"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ],
+          "description": "A reason: a non-blank string, or an object with a non-blank 'en' (bilingual products add 'es'); null only when available."
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "For partial: what is absent. Empty otherwise."
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "status",
+        "provenance",
+        "state",
+        "reason",
+        "missing"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C30",
+  "contract_version": "1.0",
+  "title": "Dispatch request and result",
+  "description": "The boundary between the dispatcher and a lane (plan section 3.5): a brief (C02) is provider-neutral, a request says where and within which limits it runs, a result says how it ended. One file shape, discriminated by `kind` (request or result). Credentials are never carried: a request names environment variables, never values.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "request",
+        "result"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "kind"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "lane": {
+      "type": "string",
+      "pattern": "^(subagent|sdk|provider:[a-z0-9][a-z0-9-]*)$",
+      "description": "subagent, sdk, or provider:<name>."
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "kind": {
+          "type": "string",
+          "const": "request"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-\\d{4}-\\d{2}-\\d{2}(-\\d+)?$",
+          "description": "The brief id."
+        },
+        "brief": {
+          "type": "string",
+          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "description": "Path of the brief, relative to the project."
+        },
+        "report": {
+          "type": "string",
+          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "description": "Where the report is written, relative to the project."
+        },
+        "lane": {
+          "$ref": "#/$defs/lane"
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Required by a provider:<name> lane: the same <name>."
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        },
+        "write_scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+          }
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "credential_env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Name of the environment variable holding the credential, never its value."
+        }
+      },
+      "required": [
+        "contract_version",
+        "kind",
+        "run_id",
+        "brief",
+        "report",
+        "lane",
+        "role",
+        "model",
+        "write_scope",
+        "max_turns",
+        "timeout_s"
+      ],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "kind": {
+          "type": "string",
+          "const": "result"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-\\d{4}-\\d{2}-\\d{2}(-\\d+)?$"
+        },
+        "lane": {
+          "$ref": "#/$defs/lane"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "defective",
+            "error",
+            "timeout",
+            "over-budget",
+            "pending"
+          ],
+          "description": "complete, incomplete and defective are check_report's verdicts on the report; the others say the run did not produce one."
+        },
+        "report": {
+          "type": "string",
+          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+        },
+        "patch": {
+          "type": "string",
+          "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$",
+          "description": "A provider lane without tool use returns a patch the main session applies after the gates."
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What happened, for error, timeout and over-budget."
+        }
+      },
+      "required": [
+        "contract_version",
+        "kind",
+        "run_id",
+        "lane",
+        "status",
+        "provider",
+        "model"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

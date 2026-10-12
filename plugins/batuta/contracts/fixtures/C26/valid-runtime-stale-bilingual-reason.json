@@ -1,0 +1,9 @@
+{
+  "state": "stale",
+  "reason": {
+    "en": "cached snapshot",
+    "es": "copia en cache"
+  },
+  "source": "cached snapshot 2026-10-01",
+  "age": "P10D"
+}

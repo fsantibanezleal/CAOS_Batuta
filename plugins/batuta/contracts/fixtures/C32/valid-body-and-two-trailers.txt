@@ -1,0 +1,6 @@
+[red] T-002 add the API contract tests
+
+The tests cover the empty list and the page-size limit.
+
+Refs: #12
+Test-Change-Approved: CR-004

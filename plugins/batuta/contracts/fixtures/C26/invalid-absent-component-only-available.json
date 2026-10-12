@@ -1,0 +1,45 @@
+{
+  "_why": "an absent component declares available and a non-available state, each with a test",
+  "_expect": "non-available",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "can_be_absent": true,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        }
+      ]
+    },
+    {
+      "id": "grade-model",
+      "can_be_absent": true,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        },
+        {
+          "state": "training",
+          "adapter_returns": "what the adapter returns when training",
+          "response_block": "block with state training",
+          "ui_shows": "what the page shows when training",
+          "test": "test_availability_training"
+        }
+      ]
+    },
+    {
+      "id": "plain-library",
+      "can_be_absent": false,
+      "states": []
+    }
+  ]
+}

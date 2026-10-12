@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C04",
+  "contract_version": "1.0",
+  "title": "Delegation ledger line",
+  "description": "One object per line of .batuta/delegation/ledger.jsonl; lines starting with # are comments. It records the run of a brief: who, on which model, the brief and report paths, the status (the delegation tool's drafted, pending, complete, incomplete and defective, plus launched, accepted, superseded and lost), and for the dispatch lanes the provider, tokens and cost (C30). The CAOS ledger.md table (ID, Agent, Model, Brief, Report, Status, Accepted) maps onto it: Accepted `yes` is accepted_by. An accepted row names who and when; a superseded row names its replacement.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "implement",
+        "job",
+        "skeleton",
+        "docs",
+        "review",
+        "research",
+        "lookup",
+        "run"
+      ]
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1
+    },
+    "report": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "drafted",
+        "pending",
+        "launched",
+        "complete",
+        "incomplete",
+        "defective",
+        "accepted",
+        "superseded",
+        "lost"
+      ]
+    },
+    "accepted_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted_at": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "superseded_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string"
+    },
+    "lane": {
+      "type": "string",
+      "pattern": "^(subagent|sdk|provider:[a-z0-9][a-z0-9-]*)$"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The provider that answered (a key of dispatch.providers, or anthropic)."
+    },
+    "tokens_in": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_out": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "contract_version",
+    "id",
+    "agent",
+    "model",
+    "kind",
+    "brief",
+    "report",
+    "status"
+  ],
+  "additionalProperties": false
+}

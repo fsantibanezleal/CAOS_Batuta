@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C01",
+  "contract_version": "1.0",
+  "title": "Batuta configuration",
+  "description": "batuta.json: roots, roles (model and effort per role), caps, gates, context budgets.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "roots": {
+      "type": "object",
+      "properties": {
+        "temp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worktrees": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "temp",
+        "data",
+        "worktrees"
+      ],
+      "additionalProperties": true
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/role"
+      }
+    },
+    "caps": {
+      "type": "object",
+      "properties": {
+        "max_concurrent_agents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_agents_per_task": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_opus_reviews_per_task": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "spawn_depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_cost_usd_per_task": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Budget cap per task in US dollars for the dispatch lanes that bill (sdk, provider)."
+        }
+      },
+      "required": [
+        "max_concurrent_agents",
+        "max_agents_per_task",
+        "max_opus_reviews_per_task",
+        "spawn_depth"
+      ],
+      "additionalProperties": true
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "critical": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "L0-understand",
+              "L1-size",
+              "L2-decide",
+              "L3-contracts",
+              "L4-boundaries",
+              "L5-freeze",
+              "L6-skeleton",
+              "L7-build",
+              "L8-integrate",
+              "L9-promote",
+              "L10-lessons"
+            ]
+          },
+          "description": "Gates that use the critical (reviewer) model. Default: L2-decide, L5-freeze, L9-promote."
+        },
+        "adversary_model_critical": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        },
+        "adversary_model_routine": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        },
+        "critical_units": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "description": "Unit ids marked critical: their L7-build gate is critical too."
+        }
+      },
+      "required": [
+        "critical",
+        "adversary_model_critical",
+        "adversary_model_routine"
+      ],
+      "additionalProperties": true
+    },
+    "coordination_root": {
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+    },
+    "knowledge_manifest": {
+      "type": "string",
+      "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+    },
+    "budgets": {
+      "type": "object",
+      "properties": {
+        "user_core_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "project_core_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unscoped_rules_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_index_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_index_lines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "user_core_bytes",
+        "project_core_bytes",
+        "unscoped_rules_bytes",
+        "memory_index_bytes",
+        "memory_index_lines"
+      ],
+      "additionalProperties": true
+    },
+    "dispatch": {
+      "type": "object",
+      "properties": {
+        "default_lane": {
+          "$ref": "#/$defs/lane"
+        },
+        "lanes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lane"
+          },
+          "minItems": 1
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/provider"
+          }
+        }
+      },
+      "required": [
+        "default_lane",
+        "lanes"
+      ],
+      "additionalProperties": true,
+      "description": "Where a brief runs (C30). Providers map a name to environment variable NAMES, never to values."
+    }
+  },
+  "required": [
+    "contract_version",
+    "roots",
+    "roles",
+    "caps",
+    "gates",
+    "budgets"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "role": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "enum": [
+            "haiku",
+            "sonnet",
+            "opus",
+            "fable",
+            "inherit"
+          ]
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        },
+        "omit_claude_md": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model",
+        "effort"
+      ],
+      "additionalProperties": true
+    },
+    "lane": {
+      "type": "string",
+      "pattern": "^(subagent|sdk|provider:[a-z0-9][a-z0-9-]*)$",
+      "description": "subagent, sdk, or provider:<name> with <name> a key of dispatch.providers."
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openai-compatible",
+            "gemini",
+            "bedrock",
+            "vertex"
+          ]
+        },
+        "credential_env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Name of the environment variable that holds the credential, never the credential."
+        },
+        "endpoint_env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Name of the environment variable that holds the endpoint URL."
+        }
+      },
+      "required": [
+        "kind",
+        "credential_env"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

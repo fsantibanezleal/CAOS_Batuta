@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C22",
+  "contract_version": "1.0",
+  "title": "Contract catalog",
+  "description": "One row of docs/contracts/catalog.md (phase 2 of the contract-first method; template tools/agents/contracts-template.md). Columns, in the template's order: id, version (semver), owner, schema file, example, producer test, consumer test, missing-data behavior, provider (kind:path), model io, swap test, status (active or real). The optional trailing column `frozen` (yes or no) records the freeze: a contract is frozen when its row says yes. `model io`, `status` and `frozen` may be absent as columns. Column names match case-insensitively; extra columns are allowed.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the contract, for example 1.0.0."
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema file": {
+      "type": "string",
+      "minLength": 1
+    },
+    "example": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer test": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "`path` or `path::test_name`."
+      }
+    },
+    "consumer test": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "`path` or `path::test_name`."
+      }
+    },
+    "missing-data behavior": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^(stub|simulator|fixture|baseline):\\S+( \\((active|real)\\))?$",
+      "description": "kind:path with kind stub, simulator, fixture or baseline."
+    },
+    "model io": {
+      "type": "string",
+      "minLength": 1,
+      "description": "For a model slot: `in: ..., out: ...`; `-` for any other contract."
+    },
+    "swap test": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "`path` or `path::test_name`."
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "real"
+      ]
+    },
+    "frozen": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "owner",
+    "schema file",
+    "example",
+    "producer test",
+    "consumer test",
+    "missing-data behavior",
+    "provider",
+    "swap test"
+  ],
+  "additionalProperties": true
+}

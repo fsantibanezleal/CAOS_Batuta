@@ -1,0 +1,102 @@
+{
+  "_why": "a fail-open handler always exits 0",
+  "_expect": "a fail-open handler always exits 0",
+  "contract_version": "1.0",
+  "handlers": [
+    {
+      "id": "doctor",
+      "event": "SessionStart",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "doctor"
+      ],
+      "timeout_s": 2,
+      "failure": "fail-open",
+      "stdout": "sessionstart",
+      "exit_codes": {
+        "0": "ok",
+        "2": "block"
+      }
+    },
+    {
+      "id": "guard-automation",
+      "event": "PreToolUse",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "guard-automation"
+      ],
+      "timeout_s": 5,
+      "failure": "fail-closed",
+      "stdout": "pretooluse",
+      "exit_codes": {
+        "0": "allow, or a permissionDecision on stdout",
+        "2": "block; stderr is shown to the model"
+      },
+      "matcher": "Bash"
+    },
+    {
+      "id": "guard-locked-tests",
+      "event": "PreToolUse",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "guard-locked-tests"
+      ],
+      "timeout_s": 5,
+      "failure": "fail-closed",
+      "stdout": "pretooluse",
+      "exit_codes": {
+        "0": "allow",
+        "2": "block; stderr names the test-change request file"
+      },
+      "matcher": "Write|Edit|MultiEdit"
+    },
+    {
+      "id": "report-check",
+      "event": "SubagentStop",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "report-check"
+      ],
+      "timeout_s": 30,
+      "failure": "fail-open",
+      "stdout": "block",
+      "exit_codes": {
+        "0": "ok, or the decision is on stdout"
+      }
+    },
+    {
+      "id": "approval-capture",
+      "event": "UserPromptSubmit",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "approval-capture"
+      ],
+      "timeout_s": 3,
+      "failure": "fail-open",
+      "stdout": "none",
+      "exit_codes": {
+        "0": "ok, or the decision is on stdout"
+      }
+    },
+    {
+      "id": "gate-stop",
+      "event": "Stop",
+      "argv": [
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+        "gate-stop"
+      ],
+      "timeout_s": 10,
+      "failure": "fail-open",
+      "stdout": "block",
+      "exit_codes": {
+        "0": "ok, or the decision is on stdout"
+      }
+    }
+  ]
+}

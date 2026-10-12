@@ -1,0 +1,3 @@
+[red] T-001 lock the failing tests for the ingest unit
+
+Adds tests/pipeline/test_ingest.py; they fail with ImportError until T-002 lands.

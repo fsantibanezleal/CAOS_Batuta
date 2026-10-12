@@ -2,7 +2,7 @@
 """Fail the build if tracked text content carries an em-dash, an emoji or an absolute user path.
 
 Adapted from CAOS_PRODUCT_TEMPLATE `scripts/check_content_standards.py` (ADR-0067: no em-dash, no emoji),
-with one more rule for this harness: no shipped file may contain a machine path (design principle 6, DEV-1).
+with one more rule for this batuta: no shipped file may contain a machine path (design principle 6, DEV-1).
 
 What it flags:
   - em-dash U+2014 and horizontal bar U+2015;

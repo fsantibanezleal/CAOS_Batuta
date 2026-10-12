@@ -1,12 +1,12 @@
-"""Front matter parser, sections and tables (harness_lib.frontmatter)."""
+"""Front matter parser, sections and tables (batuta_lib.frontmatter)."""
 import pathlib
 import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "plugins" / "harness" / "scripts"))
+sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
-from harness_lib import frontmatter as fmx  # noqa: E402
+from batuta_lib import frontmatter as fmx  # noqa: E402
 
 
 def doc(*lines):
@@ -57,6 +57,26 @@ class ParseLists(unittest.TestCase):
     def test_nested_map(self):
         meta, _ = fmx.parse(doc("---", "gates:", "  P0-research: passed", "  P3-red: pending", "n: 1", "---"))
         self.assertEqual(meta, {"gates": {"P0-research": "passed", "P3-red": "pending"}, "n": 1})
+
+    def test_inline_map_as_a_key_value(self):
+        meta, _ = fmx.parse(doc("---", "size: {class: M, functions: 12, basis: \"a, b\"}", "---"))
+        self.assertEqual(meta["size"], {"class": "M", "functions": 12, "basis": "a, b"})
+
+    def test_inline_map_items_may_hold_inline_lists_of_scalars(self):
+        meta, _ = fmx.parse(doc("---", "u:", "  - {id: u-api, consumes: [a, b], wave: null}", "  - {id: u-db, consumes: [], wave: 2}", "---"))
+        self.assertEqual(meta["u"], [{"id": "u-api", "consumes": ["a", "b"], "wave": None}, {"id": "u-db", "consumes": [], "wave": 2}])
+
+    def test_one_level_map_and_inline_map_list_in_the_same_front_matter(self):
+        meta, _ = fmx.parse(doc("---", "gates:", "  P3-red: passed", "  P4-green: pending", "waivers:",
+                                "  - {gate: P3-red, reason: x, by: me, date: 2026-10-11}", "---"))
+        self.assertEqual(meta["gates"], {"P3-red": "passed", "P4-green": "pending"})
+        self.assertEqual(meta["waivers"][0]["gate"], "P3-red")
+
+    def test_maps_parse_the_same_with_crlf(self):
+        lf = doc("---", "gates:", "  a: 1", "  b: two", "w:", "  - {k: v, n: 2}", "---", "body")
+        crlf = lf.replace(chr(10), chr(13) + chr(10))
+        self.assertIn(chr(13), crlf)
+        self.assertEqual(fmx.parse(crlf)[0], fmx.parse(lf)[0])
 
 
 class ParseStructure(unittest.TestCase):
@@ -117,6 +137,30 @@ class ParseErrors(unittest.TestCase):
 
     def test_indented_line_without_parent(self):
         self.assertErr(doc("---", "  - x", "---"), "indented", 2)
+
+    def test_a_map_two_levels_deep_is_refused_not_misparsed(self):
+        self.assertErr(doc("---", "a:", "  b:", "    c: 1", "---"), "deeper than one level", 4)
+
+    def test_a_map_inside_a_block_map_value_is_refused(self):
+        self.assertErr(doc("---", "a:", "  b: {c: 1}", "---"), "deeper than one level", 3)
+
+    def test_an_inline_map_inside_an_inline_map_is_refused(self):
+        self.assertErr(doc("---", "a: {b: {c: 1}}", "---"), "deeper than one level", 2)
+
+    def test_an_inline_map_inside_a_list_item_map_is_refused(self):
+        self.assertErr(doc("---", "a:", "  - {b: {c: 1}}", "---"), "deeper than one level", 3)
+
+    def test_an_inline_list_inside_an_inline_list_is_refused(self):
+        self.assertErr(doc("---", "a: [[1, 2], [3]]", "---"), "deeper than one level", 2)
+
+    def test_a_map_in_an_inline_list_is_refused(self):
+        self.assertErr(doc("---", "a: [{b: 1}]", "---"), "deeper than one level", 2)
+
+    def test_a_list_item_that_is_a_list_is_refused(self):
+        self.assertErr(doc("---", "a:", "  - [1, 2]", "---"), "deeper than one level", 3)
+
+    def test_a_duplicate_key_in_an_inline_map_is_refused(self):
+        self.assertErr(doc("---", "a: {b: 1, b: 2}", "---"), "duplicate key 'b'", 2)
 
     def test_line_numbers_count_leading_comments(self):
         self.assertErr(doc("<!-- c -->", "---", "oops", "---"), "key: value", 3)

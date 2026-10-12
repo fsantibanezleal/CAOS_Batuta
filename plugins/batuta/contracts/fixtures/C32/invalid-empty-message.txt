@@ -1,0 +1,3 @@
+# why: a commit has a message
+# expect: the commit message is empty
+# nothing else

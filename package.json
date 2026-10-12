@@ -1,25 +1,25 @@
 {
-  "name": "caos-agentic-harness",
+  "name": "caos-batuta",
   "version": "0.1.0",
-  "description": "A public, device-agnostic harness that governs AI-assisted engineering with Claude Code: routing, specs, tests, gates and context.",
+  "description": "A public, device-agnostic toolkit that governs AI-assisted engineering with Claude Code: routing, specs, tests, gates and context.",
   "license": "Apache-2.0",
   "author": "Felipe A. Santibanez-Leal",
-  "homepage": "https://github.com/fsantibanezleal/CAOS_AGENTIC_HARNESS",
+  "homepage": "https://github.com/fsantibanezleal/CAOS_Batuta",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fsantibanezleal/CAOS_AGENTIC_HARNESS.git"
+    "url": "git+https://github.com/fsantibanezleal/CAOS_Batuta.git"
   },
   "type": "module",
   "bin": {
-    "harness": "bin/harness.mjs"
+    "batuta": "bin/batuta.mjs"
   },
   "engines": {
     "node": ">=18"
   },
   "files": [
     "bin",
-    "plugins/harness/scripts",
-    "plugins/harness/.claude-plugin",
+    "plugins/batuta/scripts",
+    "plugins/batuta/.claude-plugin",
     "VERSION",
     "LICENSE"
   ],

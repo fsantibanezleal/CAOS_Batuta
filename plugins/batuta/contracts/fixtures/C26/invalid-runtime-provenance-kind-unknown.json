@@ -1,0 +1,9 @@
+{
+  "_why": "the provenance kind is real, stub, simulator, fixture or baseline",
+  "_expect": "/provenance",
+  "state": "provider",
+  "reason": "sensor feed not connected yet",
+  "source": "provider fixture sensors-0001",
+  "age": "PT0S",
+  "provenance": "mock"
+}

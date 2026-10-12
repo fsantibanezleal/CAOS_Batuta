@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C20",
+  "contract_version": "1.0",
+  "title": "CLI machine output",
+  "description": "The object printed by every batuta area verb with --json.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "tool": {
+      "const": "batuta"
+    },
+    "area": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verb": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "NEW",
+              "CHANGED",
+              "SAME",
+              "MERGED",
+              "REMOVED",
+              "MISSING",
+              "DIFFERENT",
+              "REFUSED",
+              "WARN",
+              "FAIL"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "tag",
+          "message"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "tool",
+    "area",
+    "verb",
+    "exit_code",
+    "items",
+    "summary"
+  ],
+  "additionalProperties": true
+}

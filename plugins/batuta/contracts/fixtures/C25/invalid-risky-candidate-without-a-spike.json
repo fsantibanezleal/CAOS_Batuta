@@ -1,0 +1,52 @@
+{
+  "_why": "a risky candidate carries a spike",
+  "_expect": "a risky candidate carries a spike",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "0.115.2",
+  "primary_source_url": "https://fastapi.tiangolo.com/",
+  "verified_date": "2026-10-12",
+  "evaluation": {
+    "concern": "HTTP API framework",
+    "chosen": "FastAPI",
+    "candidates": [
+      {
+        "name": "FastAPI",
+        "version": "0.115.2",
+        "source_url": "https://fastapi.tiangolo.com/",
+        "verified": "2026-10-12",
+        "license": "MIT",
+        "maturity": {
+          "last_release": "2026-09-30",
+          "maintainers": 3,
+          "stars": 80000
+        },
+        "maintenance": "monthly releases, three active maintainers",
+        "size": "about 40 transitive dependencies",
+        "fit": "typed request and response models match the catalog schemas",
+        "risks": [
+          "pydantic major upgrades"
+        ]
+      },
+      {
+        "name": "Litestar",
+        "version": "2.12.1",
+        "source_url": "https://litestar.dev/",
+        "verified": "2026-10-12",
+        "license": "MIT",
+        "maturity": {
+          "last_release": "2026-09-30",
+          "maintainers": 3,
+          "stars": 80000
+        },
+        "maintenance": "monthly releases, three active maintainers",
+        "size": "about 40 transitive dependencies",
+        "fit": "typed request and response models match the catalog schemas",
+        "risks": [
+          "small maintainer pool"
+        ],
+        "risky": true
+      }
+    ]
+  }
+}

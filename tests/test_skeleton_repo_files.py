@@ -33,7 +33,7 @@ class RootFileTests(unittest.TestCase):
 
     def test_gitignore_covers_python_node_os_and_local_state(self):
         text = read(".gitignore")
-        for needle in ("__pycache__/", "node_modules/", ".DS_Store", "Thumbs.db", ".harness/local/"):
+        for needle in ("__pycache__/", "node_modules/", ".DS_Store", "Thumbs.db", ".batuta/local/"):
             self.assertIn(needle, text)
 
     def test_security_and_conduct_name_a_private_channel(self):
@@ -62,12 +62,13 @@ class ReadmeHonestyTests(unittest.TestCase):
         self.assertNotRegex(self.text, r"img\.shields\.io/badge/")
 
     def test_describes_layout(self):
-        for needle in ("plugins/harness", "bin/harness.mjs", "harness.py", "docs/"):
+        for needle in ("plugins/batuta", "bin/batuta.mjs", "batuta.py", "docs/"):
             self.assertIn(needle, self.text)
 
     def test_does_not_claim_unshipped_areas_as_available(self):
-        # Only `version` ships in U1; every other area must be listed as planned.
-        self.assertRegex(self.text, r"(?i)only the `version` area")
+        # `version` and `contract` ship; every other area must be listed as planned.
+        self.assertRegex(self.text, r"(?i)two areas: `version`, and `contract`")
+        self.assertRegex(self.text, r"(?i)is planned and is not available yet")
 
 
 class DocsSkeletonTests(unittest.TestCase):
@@ -81,7 +82,7 @@ class DocsSkeletonTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^status: Accepted$")
         self.assertRegex(text, r"(?m)^date: 2026-10-11$")
         self.assertIn("Enforce on artifacts, not prompts", text)
-        self.assertIn("plugins/harness/", text)
+        self.assertIn("plugins/harness/", text)  # ADR-0001 is history: it keeps the pre-rename layout
         self.assertIn("Principles", text)
         self.assertIn("Architecture", text)
 

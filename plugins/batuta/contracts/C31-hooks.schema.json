@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C31",
+  "contract_version": "1.0",
+  "title": "Hook registration and launcher invocation",
+  "description": "Two documents of one boundary. The registry (`handlers`, written by the guards unit) declares every hook handler: its event, matcher, the launcher argv, the timeout, whether an internal error fails open or closed, what it writes to stdout and which exit codes it uses. `hooks/hooks.json` (`hooks`, rendered from the registry by the distribution unit) is the file Claude Code reads. Every command runs through the one launcher scripts/hook.py with the handler id as its argument. The stdin payload of a handler is the C16 input of its event; its stdout is a C16 output (block, pretooluse or sessionstart) or nothing.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "handlers": {
+      "type": "array"
+    },
+    "hooks": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "registry": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "handlers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/handler"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "handlers"
+      ],
+      "additionalProperties": false
+    },
+    "handler": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "event": {
+          "type": "string",
+          "enum": [
+            "SessionStart",
+            "PreToolUse",
+            "SubagentStop",
+            "UserPromptSubmit",
+            "Stop"
+          ]
+        },
+        "matcher": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "[interpreter, ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py, handler id]."
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "failure": {
+          "type": "string",
+          "enum": [
+            "fail-open",
+            "fail-closed"
+          ],
+          "description": "fail-open: an internal error is logged and the launcher exits 0 (quality hooks). fail-closed: the handler blocks when it cannot decide (security guards)."
+        },
+        "stdout": {
+          "type": "string",
+          "enum": [
+            "none",
+            "block",
+            "pretooluse",
+            "sessionstart"
+          ],
+          "description": "The C16 output the handler writes: none, output_block, output_pretooluse or output_sessionstart."
+        },
+        "exit_codes": {
+          "type": "object",
+          "properties": {
+            "0": {
+              "type": "string",
+              "minLength": 1
+            },
+            "2": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "0"
+          ],
+          "additionalProperties": false,
+          "description": "Exit code to meaning. 0 always; 2 (block, stderr shown to the model) only for a fail-closed handler."
+        }
+      },
+      "required": [
+        "id",
+        "event",
+        "argv",
+        "timeout_s",
+        "failure",
+        "stdout",
+        "exit_codes"
+      ],
+      "additionalProperties": false
+    },
+    "hooks_file": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "hooks": {
+          "type": "object",
+          "properties": {
+            "SessionStart": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/group"
+              }
+            },
+            "PreToolUse": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/group"
+              }
+            },
+            "SubagentStop": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/group"
+              }
+            },
+            "UserPromptSubmit": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/group"
+              }
+            },
+            "Stop": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/group"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "hooks"
+      ],
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "matcher": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Tool name or alternatives (Bash, Write|Edit); only PreToolUse groups have one."
+        },
+        "hooks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "command"
+              },
+              "command": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+ \"?\\$\\{CLAUDE_PLUGIN_ROOT\\}/scripts/hook\\.py\"? [a-z][a-z0-9-]*$",
+                "description": "`<interpreter> \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <handler id>`: the one launcher, never a machine path."
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 600
+              }
+            },
+            "required": [
+              "type",
+              "command"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "hooks"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

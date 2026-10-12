@@ -1,8 +1,0 @@
-{
-  "_why": "only the five modelled events are accepted",
-  "_expect": "unsupported hook event",
-  "session_id": "sess-0001",
-  "cwd": "work/project",
-  "transcript_path": "transcripts/s1.jsonl",
-  "hook_event_name": "PreCompact"
-}

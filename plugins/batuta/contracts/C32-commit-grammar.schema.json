@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C32",
+  "contract_version": "1.0",
+  "title": "TDD commit grammar",
+  "description": "The commit messages the test-first protocol reads (TDD-3, TDD-4). The subject is `[red] T-NNN <title>`, `[green] T-NNN <title>` or `[refactor] T-NNN <title>` (at most 72 characters); a blank line follows; the body is free text; the last paragraph may be git trailers, among them `Test-Change-Approved: <change request id>`, the only override of a locked test. Lines starting with # are git comments and are ignored. The artifact is the plain-text message (.txt); this schema validates its parsed form (subject and trailers), and the grammar rules the parse needs (blank line, one trailer per key, trailer placement) are semantic.",
+  "type": "object",
+  "properties": {
+    "subject": {
+      "type": "string",
+      "pattern": "^\\[(red|green|refactor)\\] T-\\d{3} \\S.*$",
+      "maxLength": 72
+    },
+    "trailers": {
+      "type": "object",
+      "properties": {
+        "Test-Change-Approved": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+          "description": "The id of the approved change request (specs/<feature>/test-change-requests.md)."
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "subject",
+    "trailers"
+  ],
+  "additionalProperties": true
+}

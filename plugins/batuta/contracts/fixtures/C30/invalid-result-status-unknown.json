@@ -1,0 +1,12 @@
+{
+  "_why": "the status is one of the dispatch statuses",
+  "_expect": "/status",
+  "contract_version": "1.0",
+  "kind": "result",
+  "run_id": "ingest-api-2026-10-12",
+  "lane": "subagent",
+  "status": "ok",
+  "report": "wip/alerts/ingest-api-2026-10-12.md",
+  "provider": "anthropic",
+  "model": "sonnet"
+}

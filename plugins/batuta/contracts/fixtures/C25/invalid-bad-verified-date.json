@@ -1,0 +1,9 @@
+{
+  "_why": "the verified date is YYYY-MM-DD",
+  "_expect": "/verified_date",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "0.115.2",
+  "primary_source_url": "https://fastapi.tiangolo.com/",
+  "verified_date": "12/10/2026"
+}

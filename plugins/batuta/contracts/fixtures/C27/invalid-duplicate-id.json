@@ -1,0 +1,27 @@
+{
+  "_why": "an id appears once",
+  "_expect": "duplicate id",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "available",
+      "reason": null,
+      "missing": []
+    },
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "available",
+      "reason": null,
+      "missing": []
+    }
+  ]
+}

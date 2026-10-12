@@ -1,0 +1,147 @@
+{
+  "contract_id": "C02",
+  "contract_version": "1.0",
+  "front_matter": "bullets",
+  "case_insensitive_titles": true,
+  "coerce": {
+    "depends": "list"
+  },
+  "required_sections": [
+    "goal",
+    "context and background",
+    "out of scope",
+    "checks",
+    "deliverables"
+  ],
+  "required_sections_when": [
+    {
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton",
+          "docs"
+        ]
+      },
+      "sections": [
+        "definitions",
+        "spec"
+      ]
+    },
+    {
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton"
+        ]
+      },
+      "sections": [
+        "adr constraints",
+        "sizing reference",
+        "contracts",
+        "invariants and edge cases",
+        "missing-data behavior",
+        "environment and limits",
+        "owner prerequisites",
+        "shared files",
+        "must refute",
+        "production-path check"
+      ]
+    }
+  ],
+  "line_rules": {
+    "Deliverables": {
+      "pattern": "^\\s*(?:[-*+]|\\d+[.)])?\\s*\\**\\s*D\\d+\\b",
+      "min": 1
+    }
+  },
+  "rules": [
+    {
+      "type": "nonempty_sections",
+      "sections": [
+        "Goal",
+        "Context and background",
+        "Out of scope",
+        "Checks"
+      ]
+    },
+    {
+      "type": "nonempty_sections",
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton",
+          "docs"
+        ]
+      },
+      "sections": [
+        "Definitions",
+        "Spec"
+      ]
+    },
+    {
+      "type": "nonempty_sections",
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton"
+        ]
+      },
+      "sections": [
+        "ADR constraints",
+        "Sizing reference",
+        "Contracts",
+        "Invariants and edge cases",
+        "Missing-data behavior",
+        "Environment and limits",
+        "Owner prerequisites",
+        "Shared files",
+        "Must refute",
+        "Production-path check"
+      ]
+    },
+    {
+      "type": "item_rule",
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton"
+        ]
+      },
+      "section": "Checks",
+      "item_pattern": "^\\**C\\d+\\b",
+      "require": "`[^`\\n]+`",
+      "message": "each check is a command with its expected result (write the command in backticks)"
+    },
+    {
+      "type": "section_text",
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton"
+        ]
+      },
+      "section": "Contracts",
+      "pattern": "(?i)consumed",
+      "message": "the Contracts section lists the consumed contracts (the word 'consumed'; write 'None.' after it when there are none)"
+    },
+    {
+      "type": "section_text",
+      "when": {
+        "kind": [
+          "implement",
+          "job",
+          "skeleton"
+        ]
+      },
+      "section": "Contracts",
+      "pattern": "(?i)produced",
+      "message": "the Contracts section lists the produced contracts (the word 'produced'; write 'None.' after it when there are none)"
+    }
+  ]
+}

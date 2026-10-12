@@ -21,7 +21,7 @@ class VersionTests(unittest.TestCase):
     def test_plugin_json_holds_semver_form(self):
         display = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         plugin = json.loads(
-            (ROOT / "plugins/harness/.claude-plugin/plugin.json").read_text(encoding="utf-8")
+            (ROOT / "plugins/batuta/.claude-plugin/plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(plugin["version"], display_to_semver(display))
 

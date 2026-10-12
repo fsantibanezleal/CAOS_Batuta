@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C08",
+  "contract_version": "1.0",
+  "title": "Trace matrix",
+  "description": "Deterministic requirement to test to task matrix (no timestamps).",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "spec_id": {
+      "type": "string",
+      "pattern": "^\\d{3}-[a-z0-9-]+$"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reqrow"
+      }
+    },
+    "orphans": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+      }
+    },
+    "unknown_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "untagged_tests": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contract_version",
+    "spec_id",
+    "requirements",
+    "orphans",
+    "unknown_ids",
+    "untagged_tests",
+    "ok"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "reqrow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+        },
+        "gate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^T-\\d{3}$"
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "retired"
+          ],
+          "description": "The requirement's Status in the spec (C05)."
+        }
+      },
+      "required": [
+        "id",
+        "gate",
+        "tests",
+        "tasks",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

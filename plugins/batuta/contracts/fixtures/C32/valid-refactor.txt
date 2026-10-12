@@ -1,0 +1,3 @@
+[refactor] T-001 split ingest into read and emit
+
+No behavior change; the locked tests are untouched.
