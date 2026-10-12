@@ -1,0 +1,64 @@
+{
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "can_be_absent": true,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        },
+        {
+          "state": "missing",
+          "adapter_returns": "what the adapter returns when missing",
+          "response_block": "block with state missing",
+          "ui_shows": "what the page shows when missing",
+          "test": "test_availability_missing"
+        },
+        {
+          "state": "synthetic",
+          "adapter_returns": "what the adapter returns when synthetic",
+          "response_block": "block with state synthetic",
+          "ui_shows": "what the page shows when synthetic",
+          "test": "test_availability_synthetic"
+        },
+        {
+          "state": "stale",
+          "adapter_returns": "what the adapter returns when stale",
+          "response_block": "block with state stale",
+          "ui_shows": "what the page shows when stale",
+          "test": "test_availability_stale"
+        }
+      ]
+    },
+    {
+      "id": "grade-model",
+      "can_be_absent": true,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        },
+        {
+          "state": "training",
+          "adapter_returns": "what the adapter returns when training",
+          "response_block": "block with state training",
+          "ui_shows": "what the page shows when training",
+          "test": "test_availability_training"
+        }
+      ]
+    },
+    {
+      "id": "plain-library",
+      "can_be_absent": false,
+      "states": []
+    }
+  ]
+}

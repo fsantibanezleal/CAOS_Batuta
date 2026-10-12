@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C21",
+  "contract_version": "1.0",
+  "title": "Tasks table",
+  "description": "One row per task: requirements covered, contracts used, real ordering dependencies, computed wave, owner role and the inventory unit (C23) that carries it; a Unit of '-' or empty means none.",
+  "type": "object",
+  "properties": {
+    "Task": {
+      "type": "string",
+      "pattern": "^T-\\d{3}$"
+    },
+    "Title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Requirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+      }
+    },
+    "Contracts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\:][^\\\\:]*$",
+        "minLength": 1
+      }
+    },
+    "Depends": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^T-\\d{3}$"
+      }
+    },
+    "Wave": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "Owner role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Unit": {
+      "type": "string",
+      "pattern": "^(-|[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    }
+  },
+  "required": [
+    "Task",
+    "Title",
+    "Requirements",
+    "Contracts",
+    "Depends",
+    "Wave",
+    "Owner role",
+    "Unit"
+  ],
+  "additionalProperties": true
+}

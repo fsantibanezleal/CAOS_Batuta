@@ -1,0 +1,126 @@
+{
+  "contract_version": "1.0",
+  "system": "graph-fixture",
+  "repos": [],
+  "components": [
+    {
+      "id": "c1",
+      "kind": "engine",
+      "responsibility": "c1 work",
+      "provides": [
+        "a"
+      ],
+      "consumes": [
+        "b"
+      ],
+      "modules": [
+        {
+          "path": "src/c1.py",
+          "exposes": [
+            "run"
+          ]
+        }
+      ],
+      "size": {
+        "class": "S",
+        "functions": 3,
+        "tests": 5,
+        "basis": "three functions"
+      },
+      "stack": [
+        {
+          "tool": "python",
+          "version": "3.13.0",
+          "ring": "adopt"
+        }
+      ],
+      "unit": "u-1",
+      "gates": [
+        "P3-red"
+      ]
+    },
+    {
+      "id": "c2",
+      "kind": "engine",
+      "responsibility": "c2 work",
+      "provides": [
+        "b"
+      ],
+      "consumes": [
+        "a"
+      ],
+      "modules": [
+        {
+          "path": "src/c2.py",
+          "exposes": [
+            "run"
+          ]
+        }
+      ],
+      "size": {
+        "class": "S",
+        "functions": 3,
+        "tests": 5,
+        "basis": "three functions"
+      },
+      "stack": [
+        {
+          "tool": "python",
+          "version": "3.13.0",
+          "ring": "adopt"
+        }
+      ],
+      "unit": "u-2",
+      "gates": [
+        "P3-red"
+      ]
+    }
+  ],
+  "evaluations": [],
+  "contracts": [
+    {
+      "id": "a",
+      "kind": "json-schema",
+      "path": "docs/contracts/a.schema.json",
+      "version": "1.0",
+      "frozen": false
+    },
+    {
+      "id": "b",
+      "kind": "json-schema",
+      "path": "docs/contracts/b.schema.json",
+      "version": "1.0",
+      "frozen": false
+    }
+  ],
+  "units": [
+    {
+      "id": "u-1",
+      "components": [
+        "c1"
+      ],
+      "consumes": [
+        "b"
+      ],
+      "provides": [
+        "a"
+      ],
+      "wave": null,
+      "agent_role": "implementer"
+    },
+    {
+      "id": "u-2",
+      "components": [
+        "c2"
+      ],
+      "consumes": [
+        "a"
+      ],
+      "provides": [
+        "b"
+      ],
+      "wave": null,
+      "agent_role": "implementer"
+    }
+  ]
+}

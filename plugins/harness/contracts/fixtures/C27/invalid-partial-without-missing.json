@@ -1,0 +1,16 @@
+{
+  "_why": "partial says what is missing",
+  "_expect": "missing",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "status": "stub",
+      "state": "partial",
+      "provenance": "real",
+      "reason": "some",
+      "missing": [],
+      "as_of_commit": "0a1b2c3"
+    }
+  ]
+}

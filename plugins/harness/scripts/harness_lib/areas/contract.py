@@ -59,28 +59,33 @@ def _short(errors, n=2):
 
 
 def _own_contracts_dir():
-    """The contracts shipped with this harness: next to the plugin (plugins/harness/contracts) or at the repo root."""
-    here = Path(__file__).resolve()
-    for base in (here.parents[3], here.parents[5] if len(here.parents) > 5 else here.parents[3]):
-        if (base / "contracts").is_dir():
-            return base / "contracts"
-    return here.parents[3] / "contracts"
+    """The contracts shipped with this harness: `contracts/` inside the plugin folder, never the repository root."""
+    return Path(__file__).resolve().parents[3] / "contracts"
 
 
-def _contracts_dir(root):
+def _contracts_dirs(root):
+    """Directories searched for a contract id: the project's `contracts/` (when a root is given), then the plugin's."""
+    dirs = []
     if root is not None:
-        return Path(root) / "contracts"
-    if (Path.cwd() / "contracts").is_dir():
-        return Path.cwd() / "contracts"
-    return _own_contracts_dir()
+        dirs.append(Path(root) / "contracts")
+    dirs.append(_own_contracts_dir())
+    return dirs
+
+
+def _find_contract(root, cid):
+    for d in _contracts_dirs(root):
+        sp = core.find_schema(d, cid) if d.is_dir() else None
+        if sp is not None:
+            return sp
+    return None
 
 
 def _own_spec(cid):
-    """(schema, sections spec) of a built-in contract (C21, C22) used by the graph command."""
+    """(schema, sections spec) of a built-in contract (C21, C22, C23) loaded from the plugin."""
     sp = core.find_schema(_own_contracts_dir(), cid)
     if sp is None:
         raise ValueError(f"{cid} schema not found in {_own_contracts_dir()}")
-    return core.load_schema(sp), core.load_sections_spec(sp)
+    return core.load_schema(sp), (core.load_sections_spec(sp) if sp.with_name(sp.name.replace(".schema.json", ".sections.json")).is_file() else None)
 
 
 # ------------------------------------------------------------------ lint
@@ -111,9 +116,10 @@ def _lint_contract(cdir, sp, readme_text, items, root):
     cid = sp.name.split("-")[0]
     name = sp.name[len(cid) + 1:-len(".schema.json")]
     rel = sp.relative_to(root).as_posix()
+    catalog = Path(cdir.name) / "README.md"
     ok = True
     if readme_text is not None and not re.search(rf"\b{cid}\b", readme_text):
-        items.append(item("FAIL", f"{cid} is not listed in the catalog (contracts/README.md)", rel))
+        items.append(item("FAIL", f"{cid} is not listed in the catalog ({catalog.as_posix()})", rel))
         ok = False
     try:
         schema = core.load_schema(sp)
@@ -211,10 +217,18 @@ def _lint_spec_interfaces(root, cdir, items):
             items.append(item("OK", f"{rel}: {len(rows)} interface row(s) resolve to existing contract files", rel))
 
 
-def lint(root):
-    """Lint every schema, fixture and spec interface row under root. Returns a list of items."""
-    root = Path(root)
-    cdir = root / "contracts"
+def lint(root=None):
+    """Lint the contracts under `root` (its `contracts/` folder, its inventory and spec interface rows).
+
+    With root None, lint the harness's own contracts shipped inside the plugin. Returns a list of items.
+    """
+    if root is None:
+        cdir = _own_contracts_dir()
+        base = cdir.parent
+    else:
+        base = Path(root)
+        cdir = base / "contracts"
+    root = base
     items = []
     if not cdir.is_dir():
         return [item("FAIL", "no contracts folder found", str(cdir.as_posix()))]
@@ -236,18 +250,73 @@ def lint(root):
             items.append(item("FAIL", "C14 does not equal the budgets block of C01 (type, required, properties)", "contracts"))
         else:
             items.append(item("OK", "C14 equals the budgets block of C01", "contracts"))
+    if "C23" in loaded and "C26" in loaded:
+        a = loaded["C23"].get("$defs", {}).get("availability_entry")
+        b = loaded["C26"].get("$defs", {}).get("state_declaration")
+        if _canon(a) != _canon(b):
+            items.append(item("FAIL", "C23 availability_entry does not equal the C26 state_declaration (type, required, properties)", "contracts"))
+        else:
+            items.append(item("OK", "C23 availability_entry equals the C26 state_declaration", "contracts"))
     _lint_spec_interfaces(root, cdir, items)
+    _lint_inventory(root, items)
     return items
+
+
+INVENTORY_PATHS = ("docs/design/inventory.json", "docs/design/inventory.yaml", "docs/design/inventory.yml")
+
+
+def load_inventory(path):
+    """Read an inventory file: JSON always; YAML only when PyYAML is importable (refused with a clear message otherwise)."""
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in (".yaml", ".yml"):
+        try:
+            import yaml  # type: ignore
+        except ImportError as exc:
+            raise ValueError(f"{path.name} is YAML and PyYAML is not installed; install PyYAML or provide the inventory as JSON "
+                             f"({path.with_suffix('.json').name})") from exc
+        try:
+            return yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"{path.name}: invalid YAML ({exc})") from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path.name}: invalid JSON ({exc.msg}, line {exc.lineno})") from exc
+
+
+def _validate_inventory(path):
+    """Return a list of error strings for an inventory file against C23 (the plugin's schema)."""
+    schema, _ = _own_spec("C23")
+    doc = load_inventory(path)
+    return core.validate_instance("C23", doc, schema)
+
+
+def _lint_inventory(root, items):
+    for rel in INVENTORY_PATHS:
+        f = root / rel
+        if not f.is_file():
+            continue
+        try:
+            errs = _validate_inventory(f)
+        except ValueError as exc:
+            items.append(item("FAIL", f"{rel}: {exc}", rel))
+            continue
+        if errs:
+            items.extend(item("FAIL", f"{rel}: {e}", rel) for e in errs)
+        else:
+            items.append(item("OK", f"{rel} satisfies C23", rel))
+        return
 
 
 # ------------------------------------------------------------------ validate
 
 
 def validate_artifact(cid, file, root=None):
-    cdir = _contracts_dir(root)
-    sp = core.find_schema(cdir, cid)
+    sp = _find_contract(root, cid)
     if sp is None:
-        return [item("FAIL", f"no schema for contract {cid} in {cdir.as_posix()}")]
+        where = ", ".join(d.as_posix() for d in _contracts_dirs(root))
+        return [item("FAIL", f"no schema for contract {cid} in {where}")]
     f = Path(file)
     if not f.is_file():
         return [item("FAIL", f"file not found: {f.as_posix()}")]
@@ -388,6 +457,83 @@ def graph(tasks_path, interfaces_path, root=None):
     return items
 
 
+def compute_unit_waves(inv):
+    """Waves of the C23 units (ADR-0080 section 5). Wave 0 is the contracts, wave 1 the walking skeleton; a unit runs in
+    the first wave after every contract it consumes is frozen: a frozen contract is ready at wave 0, an unfrozen one
+    when its provider units are done. Returns (waves {unit id: wave}, items); waves is None on FAIL."""
+    items = []
+    frozen = {c["id"] for c in inv["contracts"] if c["frozen"]}
+    providers = core.unit_providers(inv)
+    units = {u["id"]: u for u in inv["units"]}
+    deps = {}
+    for uid, u in units.items():
+        deps[uid] = sorted({p for c in u["consumes"] if c not in frozen for p in providers.get(c, set()) if p != uid})
+    waves, state = {}, {}
+
+    def visit(uid, stack):
+        state[uid] = 1
+        for d in deps[uid]:
+            if state.get(d) == 1:
+                items.append(item("FAIL", "unit dependency cycle: " + " then ".join(stack[stack.index(d):] + [d])))
+            elif d not in state:
+                visit(d, stack + [d])
+        state[uid] = 2
+
+    for uid in sorted(units):
+        if uid not in state:
+            visit(uid, [uid])
+    if items:
+        return None, items
+    remaining = set(units)
+    while remaining:
+        ready = sorted(u for u in remaining if all(d in waves for d in deps[u]))
+        for u in ready:
+            waves[u] = 2 + max([waves[d] - 1 for d in deps[u]], default=0)
+        remaining -= set(ready)
+    return waves, items
+
+
+def graph_inventory(inventory_path, tasks_path=None):
+    """Waves from a C23 inventory (JSON, or YAML when PyYAML is importable). With a C21 tasks file, each task's Unit
+    must exist in the inventory. Returns a list of items."""
+    items = []
+    try:
+        inv = load_inventory(inventory_path)
+    except OSError as exc:
+        return [item("FAIL", f"cannot read inventory file: {exc}", Path(inventory_path).as_posix())]
+    except ValueError as exc:
+        return [item("FAIL", str(exc), Path(inventory_path).as_posix())]
+    schema, _ = _own_spec("C23")
+    errs = core.validate_instance("C23", inv, schema)
+    if errs:
+        return [item("FAIL", f"{Path(inventory_path).name}: {e}", Path(inventory_path).as_posix()) for e in errs]
+    waves, problems = compute_unit_waves(inv)
+    if waves is None:
+        return problems
+    frozen = sorted(c["id"] for c in inv["contracts"] if c["frozen"])
+    items.append(item("OK", "wave 0: " + (", ".join(frozen) if frozen else "(no frozen contract yet)")))
+    items.append(item("OK", "wave 1: walking skeleton"))
+    for n in sorted(set(waves.values())):
+        items.append(item("OK", f"wave {n}: " + ", ".join(sorted(u for u, w in waves.items() if w == n))))
+    for u in inv["units"]:
+        if u["wave"] is not None and u["wave"] != waves[u["id"]]:
+            items.append(item("WARN", f"wave of unit {u['id']} says {u['wave']} but the computed wave is {waves[u['id']]}"))
+    if tasks_path is not None:
+        task_items = []
+        rows = _read_rows(tasks_path, "C21", task_items, "tasks")
+        if rows is None:
+            return items + task_items
+        for t in rows:
+            uid = t["Unit"]
+            if uid in ("", "-"):
+                continue
+            if uid not in waves:
+                items.append(item("FAIL", f"task {t['Task']} names unit {uid} that is not in the inventory"))
+            else:
+                items.append(item("OK", f"task {t['Task']} runs in unit {uid} (wave {waves[uid]})"))
+    return items
+
+
 # ------------------------------------------------------------------ CLI
 
 
@@ -396,8 +542,7 @@ def _wants_json(args):
 
 
 def _cmd_lint(args):
-    root = Path(args.root) if args.root else Path.cwd()
-    items = lint(root)
+    items = lint(args.root)
     n_ok = sum(1 for i in items if i["tag"] == "OK")
     n_fail = sum(1 for i in items if i["tag"] == "FAIL")
     n_warn = sum(1 for i in items if i["tag"] == "WARN")
@@ -411,7 +556,14 @@ def _cmd_validate(args):
 
 
 def _cmd_graph(args):
-    items = graph(args.tasks, args.interfaces, args.root)
+    if args.inventory:
+        items = graph_inventory(args.inventory, args.tasks)
+        if args.tasks and args.interfaces:
+            items += graph(args.tasks, args.interfaces, args.root)
+    elif args.tasks and args.interfaces:
+        items = graph(args.tasks, args.interfaces, args.root)
+    else:
+        items = [item("FAIL", "graph needs --tasks and --interfaces, or --inventory (with an optional --tasks)")]
     n_waves = sum(1 for i in items if i["tag"] == "OK" and i["message"].startswith("wave "))
     n_warn = sum(1 for i in items if i["tag"] == "WARN")
     n_fail = sum(1 for i in items if i["tag"] == "FAIL")
@@ -425,20 +577,21 @@ def _json_flag(p):
 
 def register(subparsers):
     p = subparsers.add_parser("lint", help="check every schema, fixture and spec interface row under a root")
-    p.add_argument("--root", help="project root holding contracts/ (default: current directory)")
+    p.add_argument("--root", help="project root whose contracts/ (and docs/design/inventory.json) to lint (default: the harness's own contracts)")
     _json_flag(p)
     p.set_defaults(func=_cmd_lint)
 
     p = subparsers.add_parser("validate", help="validate one artifact file against a contract")
     p.add_argument("contract_id", help="contract id such as C02")
     p.add_argument("file", help="artifact file (.json, .jsonl or .md)")
-    p.add_argument("--root", help="project root holding contracts/ (default: current directory, else the harness contracts)")
+    p.add_argument("--root", help="project root holding contracts/; a contract id not found there resolves to the harness contracts (default: the harness contracts)")
     _json_flag(p)
     p.set_defaults(func=_cmd_validate)
 
-    p = subparsers.add_parser("graph", help="compute parallel waves from a tasks file (C21) and an interfaces file (C22)")
-    p.add_argument("--tasks", required=True, help="tasks.md with the C21 table")
-    p.add_argument("--interfaces", required=True, help="spec.md with the C22 interfaces table")
+    p = subparsers.add_parser("graph", help="compute parallel waves from a tasks file (C21) and an interfaces file (C22), or from an inventory (C23)")
+    p.add_argument("--tasks", help="tasks.md with the C21 table")
+    p.add_argument("--interfaces", help="spec.md with the C22 interfaces table")
+    p.add_argument("--inventory", help="inventory.json (C23; YAML when PyYAML is installed): waves of its units, then skeleton, per ADR-0080")
     p.add_argument("--root", help="project root that contract file paths are relative to (default: current directory)")
     _json_flag(p)
     p.set_defaults(func=_cmd_graph)

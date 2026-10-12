@@ -1,9 +1,0 @@
-{
-  "_why": "permissionDecision enum allow|deny|ask",
-  "_expect": "permissionDecision",
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "maybe",
-    "permissionDecisionReason": "x"
-  }
-}

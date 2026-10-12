@@ -1,0 +1,6 @@
+{
+  "_recorded": false,
+  "_why": "payload is neither a hook input nor an output we emit",
+  "_expect": "not a hook input or output",
+  "hello": "world"
+}

@@ -18,6 +18,7 @@ from harness_lib import frontmatter as fm
 KEYWORDS = {"type", "enum", "const", "pattern", "required", "properties", "additionalProperties", "items",
             "minItems", "minimum", "maximum", "maxLength", "minLength", "$ref", "$defs", "description"}
 ROOT_META = {"$schema", "$id", "title", "contract_id", "contract_version"}
+FIXTURE_KEYS = ("_why", "_expect", "_recorded")
 TYPES = {"string", "integer", "number", "boolean", "null", "object", "array"}
 
 
@@ -274,21 +275,155 @@ def _check_c25(inst, schema):
     return []
 
 
-def _check_c26(inst, schema):
-    errs = []
-    for i, itf in enumerate(inst.get("interfaces", [])):
-        provs = itf.get("providers", [])
-        if not any(p.get("kind") in ("fixture", "baseline") for p in provs):
-            errs.append(f"/interfaces/{i}: needs at least one fixture or baseline provider")
-        for j, p in enumerate(provs):
-            if p.get("kind") in ("fixture", "baseline") and p.get("degraded") is not True:
-                errs.append(f"/interfaces/{i}/providers/{j}/degraded: a {p['kind']} provider must declare degraded true")
-        if itf.get("active") not in [p.get("name") for p in provs]:
-            errs.append(f"/interfaces/{i}/active: '{itf.get('active')}' is not a listed provider")
+def _text_ok(v):
+    """A reason: a non-blank string, or an object with a non-blank string 'en'."""
+    if isinstance(v, str):
+        return bool(v.strip())
+    if isinstance(v, dict):
+        en = v.get("en")
+        return isinstance(en, str) and bool(en.strip())
+    return False
+
+
+def check_declaration_states(states, path, can_be_absent):
+    """The availability rule shared by C23 and C26: a component that can be absent declares `available` and at
+    least one non-available state; a state is declared once; the test ids are required by the schema."""
+    errs, seen = [], set()
+    for i, st in enumerate(states):
+        name = st.get("state")
+        if name in seen:
+            errs.append(f"{path}/{i}/state: duplicate state '{name}'")
+        seen.add(name)
+    if can_be_absent:
+        if "available" not in seen:
+            errs.append(f"{path}: a component that can be absent must declare the 'available' state")
+        if not (seen - {"available"}):
+            errs.append(f"{path}: a component that can be absent must declare at least one non-available state")
     return errs
 
 
-SEMANTIC = {"C12": _check_c12, "C25": _check_c25, "C26": _check_c26}
+def _check_runtime_block(inst, path=""):
+    errs = []
+    state = inst.get("state")
+    if state != "available" and not _text_ok(inst.get("reason")):
+        errs.append(f"{path}/reason: state '{state}' must state a reason (a non-blank text)")
+    if inst.get("age") is None and state not in ("available", "missing"):
+        errs.append(f"{path}/age: age may be null only for available and missing, not '{state}'")
+    return errs
+
+
+def _check_c26(inst, schema):
+    # Dispatch on the document shape: a declaration has `components`, a runtime block has `state`.
+    if "components" in inst:
+        errs = validate(inst, schema)
+        if errs:
+            return errs
+        for i, comp in enumerate(inst["components"]):
+            errs.extend(check_declaration_states(comp["states"], f"/components/{i}/states", comp["can_be_absent"]))
+        return errs
+    if "state" in inst:
+        errs = validate_def(inst, schema, "runtime_block")
+        return errs or _check_runtime_block(inst)
+    return ["/: not an availability declaration (no 'components') nor a runtime block (no 'state')"]
+
+
+def _check_c27(inst, schema):
+    errs = []
+    if not (inst.get("contracts") or inst.get("components")):
+        return ["/: readiness needs at least one entry in contracts or components"]
+    for key in ("contracts", "components"):
+        for i, e in enumerate(inst.get(key, [])):
+            here = f"/{key}/{i}"
+            state, prov = e["state"], e["provenance"]
+            if state != "available" and not _text_ok(e["reason"]):
+                errs.append(f"{here}/reason: state '{state}' must state a reason (a non-blank text)")
+            if state == "available" and prov != "real":
+                errs.append(f"{here}/provenance: an available entry is served by the real producer (provenance 'real')")
+            if state == "partial" and not e.get("missing"):
+                errs.append(f"{here}/missing: a partial entry lists what is missing")
+            if state == "missing" and prov is not None:
+                errs.append(f"{here}/provenance: nothing answered, so provenance must be null when the state is missing")
+            if state in ("synthetic", "provider") and prov not in ("stub", "simulator", "fixture", "baseline"):
+                errs.append(f"{here}/provenance: a synthetic entry is served by a stub, simulator, fixture or baseline")
+            if state == "training" and prov not in ("real", "baseline"):
+                errs.append(f"{here}/provenance: a training model answers with the released model (real) or the baseline")
+    return errs
+
+
+def _check_c28(inst, schema):
+    errs = []
+    serving = inst.get("serving")
+    unreleased = inst["status"] in ("planned", "training", "candidate")
+    if serving is None:
+        if unreleased:
+            errs.append(f"/serving: required while the model is {inst['status']}: it must say which version or baseline answered")
+        return errs
+    if serving["alias"] != inst["alias"]:
+        errs.append(f"/serving/alias: '{serving['alias']}' differs from the entry alias '{inst['alias']}'")
+    if unreleased and serving["answered_by"] == inst["version"]:
+        errs.append(f"/serving/answered_by: version '{inst['version']}' is {inst['status']} and cannot be the one that answers; "
+                    f"name a released version or 'baseline'")
+    return errs
+
+
+def unit_providers(inv):
+    """Map contract id to the set of unit ids that provide it (a unit's own provides, or its components' provides)."""
+    comp_unit = {c.get("id"): c.get("unit") for c in inv.get("components", [])}
+    out = {}
+    for u in inv.get("units", []):
+        for c in u.get("provides", []):
+            out.setdefault(c, set()).add(u["id"])
+    for c in inv.get("components", []):
+        for cid in c.get("provides", []):
+            if comp_unit.get(c["id"]):
+                out.setdefault(cid, set()).add(comp_unit[c["id"]])
+    return out
+
+
+def _check_c23(inst, schema):
+    errs = []
+    comp_ids = [c["id"] for c in inst["components"]]
+    unit_ids = [u["id"] for u in inst["units"]]
+    contract_ids = [c["id"] for c in inst["contracts"]]
+    for key, ids in (("components", comp_ids), ("units", unit_ids), ("contracts", contract_ids), ("repos", [r["id"] for r in inst["repos"]])):
+        seen = set()
+        for i, x in enumerate(ids):
+            if x in seen:
+                errs.append(f"/{key}/{i}/id: duplicate {key[:-1]} id '{x}'")
+            seen.add(x)
+    for i, c in enumerate(inst["components"]):
+        if c["unit"] not in unit_ids:
+            errs.append(f"/components/{i}/unit: unknown unit '{c['unit']}'")
+        for field in ("provides", "consumes"):
+            for cid in c[field]:
+                if cid not in contract_ids:
+                    errs.append(f"/components/{i}/{field}: unknown contract '{cid}'")
+        if c.get("can_be_absent"):
+            if "availability" not in c:
+                errs.append(f"/components/{i}: a component that can be absent must declare availability")
+            else:
+                errs.extend(check_declaration_states(c["availability"], f"/components/{i}/availability", True))
+        elif "availability" in c:
+            errs.extend(check_declaration_states(c["availability"], f"/components/{i}/availability", False))
+    for i, u in enumerate(inst["units"]):
+        for cid in u["components"]:
+            if cid not in comp_ids:
+                errs.append(f"/units/{i}/components: unknown component '{cid}'")
+        for field in ("provides", "consumes"):
+            for cid in u[field]:
+                if cid not in contract_ids:
+                    errs.append(f"/units/{i}/{field}: unknown contract '{cid}'")
+    if errs:
+        return errs
+    providers = unit_providers(inst)
+    for i, u in enumerate(inst["units"]):
+        for cid in u["consumes"]:
+            if not providers.get(cid):
+                errs.append(f"/units/{i}/consumes: unit '{u['id']}' consumes contract '{cid}' that nobody provides")
+    return errs
+
+
+SEMANTIC = {"C12": _check_c12, "C23": _check_c23, "C25": _check_c25, "C27": _check_c27, "C28": _check_c28}
 
 
 def validate_instance(contract_id, instance, schema):
@@ -296,6 +431,10 @@ def validate_instance(contract_id, instance, schema):
     if contract_id == "C16":
         errs = validate(instance, schema)
         return errs or (_check_c16(instance, schema) if isinstance(instance, dict) else [])
+    if contract_id == "C26":
+        if not isinstance(instance, dict):
+            return validate(instance, schema)
+        return _check_c26(instance, schema)
     errs = validate(instance, schema)
     if errs:
         return errs
@@ -569,7 +708,7 @@ def validate_file(path, schema_path, contract_id=None):
         except json.JSONDecodeError as exc:
             return [f"/: invalid JSON ({exc.msg}, line {exc.lineno})"]
         if isinstance(doc, dict):
-            doc = {k: v for k, v in doc.items() if k not in ("_why", "_expect")}
+            doc = {k: v for k, v in doc.items() if k not in FIXTURE_KEYS}
         return validate_instance(cid, doc, schema)
     if ext == ".jsonl":
         return validate_jsonl(text, schema)

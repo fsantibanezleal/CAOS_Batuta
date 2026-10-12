@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C26",
+  "contract_version": "1.0",
+  "title": "Availability",
+  "description": "Two schemas in one contract. The root schema is the declaration of what a component does in each availability state (adapter returns, response block, UI, test). $defs/runtime_block is the block an API response or artifact carries when a source is not fully available. A document is validated as a declaration when it has 'components' and as a runtime block when it has 'state'.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component_declaration"
+      }
+    }
+  },
+  "required": [
+    "contract_version",
+    "components"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "available",
+        "partial",
+        "stale",
+        "synthetic",
+        "training",
+        "missing"
+      ],
+      "description": "available, partial, stale, synthetic, training or missing (case-sensitive)."
+    },
+    "state_declaration": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "adapter_returns": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the adapter or provider returns in this state."
+        },
+        "response_block": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The runtime block the API response or artifact carries in this state."
+        },
+        "ui_shows": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the page shows in this state."
+        },
+        "test": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of the test that proves this state."
+        }
+      },
+      "required": [
+        "state",
+        "adapter_returns",
+        "response_block",
+        "ui_shows",
+        "test"
+      ],
+      "additionalProperties": true
+    },
+    "component_declaration": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "can_be_absent": {
+          "type": "boolean"
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/state_declaration"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "can_be_absent",
+        "states"
+      ],
+      "additionalProperties": true
+    },
+    "runtime_block": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ],
+          "description": "A reason: a string, or an object with an 'en' string (bilingual products add 'es'); null only when available."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The provider: real, cached snapshot, synthetic fixture, model version or baseline."
+        },
+        "age": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^P(?!$)(\\d+(\\.\\d+)?Y)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?W)?(\\d+(\\.\\d+)?D)?(T(?=\\d)(\\d+(\\.\\d+)?H)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?S)?)?$",
+          "description": "An ISO 8601 duration, or null (allowed only for available and missing)."
+        }
+      },
+      "required": [
+        "state",
+        "reason",
+        "source",
+        "age"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_why": "every entry has an id",
+  "_expect": "'id'",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "status": "stub",
+      "state": "synthetic",
+      "provenance": "fixture",
+      "reason": "sensor feed not connected yet",
+      "missing": [],
+      "as_of_commit": "0a1b2c3"
+    }
+  ]
+}

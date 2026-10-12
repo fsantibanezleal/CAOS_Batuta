@@ -1,0 +1,16 @@
+{
+  "_why": "state is one of the availability states",
+  "_expect": "not in enum",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "status": "stub",
+      "state": "ready",
+      "provenance": "fixture",
+      "reason": "sensor feed not connected yet",
+      "missing": [],
+      "as_of_commit": "0a1b2c3"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "_why": "status is real or stub",
+  "_expect": "not in enum",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "status": "done",
+      "state": "synthetic",
+      "provenance": "fixture",
+      "reason": "sensor feed not connected yet",
+      "missing": [],
+      "as_of_commit": "0a1b2c3"
+    }
+  ]
+}

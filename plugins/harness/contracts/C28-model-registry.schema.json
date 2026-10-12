@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C28",
+  "contract_version": "1.0",
+  "title": "Model registry entry",
+  "description": "A model slot as the registry keeps it: id, alias (models are addressed by alias), version, I/O contract, status, a baseline that satisfies the I/O contract, metrics, and the serving block that says which version or baseline answered.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "alias": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "io_contract": {
+      "type": "string",
+      "pattern": "^[^/\\\\:][^\\\\:]*$",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "training",
+        "candidate",
+        "released",
+        "retired"
+      ]
+    },
+    "baseline": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "rule",
+            "constant",
+            "heuristic",
+            "previous-version"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "description"
+      ],
+      "additionalProperties": true
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "data_card": {
+      "type": "string"
+    },
+    "training_run": {
+      "type": "string"
+    },
+    "serving": {
+      "type": "object",
+      "properties": {
+        "answered_by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The version that answered, or the word baseline."
+        },
+        "alias": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "answered_by",
+        "alias"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "contract_version",
+    "id",
+    "alias",
+    "version",
+    "io_contract",
+    "status",
+    "baseline"
+  ],
+  "additionalProperties": true
+}

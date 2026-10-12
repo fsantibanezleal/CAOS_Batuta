@@ -1,0 +1,6 @@
+{
+  "state": "training",
+  "reason": "a newer model is training",
+  "source": "model 1.2.0",
+  "age": "P3D"
+}

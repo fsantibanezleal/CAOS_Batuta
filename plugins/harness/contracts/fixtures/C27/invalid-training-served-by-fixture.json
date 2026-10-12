@@ -1,0 +1,16 @@
+{
+  "_why": "a training model answers with the released model or the baseline",
+  "_expect": "provenance",
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "sensor-connector",
+      "status": "stub",
+      "state": "training",
+      "provenance": "fixture",
+      "reason": "training",
+      "missing": [],
+      "as_of_commit": "0a1b2c3"
+    }
+  ]
+}

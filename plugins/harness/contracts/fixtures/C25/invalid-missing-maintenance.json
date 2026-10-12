@@ -1,0 +1,55 @@
+{
+  "_why": "the criteria include maintenance",
+  "_expect": "maintenance",
+  "contract_version": "1.0",
+  "id": "api-framework",
+  "concern": "HTTP API framework",
+  "candidates": [
+    {
+      "name": "fastapi",
+      "version": "0.115.2",
+      "license": "MIT",
+      "maturity": {
+        "last_release": "2026-09-01",
+        "maintainers": 5,
+        "stars": 80000
+      },
+      "size": "about 1 MB installed",
+      "fit": "async API with typed models",
+      "risks": [
+        "major version churn"
+      ],
+      "risky": false,
+      "spike": {
+        "command": "python spike.py",
+        "result": "pass",
+        "evidence": "spike ran, 12 routes served"
+      }
+    },
+    {
+      "name": "flask",
+      "version": "3.0.3",
+      "license": "MIT",
+      "maturity": {
+        "last_release": "2026-09-01",
+        "maintainers": 5,
+        "stars": 80000
+      },
+      "maintenance": "monthly releases, five maintainers",
+      "size": "about 1 MB installed",
+      "fit": "async API with typed models",
+      "risks": [
+        "major version churn"
+      ],
+      "risky": false,
+      "spike": {
+        "command": "python spike.py",
+        "result": "pass",
+        "evidence": "spike ran, 12 routes served"
+      }
+    }
+  ],
+  "decision": "fastapi",
+  "ring": "adopt",
+  "adr": "ADR-0003"
+}

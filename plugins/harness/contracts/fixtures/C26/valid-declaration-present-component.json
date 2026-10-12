@@ -1,0 +1,18 @@
+{
+  "contract_version": "1.0",
+  "components": [
+    {
+      "id": "docs",
+      "can_be_absent": false,
+      "states": [
+        {
+          "state": "available",
+          "adapter_returns": "what the adapter returns when available",
+          "response_block": "block with state available",
+          "ui_shows": "what the page shows when available",
+          "test": "test_availability_available"
+        }
+      ]
+    }
+  ]
+}
