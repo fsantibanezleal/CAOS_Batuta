@@ -1,0 +1,36 @@
+{
+  "contract_version": "1.0",
+  "budget": {
+    "core_bytes": 7000,
+    "index_bytes": 4000
+  },
+  "units": [
+    {
+      "id": "decide-and-act",
+      "title": "Decide and act",
+      "kind": "rule",
+      "file": "units/decide-and-act.md",
+      "summary": "Decide the next step and do it; ask only for a prerequisite only the owner can give.",
+      "load": "always"
+    },
+    {
+      "id": "delegation-brief",
+      "title": "Writing a delegation brief",
+      "kind": "procedure",
+      "file": "units/delegation-brief.md",
+      "summary": "What a brief must hold before an agent is launched, and how its report is accepted.",
+      "load": "trigger",
+      "triggers": ["delegate", "brief", "subagent"],
+      "requires": ["decide-and-act"]
+    },
+    {
+      "id": "web-ui-floor",
+      "title": "Web UI floor",
+      "kind": "reference",
+      "file": "units/web-ui-floor.md",
+      "summary": "Minimum for any web interface: sized containers, one navigation row, light and dark themes.",
+      "load": "path",
+      "paths": ["web/**", "src/ui/**"]
+    }
+  ]
+}
