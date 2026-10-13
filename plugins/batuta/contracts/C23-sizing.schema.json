@@ -3,7 +3,7 @@
   "contract_id": "C23",
   "contract_version": "1.0",
   "title": "Sizing",
-  "description": "The contract of sizing.md (phase 1 of the contract-first method; template tools/agents/sizing-template.md): eleven sections, each non-empty, and four tables whose rows are validated here. Titles match case-insensitively; table columns match case-insensitively and may be followed by extra columns. Write scopes of the Parallel units table are pairwise disjoint. Cross-file rules (every contract id exists in the catalog) are checked by `contract lint --root`.",
+  "description": "The contract of sizing.md (phase 1 of the contract-first method; template tools/agents/sizing-template.md): twelve sections, each non-empty, and four tables whose rows are validated here. The Executive brief has the four parts Initiative, Outcomes, Positioning and Credibility, each a `Label: text` line of at least five words, the Initiative quantified with a number and a source (a URL, a DOI or a dossier path), or one line `Not a product: <reason of at least five words>` for a base repository with no executive of its own (the rules `tools/agents/sizing_check.py` enforces; a recorded copy of its required sections is in `fixtures/_upstream/` and a test compares it). Titles match case-insensitively; table columns match case-insensitively and may be followed by extra columns. Write scopes of the Parallel units table are pairwise disjoint. Cross-file rules (every contract id exists in the catalog) are checked by `contract lint --root`.",
   "type": "object",
   "$defs": {
     "module_row": {
@@ -81,7 +81,8 @@
         },
         "Verified date": {
           "type": "string",
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
         }
       },
       "required": [

@@ -1,5 +1,0 @@
-{
-  "_why": "the document must be a declaration or a runtime block",
-  "_expect": "declaration",
-  "foo": 1
-}

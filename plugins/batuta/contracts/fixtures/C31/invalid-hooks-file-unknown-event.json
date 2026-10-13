@@ -1,13 +1,17 @@
 {
-  "_why": "only the five events are registered",
-  "_expect": "unexpected property",
+  "_why": "only the five events of the contract",
+  "_expect": "unexpected property 'OnSave'",
   "hooks": {
-    "PostToolUse": [
+    "OnSave": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py gate-stop"
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "x"
+            ]
           }
         ]
       }

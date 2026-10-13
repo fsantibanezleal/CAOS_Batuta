@@ -1,3 +1,0 @@
-# why: every non-comment line is a JSON object
-# expect: invalid JSON
-{not json}

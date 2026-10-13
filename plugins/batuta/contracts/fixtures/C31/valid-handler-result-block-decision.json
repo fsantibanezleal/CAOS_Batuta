@@ -1,0 +1,8 @@
+{
+  "contract_version": "1.0",
+  "exit_code": 0,
+  "output": {
+    "decision": "block",
+    "reason": "the report is missing"
+  }
+}
