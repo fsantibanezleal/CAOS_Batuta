@@ -137,11 +137,31 @@
     },
     "coordination_root": {
       "type": "string",
-      "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+      "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
     },
     "knowledge_manifest": {
       "type": "string",
-      "pattern": "^(?!.*(^|/)\\.\\.(/|$))[^/\\\\:][^\\\\:]*$"
+      "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
+    },
+    "user_core": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "additionalProperties": false,
+      "description": "the template the device area renders into the user's always-loaded core, and its placeholder values"
     },
     "budgets": {
       "type": "object",
@@ -194,6 +214,17 @@
           "additionalProperties": {
             "$ref": "#/$defs/provider"
           }
+        },
+        "sdk": {
+          "type": "object",
+          "properties": {
+            "key_file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Path of a file that holds the Anthropic API key for the sdk lane (the path, never the key; `$VAR` expands). Without it the lane reads ANTHROPIC_API_KEY."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [

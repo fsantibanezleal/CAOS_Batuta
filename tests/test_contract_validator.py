@@ -141,7 +141,7 @@ class SchemaChecking(unittest.TestCase):
 
     def test_unsupported_keywords_are_refused(self):
         for kw, val in [("oneOf", [{}]), ("allOf", [{}]), ("anyOf", [{}]), ("not", {}), ("if", {}), ("then", {}),
-                        ("patternProperties", {}), ("format", "date"), ("uniqueItems", True), ("minProperties", 1),
+                        ("patternProperties", {}), ("formatX", "date"), ("uniqueItems", True), ("minProperties", 1),
                         ("maxItems", 3), ("exclusiveMinimum", 1), ("multipleOf", 2), ("dependentRequired", {}),
                         ("propertyNames", {}), ("contains", {}), ("prefixItems", [])]:
             with self.subTest(keyword=kw):

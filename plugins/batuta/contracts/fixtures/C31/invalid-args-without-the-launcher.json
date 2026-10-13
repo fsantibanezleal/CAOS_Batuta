@@ -1,0 +1,20 @@
+{
+  "_why": "args run the launcher then the handler id",
+  "_expect": "args must contain the launcher",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "report-check"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

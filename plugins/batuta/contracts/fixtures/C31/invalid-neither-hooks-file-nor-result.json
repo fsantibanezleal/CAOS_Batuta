@@ -1,0 +1,5 @@
+{
+  "_why": "a document is a hooks file or a handler result",
+  "_expect": "not a hooks file",
+  "handlers": []
+}

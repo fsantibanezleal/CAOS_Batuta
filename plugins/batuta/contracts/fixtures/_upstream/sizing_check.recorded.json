@@ -1,0 +1,52 @@
+{
+  "copied_from": "CAOS tools/agents/sizing_check.py (the contract-first method's sizing checker): SECTIONS and TABLES; the four executive-brief parts are C23's own since upstream replaced them by the executive view standard",
+  "commit": "dbf43f429",
+  "last_changed_in": "dbf43f429",
+  "date": "2026-10-13",
+  "refresh": "when the checker changes upstream, copy its SECTIONS and TABLES here, update copied_from, commit and date, and change C23 to match; a new upstream rule that is particular to the CAOS product template goes in sizing_check.overlay-only.json with its reason (decision 20) instead of into C23; the tests fail until both agree",
+  "sections": [
+    "Problem",
+    "Executive brief",
+    "ADR constraints",
+    "Repositories",
+    "Components",
+    "Modules and functions",
+    "Boundaries",
+    "Technology matrix",
+    "Machine limits",
+    "Parallel units",
+    "Integrator and merge order",
+    "Reservations"
+  ],
+  "tables": {
+    "Modules and functions": [
+      "module",
+      "responsibility",
+      "owner unit",
+      "size estimate"
+    ],
+    "Boundaries": [
+      "id",
+      "producer",
+      "consumer",
+      "contract id"
+    ],
+    "Technology matrix": [
+      "tool",
+      "version",
+      "primary source url",
+      "verified date"
+    ],
+    "Parallel units": [
+      "unit",
+      "write scope",
+      "depends on contract ids"
+    ]
+  },
+  "executive_brief_parts": [
+    "Initiative",
+    "Outcomes",
+    "Positioning",
+    "Credibility"
+  ]
+}

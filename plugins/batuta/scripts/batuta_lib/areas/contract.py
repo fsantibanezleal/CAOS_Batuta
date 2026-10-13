@@ -185,23 +185,40 @@ def _gate_sets(loaded):
     return out
 
 
-# (label, [(contract id, path into its schema)]): every listed value must be identical
+# (label, [(contract id, path into its schema)], canonical value or None): every listed value must be identical (and equal
+# to the canonical value when there is one)
 EQUALITIES = [
     ("the catalog id pattern of C21 Contracts, C22 id and C23 Boundaries",
      [("C21", ("properties", "Contracts", "items", "pattern")), ("C22", ("properties", "id", "pattern")),
-      ("C23", ("$defs", "boundary_row", "properties", "Contract ID", "pattern"))]),
+      ("C23", ("$defs", "boundary_row", "properties", "Contract ID", "pattern"))], None),
     ("the exact-version pattern of C23 and C25",
      [("C23", ("$defs", "technology_row", "properties", "Version", "pattern")), ("C25", ("properties", "version", "pattern")),
-      ("C25", ("$defs", "candidate", "properties", "version", "pattern"))]),
+      ("C25", ("$defs", "candidate", "properties", "version", "pattern"))], None),
     ("the lane pattern of C01 and C30",
-     [("C01", ("$defs", "lane", "pattern")), ("C04", ("properties", "lane", "pattern")), ("C30", ("$defs", "lane", "pattern"))]),
+     [("C01", ("$defs", "lane", "pattern")), ("C30", ("$defs", "lane", "pattern"))], None),
     ("the environment variable name pattern of C01 and C30",
      [("C01", ("$defs", "provider", "properties", "credential_env", "pattern")),
-      ("C30", ("$defs", "request", "properties", "credential_env", "pattern"))]),
+      ("C30", ("$defs", "request", "properties", "credential_env", "pattern"))], None),
     ("the availability states of C26 and C27",
-     [("C26", ("$defs", "state", "enum")), ("C27", ("$defs", "entry", "properties", "state", "enum"))]),
-    ("the kinds of C02 and C04",
-     [("C02", ("properties", "kind", "enum")), ("C04", ("properties", "kind", "enum"))]),
+     [("C26", ("$defs", "state", "enum")), ("C27", ("$defs", "entry", "properties", "state", "enum"))], None),
+    ("the change-request id pattern of C07, C32 and C33",
+     [("C07", ("$defs", "entry", "properties", "change_request", "pattern")),
+      ("C32", ("properties", "trailers", "properties", "Test-Change-Approved", "pattern")),
+      ("C33", ("$defs", "request_row", "properties", "Id", "pattern"))], None),
+    ("the relative path pattern of C01, C04, C07, C28 and C30 (and the validator's)",
+     [("C01", ("properties", "coordination_root", "pattern")), ("C01", ("properties", "knowledge_manifest", "pattern")),
+      ("C04", ("$defs", "ledger_row", "properties", "Brief", "pattern")), ("C04", ("$defs", "ledger_row", "properties", "Report", "pattern")),
+      ("C07", ("$defs", "entry", "properties", "path", "pattern")), ("C28", ("properties", "io_contract", "pattern")),
+      ("C30", ("$defs", "request", "properties", "brief", "pattern")), ("C30", ("$defs", "request", "properties", "report", "pattern")),
+      ("C30", ("$defs", "request", "properties", "write_scope", "items", "pattern")),
+      ("C30", ("$defs", "result", "properties", "report", "pattern")), ("C30", ("$defs", "result", "properties", "patch", "pattern"))],
+     core.REL_PATH_PATTERN),
+]
+
+# (label, (contract id, path), (contract id, path)): every value of the first is a value of the second
+SUBSETS = [
+    ("every C30 result status is a C04 status (a dispatch outcome is written to the ledger as it is)",
+     ("C30", ("$defs", "result", "properties", "status", "enum")), ("C04", ("$defs", "ledger_row", "properties", "Status", "enum"))),
 ]
 
 
@@ -221,17 +238,53 @@ def _lint_consistency(loaded, items):
                               "contracts"))
         else:
             items.append(item("OK", f"gate names are the same in {', '.join(gates)} ({len(first)} lifecycle gates)", "contracts"))
-    for label, refs in EQUALITIES:
+    for label, refs, canonical in EQUALITIES:
         values = []
         for cid, keys in refs:
             if cid in loaded:
                 values.append((f"{cid} {'/'.join(keys)}", _path(loaded[cid], *keys)))
         if len(values) < 2:
             continue
-        if any(v is None for _, v in values) or any(v != values[0][1] for _, v in values):
+        reference = canonical if canonical is not None else values[0][1]
+        if any(v is None for _, v in values) or any(v != reference for _, v in values):
             items.append(item("FAIL", f"{label} differ: " + "; ".join(f"{n} = {v!r}" for n, v in values), "contracts"))
         else:
             items.append(item("OK", f"{label} are equal", "contracts"))
+    for label, (a_id, a_keys), (b_id, b_keys) in SUBSETS:
+        if a_id in loaded and b_id in loaded:
+            a, b = _path(loaded[a_id], *a_keys), _path(loaded[b_id], *b_keys)
+            missing = sorted(set(a or []) - set(b or []))
+            if a is None or b is None or missing:
+                items.append(item("FAIL", f"{label}: not in {b_id}: {', '.join(missing) or '(path not found)'}", "contracts"))
+            else:
+                items.append(item("OK", label, "contracts"))
+
+
+def _lint_hooks(plugin_dir, items):
+    """Handler discovery (C31): the area modules define `HOOKS = {id: handler}`, an id is defined once, and every handler id
+    that `hooks/hooks.json` runs resolves to one of them. The modules are read, never imported."""
+    plugin_dir = Path(plugin_dir)
+    areas_dir = plugin_dir / "scripts" / "batuta_lib" / "areas"
+    found, problems = core.discover_hook_ids(areas_dir) if areas_dir.is_dir() else ({}, [])
+    items.extend(item("FAIL", f"hook handlers: {p}", "hooks") for p in problems)
+    if not problems:
+        items.append(item("OK", f"{len(found)} hook handler id(s) defined in the area modules, each once", "hooks"))
+    hooks_json = plugin_dir / "hooks" / "hooks.json"
+    if not hooks_json.is_file():
+        return
+    rel = "hooks/hooks.json"
+    schema_path = core.find_schema(_own_contracts_dir(), "C31")
+    errs = core.validate_file(hooks_json, schema_path, "C31")
+    if errs:
+        items.extend(item("FAIL", f"{rel}: {e}", rel) for e in errs)
+        return
+    doc = core.loads_strict(hooks_json.read_text(encoding="utf-8-sig"))
+    ids = [core.hook_entry_id(h) for groups in doc["hooks"].values() for g in groups for h in g["hooks"]]
+    unknown = sorted({i for i in ids if i not in found})
+    if unknown:
+        items.extend(item("FAIL", f"{rel}: handler id '{i}' is defined by no area module (HOOKS = {{id: handler}})", rel) for i in unknown)
+    else:
+        items.append(item("OK", f"{rel} satisfies C31; its {len(ids)} entr(ies) resolve to a handler each", rel))
 
 
 def _lint_contracts_folder(cdir, root, items):
@@ -370,6 +423,7 @@ def lint(root=None, sizing=None, catalog=None, readiness=None):
     if root is None:
         cdir = _own_contracts_dir()
         _lint_contracts_folder(cdir, cdir.parent, items)
+        _lint_hooks(cdir.parent, items)
         return items
     root = Path(root)
     found_any = False

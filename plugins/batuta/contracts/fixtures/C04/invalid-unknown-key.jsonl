@@ -1,3 +1,0 @@
-# why: the ledger is a closed record
-# expect: unexpected property
-{"contract_version": "1.0", "id": "ingest-api-2026-10-12", "agent": "implementer", "model": "sonnet", "kind": "implement", "brief": ".batuta/delegation/ingest-api-2026-10-12.brief.md", "report": "wip/alerts/ingest-api-2026-10-12.md", "status": "complete", "note": "x"}

@@ -2,16 +2,19 @@
 
 Supported keywords (draft 2020-12 semantics): type, enum, const, pattern, required, properties,
 additionalProperties (bool or schema), items, minItems, minimum, maximum, maxLength, minLength, $ref to
-`#/$defs/<name>` in the same file, $defs (root only), description. Root-only metadata: $schema, $id, title,
+`#/$defs/<name>` in the same file, $defs (root only), description, format (only `date`). Root-only metadata: $schema, $id, title,
 contract_id, contract_version. Any other keyword makes `load_schema` refuse the schema, so a schema never
 silently promises more than the validator checks.
 
 Error strings look like `/path/to/field: message` (JSON pointer; the root is `/`). Markdown and JSONL helpers
 prefix them with where they came from (`front matter`, `table 'T' row 2`, `line 5`).
 """
+import ast
 import copy
+import datetime
 import fnmatch
 import json
+import math
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -19,7 +22,7 @@ from pathlib import Path
 from batuta_lib import frontmatter as fm
 
 KEYWORDS = {"type", "enum", "const", "pattern", "required", "properties", "additionalProperties", "items",
-            "minItems", "minimum", "maximum", "maxLength", "minLength", "$ref", "$defs", "description"}
+            "minItems", "minimum", "maximum", "maxLength", "minLength", "$ref", "$defs", "description", "format"}
 ROOT_META = {"$schema", "$id", "title", "contract_id", "contract_version"}
 FIXTURE_KEYS = ("_why", "_expect", "_recorded")
 TYPES = {"string", "integer", "number", "boolean", "null", "object", "array"}
@@ -41,9 +44,16 @@ def _no_duplicates(pairs):
     return out
 
 
+def _finite_float(text):
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"{text} is not a finite number (it overflows a double)")
+    return value
+
+
 def loads_strict(text):
-    """json.loads that refuses NaN, Infinity and duplicate object keys (ValueError with the reason)."""
-    return json.loads(text, parse_constant=_refuse_constant, object_pairs_hook=_no_duplicates)
+    """json.loads that refuses NaN, Infinity, numbers that overflow to infinity and duplicate object keys."""
+    return json.loads(text, parse_constant=_refuse_constant, parse_float=_finite_float, object_pairs_hook=_no_duplicates)
 
 
 def _anchor(pattern):
@@ -121,6 +131,8 @@ def _check(node, path, root, errs, is_root):
             errs.append(f"{k} at {here} must be a non-negative integer")
     if "description" in node and not isinstance(node["description"], str):
         errs.append(f"description at {here} must be a string")
+    if "format" in node and node["format"] != "date":
+        errs.append(f"format at {here} must be 'date' (the only format the validator checks), got {node['format']!r}")
     if "$ref" in node:
         ref = node["$ref"]
         defs = root.get("$defs", {}) if isinstance(root.get("$defs"), dict) else {}
@@ -238,6 +250,17 @@ def _is_type(v, t):
     return _type_name(v) == t
 
 
+def _is_date(text):
+    """A real calendar date written YYYY-MM-DD (ASCII digits, a month and a day that exist)."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text, re.ASCII):
+        return False
+    try:
+        datetime.date(int(text[:4]), int(text[5:7]), int(text[8:10]))
+    except ValueError:
+        return False
+    return True
+
+
 def _eq(a, b):
     if isinstance(a, bool) != isinstance(b, bool):
         return False
@@ -267,6 +290,9 @@ def _walk(inst, sch, root, path, errs, depth=0):
             errs.append(f"{here}: length {len(inst)} is below minLength {sch['minLength']}")
         if "maxLength" in sch and len(inst) > sch["maxLength"]:
             errs.append(f"{here}: length {len(inst)} exceeds maxLength {sch['maxLength']}")
+        if sch.get("format") == "date" and not _is_date(inst) and (
+                "pattern" not in sch or compile_pattern(sch["pattern"]).search(inst)):
+            errs.append(f"{here}: value {inst!r} is not a calendar date (YYYY-MM-DD)")   # a failed pattern is reported once, by the pattern
     if _is_num(inst):
         if "minimum" in sch and inst < sch["minimum"]:
             errs.append(f"{here}: {inst} must be >= {sch['minimum']}")
@@ -405,23 +431,6 @@ def _text_ok(v):
 PROVIDER_KINDS = ("stub", "simulator", "fixture", "baseline")
 
 
-def check_declaration_states(states, path, can_be_absent):
-    """The availability rule of C26: a component that can be absent declares `available` and at least one
-    non-available state; a state is declared once; the test ids are required by the schema."""
-    errs, seen = [], set()
-    for i, st in enumerate(states):
-        name = st.get("state")
-        if name in seen:
-            errs.append(f"{path}/{i}/state: duplicate state '{name}'")
-        seen.add(name)
-    if can_be_absent:
-        if "available" not in seen:
-            errs.append(f"{path}: a component that can be absent must declare the 'available' state")
-        if not (seen - {"available"}):
-            errs.append(f"{path}: a component that can be absent must declare at least one non-available state")
-    return errs
-
-
 def _check_runtime_block(inst, path=""):
     errs = []
     state = inst.get("state")
@@ -435,18 +444,8 @@ def _check_runtime_block(inst, path=""):
 
 
 def _check_c26(inst, schema):
-    # Dispatch on the document shape: a declaration has `components`, a runtime block has `state`.
-    if "components" in inst:
-        errs = validate(inst, schema)
-        if errs:
-            return errs
-        for i, comp in enumerate(inst["components"]):
-            errs.extend(check_declaration_states(comp["states"], f"/components/{i}/states", comp["can_be_absent"]))
-        return errs
-    if "state" in inst:
-        errs = validate_def(inst, schema, "runtime_block")
-        return errs or _check_runtime_block(inst)
-    return ["/: not an availability declaration (no 'components') nor a runtime block (no 'state')"]
+    """C26 is the runtime block an artifact or response carries; the per-boundary states live in the catalog (C22)."""
+    return _check_runtime_block(inst)
 
 
 def _check_c27(inst, schema):
@@ -501,11 +500,16 @@ def _check_c28(inst, schema):
     return errs
 
 
-_RELPATH = re.compile(r"(?!.*(^|/)\.\.(/|\Z))[^/\\:][^\\:]*\Z")
+# The one relative-path pattern of every contract (C01, C07, C28, C30 carry it; `contract lint` checks they are equal): a POSIX
+# path with no leading slash, no drive letter, no backslash, no control character (so no newline), no empty segment and
+# no `.` or `..` segment. `[\s\S]*` lets the lookaheads see past a newline.
+REL_PATH_PATTERN = r"^(?![\s\S]*(^|/)\.\.?(/|$))(?![\s\S]*//)[^/\\:\x00-\x1f][^\\:\x00-\x1f]*$"
+_RELPATH = compile_pattern(REL_PATH_PATTERN)
 
 
 def _bad_relpath(p):
-    return not (isinstance(p, str) and _RELPATH.fullmatch(p) and "//" not in p and not p.startswith("./") and "/./" not in p)
+    return not (isinstance(p, str) and _RELPATH.search(p))
+
 
 
 def _check_c01(inst, schema):
@@ -517,23 +521,26 @@ def _check_c01(inst, schema):
     providers = d.get("providers", {})
     for lane in d["lanes"]:
         if lane.startswith("provider:") and lane[len("provider:"):] not in providers:
-            errs.append(f"/dispatch/lanes: lane '{lane}' needs dispatch.providers.{lane[len('provider:'):]}")
-    return errs
-
-
-def _check_c04_line(inst, schema):
-    errs = []
-    if inst["status"] == "accepted":
-        absent = [k for k in ("accepted_by", "accepted_at") if k not in inst]
-        if absent:
-            errs.append(f"/{absent[0]}: an accepted row records who accepted it and when (missing: {', '.join(absent)})")
-    if inst["status"] == "superseded" and "superseded_by" not in inst:
-        errs.append("/superseded_by: a superseded row names the row that replaces it")
+            # the lane is quoted whole and never cut into pieces, so a caller that rewrites quoted values (the configuration
+            # loader, which validates the expanded document) can print it as written
+            errs.append(f"/dispatch/lanes: lane {lane!r} needs a key of dispatch.providers named after it")
     return errs
 
 
 def _check_c06(inst, schema):
     errs = []
+    if inst["approved_spec_sha256_prefix"] != inst["spec_sha256"][:12]:
+        errs.append(f"/approved_spec_sha256_prefix: '{inst['approved_spec_sha256_prefix']}' is not the first 12 characters "
+                    f"of spec_sha256 ('{inst['spec_sha256'][:12]}')")
+    # decisions 16 and 28: what the human typed STARTS with the phrase `approve <spec_id> <prefix>` after leading whitespace
+    # (so "do not approve ..." is no approval): the keyword and the hex match case-insensitively, the spec id exactly, and
+    # the phrase ends at whitespace or the end of the text (never a piece of a longer token)
+    phrase = (r"\s*(?i:approve)[ \t]+" + re.escape(inst["spec_id"]) + r"[ \t]+(?i:" + re.escape(inst["approved_spec_sha256_prefix"])
+              + r")(?!\S)")
+    if not re.match(phrase, inst["prompt_excerpt"]):
+        errs.append(f"/prompt_excerpt: the typed text must start with the phrase 'approve {inst['spec_id']} "
+                    f"{inst['approved_spec_sha256_prefix']}' after any leading whitespace (the keyword and the hex in any case, "
+                    f"the spec id exactly)")
     for key in ("contracts_sha256", "named_tests_sha256", "adrs_sha256"):
         for path in inst[key]:
             if _bad_relpath(path):
@@ -542,12 +549,31 @@ def _check_c06(inst, schema):
 
 
 def _check_c07(inst, schema):
-    errs = []
-    for i, e in enumerate(inst["entries"]):
+    """An entry that supersedes another names the old sha256 of an earlier entry of the same path and the approved
+    change request; a path has exactly one live lock (an entry no later entry supersedes)."""
+    errs, entries = [], inst["entries"]
+    superseded = set()
+    for i, e in enumerate(entries):
         if "supersedes" in e and "change_request" not in e:
             errs.append(f"/entries/{i}/change_request: an entry that supersedes another names the approved change request")
         if "change_request" in e and "supersedes" not in e:
             errs.append(f"/entries/{i}/supersedes: a change_request goes with the sha256 it supersedes")
+        if "supersedes" in e:
+            target = next((j for j in range(i) if entries[j]["path"] == e["path"] and entries[j]["sha256"] == e["supersedes"]), None)
+            if target is not None:
+                superseded.add(target)
+            else:
+                errs.append(f"/entries/{i}/supersedes: names no earlier entry of '{e['path']}' with that sha256 "
+                            f"(supersedes must name the sha256 of an earlier entry of the same path)")
+    live = {}
+    for i, e in enumerate(entries):
+        if i in superseded:
+            continue
+        if e["path"] in live:
+            errs.append(f"/entries/{i}/path: '{e['path']}' has two live locks (entries {live[e['path']]} and {i}); "
+                        f"replace the old one through an approved change request that supersedes it")
+        else:
+            live[e["path"]] = i
     return errs
 
 
@@ -576,52 +602,215 @@ def _check_c30(inst, schema):
     return errs
 
 
-HOOK_STDOUT = {"SessionStart": ("none", "sessionstart"), "PreToolUse": ("none", "block", "pretooluse"),
-               "SubagentStop": ("none", "block"), "UserPromptSubmit": ("none", "block"), "Stop": ("none", "block")}
+LAUNCHER_PATH = "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py"
+HOOK_ID = re.compile(r"[a-z][a-z0-9-]*\Z", re.ASCII)
+HOOK_INTERPRETER = re.compile(r"[A-Za-z0-9._-]+\Z", re.ASCII)
+HOOK_FLAG = re.compile(r"-[A-Za-z0-9]+\Z", re.ASCII)
+# events whose hook cannot block through `onFailure: block` (the platform has no failure-to-block path for them)
+NO_ON_FAILURE = ("SessionStart", "SubagentStop", "Stop")
+
+
+def hook_entry_id(entry):
+    """The handler id an entry runs (the last argument), or None when its command line is not in the contract's grammar."""
+    return _hook_entry_parts(entry)[2]
+
+
+HOOK_PROFILES = ("shipped", "rendered")
+OPTION_PYTHON = '"$CLAUDE_PLUGIN_OPTION_PYTHON"'   # the shipped shell-form interpreter that the user's python option fills
+ABS_PATH = re.compile(r'(?:/|[A-Za-z]:/)[^"\\\x00-\x1f]*\Z')   # a POSIX or a drive-letter path, forward slashes, no quote
+UNRESOLVED = re.compile(r"\{\{|\$")
+RENDERED_LAUNCHER_END = "/scripts/hook.py"
+MATCHER_EVENTS = ("PreToolUse", "SessionStart", "SubagentStop")   # the events whose matcher the platform reads
+
+
+def _abs_problem(path, what, ending=None):
+    if UNRESOLVED.search(path):
+        return f"{what} {path!r} still holds a placeholder or a variable (a rendered entry has none left)"
+    if not ABS_PATH.fullmatch(path):
+        return f"{what} {path!r} is an absolute path with forward slashes ('/...' or 'C:/...') in a rendered entry"
+    if ending and not path.endswith(ending):
+        return f"{what} {path!r} ends in {ending}"
+    return None
+
+
+def _hook_entry_parts(entry, mode="shipped"):
+    """(interpreter, flags, handler id, problem) of a hook entry in exec form (`command` and `args`) or shell form
+    (`command` alone: `<interpreter> [flags] "<launcher>" <id>`, the launcher in double quotes). One grammar for both: an
+    interpreter, flags, the launcher, the handler id.
+
+    `shipped` (plugins/batuta/hooks/hooks.json): the launcher is `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py`; the interpreter is a
+    bare name, or in shell form only exactly `"$CLAUDE_PLUGIN_OPTION_PYTHON"` with `shell: bash`.
+    `rendered` (the entries written per device): the launcher is an absolute path ending in /scripts/hook.py and the interpreter
+    a bare name or an absolute path (in double quotes in shell form); no placeholder or variable is left."""
+    if mode not in HOOK_PROFILES:
+        raise ValueError(f"the hook entry profile is one of {', '.join(HOOK_PROFILES)}, got {mode!r}")
+    rendered = mode == "rendered"
+    command, args = entry.get("command", ""), entry.get("args")
+    interpreter, flags = None, []
+    if args is None:
+        if rendered:
+            m = re.fullmatch(r'("[^"]+"|\S+)((?: -[A-Za-z0-9]+)*) "([^"]+)" (\S+)', command)
+            shape = '<interpreter> [flags] "<absolute launcher>" <handler id> (an absolute path in double quotes)'
+        else:
+            m = re.fullmatch(r'("\$CLAUDE_PLUGIN_OPTION_PYTHON"|\S+)((?: -[A-Za-z0-9]+)*) "' + re.escape(LAUNCHER_PATH) + r'" (\S+)', command)
+            shape = f'<interpreter> [flags] "{LAUNCHER_PATH}" <handler id> (the placeholder in double quotes)'
+        if m is None:
+            if rendered and UNRESOLVED.search(command):
+                return None, [], None, f"command {command!r} still holds a placeholder or a variable (a rendered entry has none left)"
+            return None, [], None, f"command {command!r} must be '{shape}', or a bare interpreter name with args"
+        interpreter, flags, hid = m.group(1), m.group(2).split(), m.group(m.lastindex)
+        if rendered:
+            launcher_problem = _abs_problem(m.group(3), "the launcher", RENDERED_LAUNCHER_END)
+            if launcher_problem:
+                return None, [], None, launcher_problem
+            if interpreter.startswith('"'):
+                problem = _abs_problem(interpreter[1:-1], "the interpreter", None)
+                if problem:
+                    return None, [], None, problem
+                interpreter = interpreter[1:-1]
+            elif ABS_PATH.match(interpreter):
+                return None, [], None, f"the absolute interpreter path {interpreter!r} is in double quotes in shell form"
+        elif interpreter == OPTION_PYTHON:
+            if entry.get("shell") != "bash":
+                return None, [], None, f"the interpreter {OPTION_PYTHON} (the user's python option) needs \"shell\": \"bash\" in the entry"
+    else:
+        interpreter = command
+        if "CLAUDE_PLUGIN_OPTION_PYTHON" in command and not rendered:
+            return None, [], None, "the python option variable is for the shell form only (with shell bash); exec form names a bare interpreter"
+        if rendered:
+            problem = _abs_problem(command, "the interpreter", None) if (ABS_PATH.match(command) or UNRESOLVED.search(command)) else None
+            if problem:
+                return None, [], None, problem
+        elif not HOOK_INTERPRETER.fullmatch(command):
+            return None, [], None, f"command {command!r} is a bare interpreter name (no path, no space) when args are given"
+        if rendered:
+            k = next((i for i, a in enumerate(args) if not HOOK_FLAG.fullmatch(a)), len(args))
+            if k >= len(args):
+                return None, [], None, "args must contain the launcher, an absolute path ending in /scripts/hook.py"
+            problem = _abs_problem(args[k], "the launcher", RENDERED_LAUNCHER_END)
+            if problem:
+                return None, [], None, problem
+        else:
+            if LAUNCHER_PATH not in args:
+                return None, [], None, f"args must contain the launcher {LAUNCHER_PATH}"
+            k = args.index(LAUNCHER_PATH)
+        flags = args[:k]
+        if not all(HOOK_FLAG.fullmatch(f) for f in flags):
+            return None, [], None, f"only interpreter flags such as -I come before the launcher, got {flags}"
+        if len(args) != k + 2:
+            return None, [], None, "the launcher is followed by exactly one argument, the handler id"
+        hid = args[k + 1]
+    if interpreter != OPTION_PYTHON and not (rendered and ABS_PATH.fullmatch(interpreter)) and not HOOK_INTERPRETER.fullmatch(interpreter):
+        return None, [], None, f"the interpreter is a bare command name (no path), got {interpreter!r}"
+    if not all(HOOK_FLAG.fullmatch(f) for f in flags):
+        return None, [], None, f"interpreter flags look like -I, got {flags}"
+    if not HOOK_ID.fullmatch(hid):
+        return None, [], None, f"the handler id matches [a-z][a-z0-9-]*, got {hid!r}"
+    return interpreter, flags, hid, None
+
+
+def _matcher_problem(event):
+    if event in MATCHER_EVENTS:
+        return None
+    return f"{event} has no matcher support, the platform ignores a matcher there (matchers: {', '.join(MATCHER_EVENTS)})"
+
+
+def check_hook_entry(entry, event, mode="shipped", matcher=None):
+    """Problems of one hook entry of `event` in a profile (`shipped` or `rendered`), as strings that start with the entry
+    field (`/command: ...`, `/onFailure: ...`, `/matcher: ...`). The entry is structurally sound (C31 `entry`; use
+    `check_rendered_entry` for the structure too). `matcher` is the matcher of the entry's group, when it has one."""
+    errs = []
+    interpreter, flags, hid, problem = _hook_entry_parts(entry, mode)
+    if problem:
+        errs.append(f"/command: {problem}")
+    if mode == "rendered" and entry.get("shell") == "powershell" and "args" not in entry:
+        errs.append("/shell: a rendered shell-form command quotes its paths and PowerShell cannot run a quoted string followed by "
+                    "arguments (it needs `&`): use exec form (command and args) or shell bash")
+    on_failure = entry.get("onFailure")
+    if on_failure == "block" and event in NO_ON_FAILURE:
+        why = "SessionStart cannot block" if event == "SessionStart" else "a Stop-type hook returns decision block itself"
+        errs.append(f"/onFailure: a {event} hook cannot block through onFailure ({why})")
+    if on_failure is not None and (entry.get("async") is True or entry.get("asyncRewake") is True):
+        which = "async" if entry.get("async") is True else "asyncRewake"
+        errs.append(f"/onFailure: onFailure is ignored by an {which} hook, so a fail-closed entry would fail open; drop one of them")
+    if matcher is not None:
+        mp = _matcher_problem(event)
+        if mp:
+            errs.append(f"/matcher: {mp}")
+    return errs
+
+
+def check_rendered_entry(entry, event, matcher=None):
+    """The rendered profile of one entry: the C31 `rendered_entry` structure, then `check_hook_entry` in `rendered` mode."""
+    schema = load_schema(find_schema(Path(__file__).resolve().parents[2] / "contracts", "C31"))
+    errs = validate_def(entry, schema, "rendered_entry")
+    return errs or check_hook_entry(entry, event, "rendered", matcher)
 
 
 def _check_c31(inst, schema):
-    """A hook registry (`handlers`) or the rendered hooks.json (`hooks`)."""
-    if "handlers" in inst:
-        errs = validate_def(inst, schema, "registry")
-        if errs:
-            return errs
-        ids = []
-        for i, h in enumerate(inst["handlers"]):
-            here = f"/handlers/{i}"
-            if h["id"] in ids:
-                errs.append(f"{here}/id: duplicate handler id '{h['id']}'")
-            ids.append(h["id"])
-            if h["argv"][-1] != h["id"]:
-                errs.append(f"{here}/argv: the last argument is the handler id '{h['id']}'")
-            if not HOOK_ARGV0.fullmatch(h["argv"][0]):
-                errs.append(f"{here}/argv/0: the interpreter is a bare command name (no path), got {h['argv'][0]!r}")
-            if h["argv"][1] != LAUNCHER_PATH:
-                errs.append(f"{here}/argv/1: the launcher is {LAUNCHER_PATH} (no machine path), got {h['argv'][1]!r}")
-            if "matcher" in h and h["event"] != "PreToolUse":
-                errs.append(f"{here}/matcher: only a PreToolUse handler has a matcher")
-            if h["stdout"] not in HOOK_STDOUT[h["event"]]:
-                errs.append(f"{here}/stdout: a {h['event']} handler writes one of {', '.join(HOOK_STDOUT[h['event']])}")
-            if h["failure"] == "fail-open" and set(h["exit_codes"]) != {"0"}:
-                errs.append(f"{here}/exit_codes: a fail-open handler always exits 0 (internal errors are logged, never block)")
-            if h["failure"] == "fail-closed" and "2" not in h["exit_codes"]:
-                errs.append(f"{here}/exit_codes: a fail-closed handler declares exit code 2 (block)")
-        return errs
+    """The rendered hooks.json (`hooks`) or a handler result (`exit_code`)."""
     if "hooks" in inst:
         errs = validate_def(inst, schema, "hooks_file")
         if errs:
             return errs
+        mode = inst.get("profile", "shipped")
         for event, groups in inst["hooks"].items():
             for gi, g in enumerate(groups):
-                if "matcher" in g and event != "PreToolUse":
-                    errs.append(f"/hooks/{event}/{gi}/matcher: only PreToolUse groups carry a matcher")
+                if "matcher" in g and _matcher_problem(event):
+                    errs.append(f"/hooks/{event}/{gi}/matcher: {_matcher_problem(event)}")
+                for hi, h in enumerate(g["hooks"]):
+                    here = f"/hooks/{event}/{gi}/hooks/{hi}"
+                    errs.extend(f"{here}{e}" for e in check_hook_entry(h, event, mode))
         return errs
-    return ["/: not a hook registry (no 'handlers') nor a hooks file (no 'hooks')"]
+    if "exit_code" in inst:
+        errs = validate_def(inst, schema, "handler_result")
+        if errs:
+            return errs
+        if inst["exit_code"] == 2 and not _text_ok(inst.get("message")):
+            errs.append("/message: exit code 2 blocks and states why in message (a non-blank text, shown to the model)")
+        out = inst.get("output")
+        if out is not None:
+            c16 = find_schema(Path(__file__).resolve().parents[2] / "contracts", "C16")
+            if c16 is not None:
+                errs.extend(f"/output{e}" if e.startswith("/") else f"/output: {e}" for e in validate_instance("C16", out, load_schema(c16)))
+        return errs
+    return ["/: not a hooks file (no 'hooks') nor a handler result (no 'exit_code')"]
+
+
+def discover_hook_ids(areas_dir):
+    """Handler discovery: an area module may define `HOOKS = {id: handler}` as a literal dict with string keys. Returns
+    ({id: [module names]}, problems); an id defined by two modules is a problem. The modules are read, never imported."""
+    found, problems = {}, []
+    for path in sorted(Path(areas_dir).glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+        except SyntaxError as exc:
+            problems.append(f"{path.stem}: cannot parse ({exc.msg})")
+            continue
+        for node in tree.body:
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)] if isinstance(node, ast.Assign) else \
+                [node.target.id] if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) else []
+            if "HOOKS" not in targets:
+                continue
+            value = node.value
+            if not isinstance(value, ast.Dict):
+                problems.append(f"{path.stem}: HOOKS must be a literal dict {{id: handler}}, not computed")
+                continue
+            for key in value.keys:
+                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                    problems.append(f"{path.stem}: HOOKS keys are string literals (handler ids)")
+                elif not HOOK_ID.fullmatch(key.value):
+                    problems.append(f"{path.stem}: handler id {key.value!r} must match [a-z][a-z0-9-]*")
+                else:
+                    found.setdefault(key.value, []).append(path.stem)
+    for hid, mods in sorted(found.items()):
+        if len(mods) > 1:
+            problems.append(f"duplicate handler id '{hid}' defined by {', '.join(mods)}")
+    return found, problems
 
 
 COMMIT_TRAILER = re.compile(r"([A-Za-z][A-Za-z0-9-]*): (.*)\Z", re.ASCII)
-HOOK_ARGV0 = re.compile(r"[A-Za-z0-9._-]+\Z", re.ASCII)
-LAUNCHER_PATH = "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py"
+RESERVED_TRAILER = "Test-Change-Approved"
 
 
 def parse_commit_message(text):
@@ -671,16 +860,19 @@ def check_commit_message(text, schema=None):
     for k in sorted(set(keys)):
         if keys.count(k) > 1:
             errs.append(f"trailer '{k}' appears more than once")
+    for k in sorted(set(keys)):
+        if k.lower() == RESERVED_TRAILER.lower() and k != RESERVED_TRAILER:
+            errs.append(f"trailer key {k!r} must be written '{RESERVED_TRAILER}' exactly (git reads trailer keys without regard "
+                        f"to case, so the guard accepts one spelling and a parser cannot diverge from a producer)")
     for ln in rest:
-        if ln.startswith("Test-Change-Approved") and "Test-Change-Approved" not in keys:
-            errs.append("the 'Test-Change-Approved' trailer belongs in the last paragraph, after a blank line")
+        if ln.lower().startswith(RESERVED_TRAILER.lower()) and RESERVED_TRAILER.lower() not in (k.lower() for k in keys):
+            errs.append(f"the '{RESERVED_TRAILER}' trailer belongs in the last paragraph, after a blank line")
             break
     return errs
 
 
-SEMANTIC = {"C01": _check_c01, "C06": _check_c06, "C07": _check_c07, "C12": _check_c12, "C25": _check_c25,
+SEMANTIC = {"C01": _check_c01, "C06": _check_c06, "C07": _check_c07, "C12": _check_c12, "C25": _check_c25, "C26": _check_c26,
             "C27": _check_c27, "C28": _check_c28, "C30": _check_c30, "C31": _check_c31}
-SEMANTIC_LINE = {"C04": _check_c04_line}   # contract id -> check(doc, schema) for one JSONL line
 SEMANTIC_TEXT = {"C32": check_commit_message}   # contract id -> check(text, schema) for a plain-text artifact
 
 
@@ -689,10 +881,6 @@ def validate_instance(contract_id, instance, schema):
     if contract_id == "C16":
         errs = validate(instance, schema)
         return errs or (_check_c16(instance, schema) if isinstance(instance, dict) else [])
-    if contract_id == "C26":
-        if not isinstance(instance, dict):
-            return validate(instance, schema)
-        return _check_c26(instance, schema)
     errs = validate(instance, schema)
     if errs:
         return errs
@@ -704,8 +892,8 @@ def validate_instance(contract_id, instance, schema):
 
 
 def validate_jsonl(text, schema, contract_id=None):
-    """One JSON value per line; blank lines and lines starting with '#' are skipped. With a contract id, the
-    line's semantic checks run when the structure is sound."""
+    """One JSON value per line; blank lines and lines starting with '#' are skipped. No shipped contract is JSONL
+    any more (the ledger C04 is Markdown); the reader stays for a project's own line-oriented contract."""
     errs = []
     for n, line in enumerate(re.split(r"\r\n|\n|\r", text.lstrip("﻿")), 1):
         if not line.strip() or line.lstrip().startswith("#"):
@@ -716,10 +904,7 @@ def validate_jsonl(text, schema, contract_id=None):
             msg = exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
             errs.append(f"line {n}: invalid JSON ({msg})")
             continue
-        found = validate(doc, schema)
-        if not found and contract_id in SEMANTIC_LINE:
-            found = SEMANTIC_LINE[contract_id](doc, schema)
-        errs.extend(f"line {n} {e}" for e in found)
+        errs.extend(f"line {n} {e}" for e in validate(doc, schema))
     return errs
 
 
@@ -739,6 +924,9 @@ def _coerce(cell, kind):
         items = [x for x in items if x]
         return [] if items in (["-"], ["none"]) else items
     cell = _strip_ticks(cell)
+    if kind == "yesno":
+        # y and yes, n and no in any case, as the CAOS ledger reader takes them; anything else stays as written (and fails the enum)
+        return {"y": "yes", "yes": "yes", "n": "no", "no": "no"}.get(cell.strip().lower(), cell)
     if kind == "int":
         if cell == "":
             return None
@@ -760,6 +948,12 @@ def _bind_headers(found, tspec):
     canon = {_norm_header(h): h for h in list(tspec["headers"]) + list(tspec.get("optional_headers", []))}
     names = [canon.get(_norm_header(h), h) for h in found]
     missing = [h for h in tspec["headers"] if h not in names]
+    if not missing and tspec.get("headers_lead"):
+        # a positional reader (the CAOS delegation tool) takes the first columns by place: the spec headers come first, in order
+        n = len(tspec["headers"])
+        wrong = [h for i, h in enumerate(tspec["headers"]) if names[i:i + 1] != [h]]
+        if names[:n] != list(tspec["headers"]):
+            return None, [f"{h} (must be column {tspec['headers'].index(h) + 1})" for h in wrong]
     return (names if not missing else None), missing
 
 
@@ -797,7 +991,7 @@ def _body_of(text):
 SECTIONS_KEYS = {"contract_id", "contract_version", "description", "front_matter", "coerce", "mode", "line_prefix",
                  "min_lines", "sections", "required_sections", "required_sections_when", "case_insensitive_titles",
                  "section_patterns", "line_rules", "forbidden", "forbidden_prose", "final_lines", "tables", "rules"}
-TABLE_KEYS = {"name", "headers", "headers_match", "optional_headers", "row_def", "min_rows", "optional", "section", "coerce"}
+TABLE_KEYS = {"name", "headers", "headers_match", "headers_lead", "optional_headers", "row_def", "min_rows", "optional", "section", "coerce"}
 RULE_KEYS = {
     "nonempty_sections": {"sections"},
     "forbid_text": {"pattern"},
@@ -812,13 +1006,17 @@ RULE_KEYS = {
     "item_rule": {"section", "item_pattern", "require"},
     "section_text": {"section", "pattern"},
     "section_order": {"first", "then"},
-    "lines_per_row": {"table", "match", "pattern"},
+    "lines_per_row": {"table", "match", "pattern", "id_column"},
     "relpath_columns": {"table", "columns"},
     "min_rows": {"table", "min"},
     "exit_code": {"section", "expect"},
+    "labeled_parts": {"section", "labels", "min_words", "exempt_prefix", "exempt_min_words", "check_label", "check_pattern"},
+    "cell_items": {"table", "column", "separator", "item_pattern", "key_pattern", "must_include"},
 }
 RULE_COMMON = {"type", "when", "message"}
-PATTERN_KEYS = {"pattern", "sections_pattern", "item_pattern", "require"}
+PATTERN_KEYS = {"pattern", "sections_pattern", "item_pattern", "require", "key_pattern", "check_pattern"}
+FRONT_MATTER_MODES = ("required", "bullets", "none")
+COERCE_KINDS = ("list", "int", "yesno")
 
 
 def check_sections_spec(spec):
@@ -836,6 +1034,13 @@ def check_sections_spec(spec):
     for k in spec:
         if k not in SECTIONS_KEYS:
             errs.append(f"unknown key '{k}' at the top level")
+    if spec.get("front_matter", "required") not in FRONT_MATTER_MODES:
+        errs.append(f"front_matter must be one of {', '.join(FRONT_MATTER_MODES)}, got {spec['front_matter']!r}")
+    if spec.get("mode", "sections") not in ("sections", "lines"):
+        errs.append(f"mode must be 'lines' (or absent), got {spec['mode']!r}")
+    for col, kind in (spec.get("coerce") or {}).items():
+        if kind not in COERCE_KINDS:
+            errs.append(f"coerce['{col}'] must be one of {', '.join(COERCE_KINDS)}, got {kind!r}")
     for sp in spec.get("section_patterns", []):
         for k in sp:
             if k not in {"pattern", "min"}:
@@ -854,6 +1059,9 @@ def check_sections_spec(spec):
                 errs.append(f"unknown key '{k}' in tables[{i}]")
         if t.get("headers_match", "exact") not in ("exact", "contains"):
             errs.append(f"tables[{i}].headers_match must be 'exact' or 'contains'")
+        for col, kind in (t.get("coerce") or {}).items():
+            if kind not in COERCE_KINDS:
+                errs.append(f"tables[{i}].coerce['{col}'] must be one of {', '.join(COERCE_KINDS)}, got {kind!r}")
     for i, r in enumerate(spec.get("rules", [])):
         rt = r.get("type")
         if rt not in RULE_KEYS:
@@ -864,6 +1072,16 @@ def check_sections_spec(spec):
                 errs.append(f"unknown key '{k}' in rules[{i}] ({rt})")
         for k in PATTERN_KEYS & set(r):
             pat(r[k], f"rules[{i}].{k}")
+        if rt == "exit_code" and r.get("expect") not in ("zero", "nonzero"):
+            errs.append(f"rules[{i}].expect must be 'zero' or 'nonzero', got {r.get('expect')!r}")
+        if rt == "labeled_parts" and not (isinstance(r.get("labels"), list) and r["labels"] and all(isinstance(x, str) and x for x in r["labels"])):
+            errs.append(f"rules[{i}].labels must be a non-empty list of names")
+        if rt == "cell_items":
+            for j, m in enumerate(r.get("must_include", [])):
+                if not (isinstance(m, dict) and set(m) <= {"pattern", "message"} and "pattern" in m):
+                    errs.append(f"rules[{i}].must_include[{j}] is {{\"pattern\": ..., \"message\": ...}}")
+                else:
+                    pat(m["pattern"], f"rules[{i}].must_include[{j}]")
     for i, r in enumerate(spec.get("required_sections_when", [])):
         for k in r:
             if k not in {"when", "sections"}:
@@ -895,7 +1113,7 @@ def _when(rule, meta):
 
 
 def _matches(row, match):
-    return all(row.get(k) in v for k, v in match.items())
+    return all(row.get(k, "") in v for k, v in match.items())
 
 
 def _validate_lines(text, schema, spec):
@@ -992,6 +1210,57 @@ def _find_title(titles, name):
     return None
 
 
+def _labeled_parts(body, rule):
+    """The rule of a section made of `Label: content` lines (the sizing's Executive brief): every label has a line with at
+    least `min_words` words; the line of `check_label` also matches `check_pattern`; a section that starts with
+    `exempt_prefix` (`Not a product`) is exempt when its reason has `exempt_min_words` words."""
+    name, min_words = rule["section"], rule.get("min_words", 5)
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    prefix = rule.get("exempt_prefix")
+    if prefix and lines[0].lower().startswith(prefix.lower()):
+        need = rule.get("exempt_min_words", min_words)
+        if len(lines[0].partition(":")[2].split()) >= need:
+            return []
+        return [f"section '{name}': '{prefix}' needs its reason after a colon (at least {need} words)"]
+    parts = {}
+    for ln in lines:
+        for label in rule["labels"]:
+            if ln.lstrip("-* ").lower().startswith(label.lower() + ":"):
+                parts[label] = ln.partition(":")[2].strip()
+    errs = [f"section '{name}': no '{label}:' line with content (at least {min_words} words)"
+            for label in rule["labels"] if len(parts.get(label, "").split()) < min_words]
+    check = rule.get("check_label")
+    if check and parts.get(check) and not compile_pattern(rule["check_pattern"]).search(parts[check]):
+        errs.append(rule.get("message", f"section '{name}': the {check} line must match {rule['check_pattern']!r}"))
+    return errs
+
+
+def _cell_items(cell, rule, where):
+    """The rule of a table cell that holds several declarations (the catalog's missing-data behavior): each separated item
+    matches `item_pattern`; the first group of `key_pattern` is unique; and, when every item is well formed, each
+    `must_include` pattern matches some item."""
+    items = [x.strip() for x in cell.split(rule.get("separator", ";")) if x.strip()]
+    pattern = compile_pattern(rule["item_pattern"])
+    errs = [f"{where}: {item[:60]!r}: " + rule.get("message", f"each item must match {rule['item_pattern']!r}")
+            for item in items if not pattern.search(item)]
+    if errs:
+        return errs
+    if "key_pattern" in rule:
+        seen = set()
+        for item in items:
+            m = compile_pattern(rule["key_pattern"]).search(item)
+            key = m.group(1) if m else item
+            if key in seen:
+                errs.append(f"{where}: duplicate '{key}' (declare each state once)")
+            seen.add(key)
+    for need in rule.get("must_include", []):
+        if not any(compile_pattern(need["pattern"]).search(item) for item in items):
+            errs.append(f"{where}: " + need.get("message", f"an item matching {need['pattern']!r} is required"))
+    return errs
+
+
 def validate_markdown(text, schema, spec):
     """Validate a Markdown artifact: its header against the schema, then sections, tables and rules of the spec."""
     if spec.get("mode") == "lines":
@@ -1015,11 +1284,13 @@ def validate_markdown(text, schema, spec):
             if key in meta:
                 meta[key] = _coerce(meta[key], kind)
         errs.extend(f"header {e}" for e in validate(meta, schema))
-    else:
+    elif fmode == "none":
         try:
             meta, body = fm.parse(text)
         except ValueError:
             meta, body = {}, text
+    else:
+        return [f"front_matter {fmode!r} in the sections file is not one of {', '.join(FRONT_MATTER_MODES)}"]
     ci = bool(spec.get("case_insensitive_titles"))
     fold = (lambda s: s.lower()) if ci else (lambda s: s)
     try:
@@ -1110,7 +1381,7 @@ def validate_markdown(text, schema, spec):
     for rule in spec.get("rules", []):
         rt = rule.get("type")
         if rt in ("forbid_rows", "require_text_if_rows", "unique_column", "ids_match", "disjoint_scopes", "row_requires",
-                  "lines_per_row", "relpath_columns", "min_rows"):
+                  "lines_per_row", "relpath_columns", "min_rows", "cell_items"):
             tbl = rule.get("table")
             if tbl not in named:
                 continue
@@ -1133,11 +1404,28 @@ def validate_markdown(text, schema, spec):
             if any(_matches(r, rule["match"]) for r in named[rule["table"]]) and not compile_pattern(rule["pattern"]).search(body):
                 errs.append(rule.get("message", f"text matching {rule['pattern']!r} required"))
         elif rt == "lines_per_row":
-            rows_n = sum(1 for r in named[rule["table"]] if _matches(r, rule["match"]))
-            lines_n = sum(1 for ln in body.splitlines() if compile_pattern(rule["pattern"]).search(ln))
-            if lines_n < rows_n:
-                errs.append(rule.get("message", f"a line matching {rule['pattern']!r} is required per matching row")
-                            + f" (table '{rule['table']}': {rows_n} row(s), {lines_n} line(s))")
+            unfenced = _FENCED.sub("", body).splitlines()   # a line quoted inside a code block does not count
+            matching = [r for r in named[rule["table"]] if _matches(r, rule["match"])]
+            if "id_column" in rule:
+                # each matching row needs its own line: `{id}` in the pattern stands for the row's id
+                for r in matching:
+                    rid = str(r.get(rule["id_column"], ""))
+                    want = compile_pattern(rule["pattern"].replace("{id}", re.escape(rid)))
+                    if not any(want.search(ln) for ln in unfenced):
+                        errs.append(rule.get("message", f"a line matching {rule['pattern']!r} is required per matching row")
+                                    + f" (table '{rule['table']}' row {rid})")
+            else:
+                lines_n = sum(1 for ln in unfenced if compile_pattern(rule["pattern"]).search(ln))
+                if lines_n < len(matching):
+                    errs.append(rule.get("message", f"a line matching {rule['pattern']!r} is required per matching row")
+                                + f" (table '{rule['table']}': {len(matching)} row(s), {lines_n} line(s))")
+        elif rt == "labeled_parts":
+            sec = bodies.get(fold(rule["section"]))
+            if sec is not None:
+                errs.extend(_labeled_parts(sec, rule))
+        elif rt == "cell_items":
+            for i, r in enumerate(named[rule["table"]], 1):
+                errs.extend(_cell_items(str(r.get(rule["column"], "")), rule, f"table '{rule['table']}' row {i} column '{rule['column']}'"))
         elif rt == "unique_column":
             seen = set()
             for r in named[rule["table"]]:
@@ -1267,11 +1555,18 @@ def validate_file(path, schema_path, contract_id=None):
             return [f"/: invalid JSON ({exc.msg}, line {exc.lineno})"]
         except ValueError as exc:
             return [f"/: invalid JSON ({exc})"]
-        if isinstance(doc, dict):
+        if isinstance(doc, dict) and path.name.startswith(("valid-", "invalid-")):
+            # only a fixture (named valid-* or invalid-*, as `contract lint` requires) carries the keys that say why it
+            # is valid or not; in a production artifact they are unknown keys like any other
             doc = {k: v for k, v in doc.items() if k not in FIXTURE_KEYS}
+        if cid == "C31" and path.name == "hooks.json" and isinstance(doc, dict) and "profile" in doc:
+            # the shipped file is always the shipped profile; the rendered profile is chosen by the caller for a file a device
+            # renderer writes, never by the file itself
+            return ["/profile: the shipped hooks.json carries no 'profile' key (the rendered profile is selected by the caller, "
+                    "for the files a device renderer writes)"]
         return validate_instance(cid, doc, schema)
     if ext == ".jsonl":
-        return validate_jsonl(text, schema, cid)
+        return validate_jsonl(text, schema, cid)   # a project's own line-oriented contract: no shipped one is JSONL
     if ext == ".md":
         return validate_markdown(text, schema, load_sections_spec(schema_path))
     if ext == ".txt" and cid in SEMANTIC_TEXT:

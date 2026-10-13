@@ -1,0 +1,21 @@
+{
+  "_why": "with args, command is a bare interpreter name",
+  "_expect": "bare interpreter name",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -I",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "report-check"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

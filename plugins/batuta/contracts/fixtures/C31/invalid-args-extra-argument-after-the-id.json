@@ -1,0 +1,22 @@
+{
+  "_why": "the launcher is followed by exactly the handler id",
+  "_expect": "exactly one argument",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "report-check",
+              "--strict"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "_why": "the platform ignores a matcher on Stop, so a hook scoped by it would run unscoped",
+  "_expect": "matcher",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"], "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

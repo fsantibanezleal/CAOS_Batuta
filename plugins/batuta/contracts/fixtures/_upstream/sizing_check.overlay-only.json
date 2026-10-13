@@ -1,0 +1,14 @@
+[
+  {
+    "rule": "Executive brief: no 'Data file: content/executive.json' line (the executive view standard, conventions/problem-context-first.md)",
+    "upstream_commit": "dbf43f429",
+    "date": "2026-10-13",
+    "reason": "particular to the CAOS product template; not part of the generic C23 (decision 20)"
+  },
+  {
+    "rule": "Executive brief: it must not restate the executive view, only name content/executive.json (found: {found})",
+    "upstream_commit": "dbf43f429",
+    "date": "2026-10-13",
+    "reason": "particular to the CAOS product template; not part of the generic C23 (decision 20)"
+  }
+]

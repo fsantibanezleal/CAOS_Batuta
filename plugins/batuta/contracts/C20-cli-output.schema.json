@@ -38,6 +38,7 @@
               "NEW",
               "CHANGED",
               "SAME",
+              "SKIP",
               "MERGED",
               "REMOVED",
               "MISSING",

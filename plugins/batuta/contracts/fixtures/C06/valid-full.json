@@ -2,6 +2,7 @@
   "contract_version": "1.0",
   "spec_id": "001-example",
   "spec_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approved_spec_sha256_prefix": "aaaaaaaaaaaa",
   "contracts_sha256": {
     "contracts/C01-batuta-config.schema.json": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
@@ -12,7 +13,7 @@
     "docs/decisions/ADR-0003-contracts-after-review.md": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },
   "approved_by": "alex",
-  "prompt_excerpt": "approve spec 001",
+  "prompt_excerpt": "approve 001-example aaaaaaaaaaaa",
   "approved_at": "2026-10-11T12:00:00-03:00",
   "tool_version": "0.01.000"
 }

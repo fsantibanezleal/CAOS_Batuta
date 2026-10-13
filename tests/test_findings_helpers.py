@@ -118,9 +118,9 @@ class ConfigValidationAndExpansion(unittest.TestCase):
     def test_an_unset_variable_elsewhere_is_kept_and_reported(self):
         with tempfile.TemporaryDirectory() as d:
             doc = json.loads(json.dumps(VALID))
-            doc["knowledge_manifest"] = "$NOPE/manifest.json"
+            doc["dispatch"] = {"default_lane": "sdk", "lanes": ["sdk"], "sdk": {"key_file": "$NOPE/key"}}
             r = config.load(config_arg=str(write_config(d, doc)), env={"BATUTA_HOME": "/h"})
-        self.assertEqual(r.config["knowledge_manifest"], "$NOPE/manifest.json")
+        self.assertEqual(r.config["dispatch"]["sdk"]["key_file"], "$NOPE/key")
         self.assertIn("NOPE", r.unresolved)
 
     def test_expand_handles_both_forms(self):
