@@ -11,7 +11,7 @@ python scripts/batuta.py tdd commit --red|--green|--refactor T-001 -m TITLE PATH
 python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay]
 ```
 
-- The lock is `.batuta/test-lock.json` (C07, append-only). A path locked with the same hash is `SAME`; a changed hash is
+- The lock is `.batuta/test-locks.json` (C07, append-only). A path locked with the same hash is `SAME`; a changed hash is
   refused unless `--supersedes --change-request <id>` names a row of `specs/**/test-change-requests.md` (C33) with Status
   `approved`, a Decided by and the same Test path. Requirement ids come from `# REQ: REQ-X-001` (or `// REQ:`) lines of
   the test file; a file without one is locked with a `WARN`. The hash reads CRLF as LF.

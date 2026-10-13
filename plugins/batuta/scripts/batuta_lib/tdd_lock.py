@@ -14,7 +14,7 @@ from pathlib import Path
 from batuta_lib import config
 from batuta_lib import contract as core
 
-DEFAULT_LOCK = ".batuta/test-lock.json"
+DEFAULT_LOCK = ".batuta/test-locks.json"   # the path the contract catalog names for C07
 REQUEST_FILE = "test-change-requests.md"
 HEADERS = ["Id", "Date", "Test path", "Requirement", "Reason", "Proposed change", "Status", "Decided by"]
 TASK_ID = re.compile(r"T-\d{3}\Z", re.ASCII)

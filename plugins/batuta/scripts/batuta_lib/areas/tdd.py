@@ -6,7 +6,7 @@ commit; `check` proves from git history that every green came after a red, that 
 or focus marker crept in and that assertions never decreased, with `--replay` to prove each red test fails at its commit.
 
 Optional `tdd` block of batuta.json (C01 allows extra keys): `test_command` (default unittest discovery),
-`replay_timeout_seconds` (default 300), `lock_file` (default `.batuta/test-lock.json`), `markers`
+`replay_timeout_seconds` (default 300), `lock_file` (default `.batuta/test-locks.json`), `markers`
 (`{"python": [...], "javascript": [...]}` replacing the default marker list of a language).
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.

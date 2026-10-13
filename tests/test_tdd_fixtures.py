@@ -33,7 +33,7 @@ class CalcTests(unittest.TestCase):
 CALC = "def add(a, b):\n    return a + b\n"
 CALC_REFACTORED = "def add(a, b):\n    \"\"\"Sum of two numbers.\"\"\"\n    return a + b\n"
 SPEC = "# Spec: calc\n\nREQ-CALC-001 adds two numbers.\n"
-LOCK = ".batuta/test-lock.json"
+LOCK = ".batuta/test-locks.json"
 
 _BATUTA = None
 
