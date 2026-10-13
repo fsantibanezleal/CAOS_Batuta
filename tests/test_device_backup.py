@@ -1,5 +1,8 @@
 """device backup: the learned state of this device into a bundle folder, refusing any secret pattern."""
 import json
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -14,7 +17,41 @@ def fake_token():
     return "ghp_" + "a1B2c3D4e5" * 4
 
 
-class Backup(DeviceCase):
+def samples():
+    """One fake secret line per scan pattern, by label, built at run time (no secret-shaped literal in the repository)."""
+    a = "a1B2c3D4e5"
+    return {
+        "GitHub token": "token = ghp_" + a * 4,
+        "GitHub fine-grained token": "token = github_pat_" + "A1b2C3d4E5" * 6,
+        "Anthropic key": "key = sk-ant-" + "abcDEF123_-" * 3,
+        "Slack token": "slack = xoxb-" + "1234567890abc",
+        "Google API key": "key = AIza" + "A1b2C3d4E5" * 3 + "A1b2C",
+        "GitLab token": "token = glpat-" + a * 2,
+        "npm token": "token = npm_" + a * 3 + "a1B2c3",
+        "AWS access key": "id = AKIA" + "ABCDEFGHIJKLMNOP",
+        "private key": "-----BEGIN RSA PRIVATE KEY-----",
+        "git access token in URL": "url = https://x-access-token:abcDEF123456@github.com/x/y",
+        "credentials in URL": "url = https://someone:" + "a1B2c3D4e5f6G7h8i9" + "@host.example/path",
+        "bearer token": "Authorization: Bearer " + a * 3,
+        "secret-named value": '{"my_api_token": "' + "z" * 20 + '"}',
+    }
+
+
+def make_link(link, target):
+    """A directory symlink, or a junction on Windows when symlinks need a privilege; SkipTest when neither works."""
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return
+    except (OSError, NotImplementedError):
+        pass
+    if sys.platform == "win32":
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        if done.returncode == 0:
+            return
+    raise unittest.SkipTest("cannot create a symlink or a junction here")
+
+
+class BackupBase(DeviceCase):
     def setUp(self):
         super().setUp()
         self.claude = self.home / ".claude"
@@ -37,6 +74,8 @@ class Backup(DeviceCase):
         args = ["device", "backup", "--out", str(self.bundle), "--home", str(self.home), *extra]
         return self.cli(*args, *(["--apply"] if apply else []), env=env)
 
+
+class Backup(BackupBase):
     def test_dry_run_writes_nothing(self):
         code, out, _ = self.backup(apply=False)
         self.assertEqual(0, code, out)
@@ -126,6 +165,97 @@ class Backup(DeviceCase):
         code, out, _ = self.cli("device", "backup", "--out", str(self.bundle), "--home", str(bare), "--apply")
         self.assertEqual(2, code)
         self.assertIn("nothing", out)
+
+
+class SecretScanEncodings(BackupBase):
+    """Review finding F1: every plausible decoding of every file is scanned."""
+
+    ENCODINGS = {
+        "utf-8": lambda text: text.encode("utf-8"),
+        "utf-8 with a NUL byte first": lambda text: b"\x00" + text.encode("utf-8"),
+        "utf-16 with a BOM": lambda text: text.encode("utf-16"),
+        "utf-16-le without a BOM": lambda text: text.encode("utf-16-le"),
+        "utf-16-be without a BOM": lambda text: text.encode("utf-16-be"),
+    }
+
+    def test_the_samples_really_match_their_pattern(self):
+        self.assertEqual(13, len(samples()))
+        for label, line in samples().items():
+            self.assertIn(label, [lab for _, lab in device.find_secrets(line)], label)
+
+    def test_scan_function_finds_every_pattern_in_every_encoding(self):
+        for label, line in samples().items():
+            for enc, encode in self.ENCODINGS.items():
+                with self.subTest(pattern=label, encoding=enc):
+                    hits = device.scan_secrets(encode("note\n" + line + "\n"))
+                    self.assertIn(label, [lab for _, lab in hits])
+
+    def test_backup_refuses_the_two_missed_encodings_for_every_pattern_in_agents_and_memory(self):
+        memory = self.claude / "projects" / "-some-project" / "memory"
+        for where, folder in (("agent", self.claude / "agents"), ("memory", memory)):
+            for enc in ("utf-8 with a NUL byte first", "utf-16-be without a BOM"):
+                for label, line in samples().items():
+                    with self.subTest(pattern=label, encoding=enc, where=where):
+                        leak = folder / "leak.md"
+                        leak.write_bytes(self.ENCODINGS[enc]("note\n" + line + "\n"))
+                        try:
+                            code, out, _ = self.backup(apply=False)
+                        finally:
+                            leak.unlink()
+                        self.assertEqual(1, code, out)
+                        self.assertIn("REFUSED", out)
+
+    def test_a_clean_file_with_a_nul_byte_is_still_collected(self):
+        (self.claude / "agents" / "binary.md").write_bytes(b"\x00\x01 just bytes, no secret\n")
+        self.assertEqual(0, self.backup()[0])
+
+
+class BundleSafety(BackupBase):
+    """Review findings F2, F3 and F9."""
+
+    def test_a_junction_or_symlink_inside_the_bundle_never_leads_outside_it(self):
+        self.assertEqual(0, self.backup()[0])
+        victim = self.root / "victim"
+        (victim / "precious").mkdir(parents=True)
+        (victim / "precious" / "thesis.md").write_text("irreplaceable\n", encoding="utf-8")
+        import shutil
+        shutil.rmtree(self.bundle / "user")
+        make_link(self.bundle / "user", victim)
+        before = tree_digest(victim)
+        code, out, _ = self.backup()
+        self.assertEqual(1, code, out)
+        self.assertIn("REFUSED", out)
+        self.assertEqual(before, tree_digest(victim))
+        self.assertTrue((victim / "precious" / "thesis.md").exists())
+
+    def test_a_non_empty_folder_that_is_not_a_bundle_is_refused_and_untouched(self):
+        for rel in ("config/app.yaml", "user/notes.md", "memory/old/keep.md", "src/main.py"):
+            p = self.bundle / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("mine\n", encoding="utf-8")
+        before = tree_digest(self.bundle)
+        for apply in (False, True):
+            code, out, _ = self.backup(apply=apply)
+            self.assertEqual(1, code, out)
+            self.assertIn("MANIFEST.json", out)
+            self.assertEqual(before, tree_digest(self.bundle))
+
+    def test_an_existing_empty_folder_is_a_fine_bundle(self):
+        self.bundle.mkdir()
+        self.assertEqual(0, self.backup()[0])
+
+    def test_a_bundle_path_that_is_a_file_is_refused(self):
+        self.bundle.write_text("not a folder\n", encoding="utf-8")
+        self.assertEqual(1, self.backup()[0])
+
+    def test_a_token_in_a_file_name_is_refused_and_not_echoed(self):
+        name = fake_token() + ".md"
+        (self.claude / "projects" / "-some-project" / "memory" / name).write_text("harmless\n", encoding="utf-8")
+        code, out, _ = self.backup()
+        self.assertEqual(1, code)
+        self.assertIn("REFUSED", out)
+        self.assertNotIn(fake_token(), out)
+        self.assertFalse(self.bundle.exists())
 
 
 if __name__ == "__main__":

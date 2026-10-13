@@ -140,6 +140,96 @@ class Restore(DeviceCase):
         self.assertNotIn("OK settings", out)
 
 
+class RestoreOsErrors(DeviceCase):
+    """Review finding F4: a sharing violation is a FAIL item naming the items, never a traceback."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(0, self.deploy()[0])
+        self.add_launcher()
+
+    def test_permission_error_on_every_read_after_the_plan_is_a_fail_item_not_a_traceback(self):
+        real = settings_merge._read
+        state = {"n": 0}
+
+        def read(path):
+            state["n"] += 1
+            if state["n"] >= 2:
+                raise PermissionError(13, "Permission denied")
+            return real(path)
+        with mock.patch.object(device, "_settings_read", read), mock.patch.object(device, "_settings_sleep", lambda s: None):
+            code, out, _ = self.restore()
+        self.assertEqual(1, code)
+        self.assertIn("FAIL", out)
+        self.assertIn("PermissionError", out)
+        self.assertIn("hooks.SessionStart", out)
+
+    def test_permission_error_once_on_the_verification_read_is_repaired(self):
+        real = settings_merge._read
+        state = {"n": 0}
+
+        def read(path):
+            state["n"] += 1
+            if state["n"] == 4:
+                raise PermissionError(13, "Permission denied")
+            return real(path)
+        with mock.patch.object(device, "_settings_read", read), mock.patch.object(device, "_settings_sleep", lambda s: None):
+            code, out, _ = self.restore()
+        self.assertIn(code, (0, 2), out)
+        self.assertIn("SessionStart", self.settings_doc()["hooks"])
+
+    def test_permission_error_on_the_first_read_is_a_fail_item(self):
+        def read(path):
+            raise PermissionError(13, "Permission denied")
+        with mock.patch.object(device, "_settings_read", read):
+            code, out, _ = self.restore()
+        self.assertEqual(1, code)
+        self.assertIn("PermissionError", out)
+
+
+class UserCoreRefusals(DeviceCase):
+    """Review finding F8: the template is a relative path inside the device copy and the values are strings."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(0, self.deploy()[0])
+        from batuta_lib import device_profile as dp
+        self.profile = dp.read_profile(self.deploy_dir)
+
+    def core(self, uc):
+        items = []
+        text = device._user_core({"user_core": uc}, self.profile, self.deploy_dir, items)
+        return text, items
+
+    def test_absolute_dotdot_and_non_string_values_are_refused(self):
+        good = {"user_name": "T", "language": "English", "tone": "Direct."}
+        real = (self.deploy_dir / "templates" / "user" / "CLAUDE.template.md")
+        for uc in ({"template": real.as_posix(), "values": good},                 # absolute, and it exists
+                   {"template": "C:/abs/CLAUDE.template.md"}, {"template": "/etc/passwd"},
+                   {"template": "\\\\host\\share\\t.md"}, {"template": "../../outside.md"},
+                   {"template": "templates/../templates/user/CLAUDE.template.md", "values": good},   # `..`, resolves
+                   {"template": "templates/user/CLAUDE.template.md", "values": {**good, "user_name": 3}},
+                   {"template": "templates/user/CLAUDE.template.md", "values": ["x"]}, {"template": 5}):
+            with self.subTest(uc=uc):
+                text, items = self.core(uc)
+                self.assertIsNone(text)
+                self.assertEqual(["REFUSED"], [i["tag"] for i in items])
+
+    def test_a_valid_user_core_still_renders(self):
+        text, items = self.core({"template": "templates/user/CLAUDE.template.md",
+                                 "values": {"user_name": "T", "language": "English", "tone": "Direct."}})
+        self.assertIsNotNone(text, items)
+
+    def test_the_frozen_c01_refuses_the_same_values_at_load(self):
+        cfg = config.default_config({"BATUTA_HOME": str(self.bh)})
+        cfg["user_core"] = {"template": "C:/abs/CLAUDE.template.md"}
+        path = self.root / "batuta.json"
+        path.write_text(json.dumps(cfg), encoding="utf-8")
+        code, out, _ = self.restore(env={"BATUTA_CONFIG": str(path)})
+        self.assertEqual(1, code)
+        self.assertIn("C01", out)
+
+
 class UserCore(DeviceCase):
     def setUp(self):
         super().setUp()

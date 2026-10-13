@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
@@ -40,6 +41,16 @@ class Case(unittest.TestCase):
 
 class RenderedEntryTests(Case):
     """Decision 19: the rendered C31 profile, checked structurally until the contracts add the callable check."""
+
+    def test_rendered_entry_satisfies_the_frozen_c31_rendered_profile(self):
+        from batuta_lib import contract
+        entry = self.preset["hooks"]["SessionStart"][0]["hooks"][0]
+        self.assertEqual([], contract.check_rendered_entry(entry, "SessionStart"))
+
+    def test_unrendered_template_entry_fails_the_rendered_profile(self):
+        from batuta_lib import contract
+        raw = sm.load_preset(PRESETS / "session-check.json")["hooks"]["SessionStart"][0]["hooks"][0]
+        self.assertNotEqual([], contract.check_rendered_entry(raw, "SessionStart"))
 
     def test_rendered_entry_is_exec_form_with_absolute_paths_and_no_leftover(self):
         entry = self.preset["hooks"]["SessionStart"][0]["hooks"][0]
@@ -220,6 +231,95 @@ class ConcurrentRewriteTests(Case):
         d = self.doc()
         self.assertEqual(["Read"], d["permissions"]["allow"])
         self.assertEqual([], sm.gaps(d, self.preset))
+
+
+class OsErrorTests(Case):
+    """Review findings F4 and F6: a sharing violation or a half-written re-read is a lost race, never a traceback."""
+
+    def counting_read(self, fail_on, exc):
+        state = {"n": 0}
+
+        def read(path):
+            state["n"] += 1
+            if fail_on(state["n"]):
+                raise exc
+            return sm._read(path)
+        return read
+
+    def test_permission_error_on_the_verification_read_is_retried(self):
+        self.write({"model": "opus"})
+        r = sm.write_verified(self.path, self.preset, sleep=self.sleeps.append,
+                              read=self.counting_read(lambda n: n == 3, PermissionError(13, "Permission denied")))
+        self.assertEqual([], sm.gaps(self.doc(), self.preset))
+        self.assertEqual([0.5], self.sleeps)
+        self.assertTrue(r["wrote"])
+
+    def test_permission_error_every_time_ends_in_verify_error_naming_items_and_cause(self):
+        self.write({"model": "opus"})
+        with self.assertRaises(sm.VerifyError) as cm:
+            sm.write_verified(self.path, self.preset, sleep=self.sleeps.append,
+                              read=self.counting_read(lambda n: n >= 2, PermissionError(13, "Permission denied")))
+        self.assertIn("PermissionError", str(cm.exception))
+        self.assertIn("3 attempts", str(cm.exception))
+        self.assertTrue(any("hooks.SessionStart" in g for g in cm.exception.gaps))
+
+    def test_permission_error_on_the_replace_is_retried_and_leaves_no_temp_file(self):
+        self.write({"model": "opus"})
+        real = sm.os.replace
+        calls = {"n": 0}
+
+        def replace(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise PermissionError(13, "sharing violation")
+            return real(src, dst)
+        with mock.patch.object(sm.os, "replace", replace):
+            sm.write_verified(self.path, self.preset, sleep=self.sleeps.append)
+        self.assertEqual([], sm.gaps(self.doc(), self.preset))
+        self.assertEqual([], list(self.dir.glob("settings.json.*.tmp")))
+
+    def test_permission_error_on_every_replace_ends_in_verify_error(self):
+        self.write({"model": "opus"})
+        before = self.path.read_bytes()
+
+        def replace(src, dst):
+            raise PermissionError(13, "sharing violation")
+        with mock.patch.object(sm.os, "replace", replace), self.assertRaises(sm.VerifyError) as cm:
+            sm.write_verified(self.path, self.preset, sleep=self.sleeps.append)
+        self.assertIn("PermissionError", str(cm.exception))
+        self.assertEqual(before, self.path.read_bytes())
+        self.assertEqual([], list(self.dir.glob("settings.json.*.tmp")))
+
+    def test_a_half_written_reread_is_retried(self):
+        self.write({"model": "opus"})
+        real = sm._read
+        state = {"n": 0}
+
+        def read(path):
+            state["n"] += 1
+            data = real(path)
+            return data[:10] if state["n"] == 3 else data
+        sm.write_verified(self.path, self.preset, sleep=self.sleeps.append, read=read)
+        self.assertEqual([], sm.gaps(self.doc(), self.preset))
+
+    def test_a_reread_that_stays_unreadable_does_not_claim_the_file_is_untouched(self):
+        self.write({"model": "opus"})
+        real = sm._read
+        state = {"n": 0}
+
+        def read(path):
+            state["n"] += 1
+            data = real(path)
+            return data[:10] if state["n"] >= 3 else data
+        with self.assertRaises(sm.VerifyError) as cm:
+            sm.write_verified(self.path, self.preset, sleep=self.sleeps.append, read=read)
+        self.assertNotIn("not touched", str(cm.exception))
+
+    def test_an_invalid_file_at_the_start_is_still_refused_untouched(self):
+        self.path.write_bytes(b"{broken")
+        with self.assertRaises(sm.SettingsError) as cm:
+            self.run_write()
+        self.assertIn("not touched", str(cm.exception))
 
 
 if __name__ == "__main__":

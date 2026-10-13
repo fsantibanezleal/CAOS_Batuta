@@ -136,19 +136,13 @@ class Check(DeviceCase):
         self.result(env)
         self.assertLess(time.perf_counter() - start, 2.0)
 
-    def test_cold_start_hook_cli_is_under_two_seconds(self):
+    def test_first_hook_check_after_a_fresh_deploy_is_under_two_seconds_net_of_interpreter_start(self):
         env = self.ready(core=True)
-        # The requirement's two seconds are Batuta's own work, not the machine's interpreter start-up (an empty
-        # interpreter took 8 to 22 s on the loaded development machine). Measured two ways, each best of 3 fresh
-        # processes on the deployed copy: wall time of the hook CLI minus wall time of an empty interpreter measured
-        # right before, and the CPU time (`time.process_time`) the process spends on every import of the dispatcher
-        # and its areas plus the check itself.
+        # The user-visible start: the first `device check --hook` after a deploy, whose copy holds no bytecode yet
+        # (every deploy drops it), so the interpreter compiles the modules. The requirement's two seconds are
+        # Batuta's own work, so the machine's interpreter start-up is measured right before (best of 3) and subtracted.
+        assert not list(self.deploy_dir.rglob("__pycache__")), "the fresh copy must hold no bytecode"
         run_env = {**os.environ, **self.env, **env}
-        scripts = (self.deploy_dir / "scripts").as_posix()
-        code = ("import sys, time\nc = time.process_time()\nsys.path.insert(0, sys.argv[1])\nimport batuta\n"
-                "rc = batuta.main(['device', 'check', '--hook', '--deploy-root', sys.argv[2], '--home', sys.argv[3]])\n"
-                "print(time.process_time() - c, file=sys.stderr)\nsys.exit(rc)\n")
-        cmd = [sys.executable, "-I", "-c", code, scripts, str(self.deploy_dir), str(self.home)]
 
         def timed(argv):
             t = time.perf_counter()
@@ -156,23 +150,58 @@ class Check(DeviceCase):
             return time.perf_counter() - t, proc
 
         empty = min(timed([sys.executable, "-I", "-c", "pass"])[0] for _ in range(3))
-        if empty > 2.0:
-            # Precondition: a machine whose empty interpreter needs more than the whole budget cannot time anything
-            # smaller than that budget (every measure here was inflated 2 to 10 times by the load). The warm
-            # in-process test above still runs; run this one on an idle machine.
-            self.skipTest(f"machine too loaded to time a cold start: an empty interpreter took {empty:.1f} s")
-        runs = [timed(cmd) for _ in range(3)]
-        for _, proc in runs:
-            self.assertEqual(0, proc.returncode, proc.stderr)
-        cpu = min(float(p.stderr.strip().splitlines()[-1]) for _, p in runs)
-        wall = min(w for w, _ in runs)
-        # Both estimates are biased upwards under contention (the wall difference counts time spent waiting for the
-        # CPU, the CPU time counts the kernel and virus-scanner work of every file read), so the smaller one bounds
-        # Batuta's own cost; each alone swung past 2.0 s on a machine running about 30 Python processes.
-        own = min(cpu, wall - empty)
-        self.assertLess(own, 2.0, f"Batuta's own work in the hook CLI cold start: {own:.2f} s = min(CPU {cpu:.2f} s, "
-                                  f"wall {wall:.2f} s minus empty interpreter {empty:.2f} s = {wall - empty:.2f} s)")
-        self.assertIn("OK", json.loads(runs[-1][1].stdout)["hookSpecificOutput"]["additionalContext"])
+        if empty > 1.0:
+            self.skipTest(f"machine too loaded to time a cold start: an empty interpreter alone took {empty:.2f} s")
+        wall, proc = timed([sys.executable, "-I", str(self.deploy_dir / "scripts" / "batuta.py"), "device", "check",
+                            "--hook", "--deploy-root", str(self.deploy_dir), "--home", str(self.home)])
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertLess(wall - empty, 2.0, f"first hook check after a deploy: wall {wall:.2f} s, empty interpreter "
+                                           f"{empty:.2f} s, net {wall - empty:.2f} s")
+        self.assertIn("OK", json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"])
+
+    def test_fix_for_a_broken_copy_never_deploys_the_copy_into_itself(self):
+        """Review finding F5: run from the copy, the fix names the source it was deployed from or the reinstall step."""
+        self.assertEqual(0, self.deploy()[0])
+        (self.deploy_dir / "device.json").write_text("{broken", encoding="utf-8")
+        with mock.patch.object(device, "PLUGIN_ROOT", self.deploy_dir):   # the copy's own CLI runs from the copy
+            text = device.session_check(PAYLOAD, home=self.home, deploy_root=self.deploy_dir)[
+                "output"]["hookSpecificOutput"]["additionalContext"]
+        own = (self.deploy_dir / "scripts" / "batuta.py").as_posix()
+        self.assertNotIn(own, text)
+        self.assertIn("reinstall", text.lower())
+
+    def test_fix_names_the_deployed_from_source_when_the_profile_is_readable(self):
+        self.assertEqual(0, self.deploy()[0])
+        source = (ROOT / "plugins" / "batuta").as_posix()
+        profile = json.loads((self.deploy_dir / "device.json").read_text(encoding="utf-8"))
+        profile.pop("batuta_version")                      # no longer C15, but deployed_from is readable
+        (self.deploy_dir / "device.json").write_text(json.dumps(profile), encoding="utf-8")
+        with mock.patch.object(device, "PLUGIN_ROOT", self.deploy_dir):
+            text = device.session_check(PAYLOAD, home=self.home, deploy_root=self.deploy_dir)[
+                "output"]["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(f"{source}/scripts/batuta.py".lower(), text.lower())
+        self.assertIn("device deploy --apply", text)
+        self.assertNotIn((self.deploy_dir / "scripts" / "batuta.py").as_posix(), text)
+
+    def test_a_deliberate_env_override_does_not_make_the_line_incomplete(self):
+        """Review finding F10: a user value kept on purpose is a note, not a gap."""
+        env = self.ready(core=True)
+        doc = self.settings_doc()
+        doc["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "opus"
+        self.settings.write_text(json.dumps(doc), encoding="utf-8")
+        text = self.result(env)["output"]["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(text.startswith("Batuta device check: OK"), text)
+        self.assertIn("CLAUDE_CODE_SUBAGENT_MODEL", text)      # still reported, as a note
+
+    def test_a_skipped_preset_does_not_make_the_line_incomplete(self):
+        env = self.ready(core=True)
+        (self.deploy_dir / "scripts" / "hook.py").unlink()     # the launcher of the hooks unit is not there
+        doc = self.settings_doc()
+        doc.pop("hooks")
+        self.settings.write_text(json.dumps(doc), encoding="utf-8")
+        text = self.result(env)["output"]["hookSpecificOutput"]["additionalContext"]
+        self.assertTrue(text.startswith("Batuta device check: OK"), text)
+        self.assertIn("hook.py", text)
 
 
 if __name__ == "__main__":
