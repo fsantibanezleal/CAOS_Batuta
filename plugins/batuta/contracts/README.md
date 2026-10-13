@@ -15,6 +15,13 @@ Batuta describes the formats the running tools produce and the method CAOS uses:
 files `delegation.py` and `check_report.py` write and read, the sizing is the CPD `sizing.md`, the interface artifact
 is the CPD contract catalog. There is no second machine-readable inventory (ADR-0003).
 
+## Freeze
+
+Every contract in the catalog below, C01 to C33, is frozen at version 1.0 since 2026-10-13, after the fourth
+adversarial review returned PASS-WITH-FIXES and every fix was re-checked (ADR-0005). C12, C13, C14 and the C01
+`budgets` block were frozen first, on 2026-10-12. From the freeze on, a contract changes only additively, by a minor
+version with its own adversarial check; a breaking change is a new major version and reopens the spec freeze.
+
 ## Catalog
 
 | Id | File | Artifact and location | Producer | Consumers | Version |
