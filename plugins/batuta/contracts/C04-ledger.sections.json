@@ -19,12 +19,15 @@
         "Tokens in",
         "Tokens out",
         "Cost USD",
-        "Superseded by"
+        "Superseded by",
+        "Notes"
       ],
       "headers_match": "contains",
+      "headers_lead": true,
       "row_def": "ledger_row",
       "min_rows": 1,
       "coerce": {
+        "Accepted": "yesno",
         "Tokens in": "int",
         "Tokens out": "int"
       }

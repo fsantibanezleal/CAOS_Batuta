@@ -1,0 +1,13 @@
+{
+  "_why": "the python option variable is written in double quotes",
+  "_expect": "bare",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PLUGIN_OPTION_PYTHON \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" report-check", "shell": "bash" }
+        ]
+      }
+    ]
+  }
+}

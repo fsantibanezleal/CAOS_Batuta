@@ -1,9 +1,9 @@
 {
-  "copied_from": "CAOS tools/agents/sizing_check.py (the contract-first method's sizing checker): SECTIONS, TABLES and the executive-brief parts",
-  "commit": "5e9136c81",
-  "last_changed_in": "5ff5c36ba",
-  "date": "2026-10-12",
-  "refresh": "when the checker changes upstream, copy its SECTIONS, TABLES and _BRIEF_PARTS here, update copied_from, commit and date, and change C23 to match; the test fails until both agree",
+  "copied_from": "CAOS tools/agents/sizing_check.py (the contract-first method's sizing checker): SECTIONS and TABLES; the four executive-brief parts are C23's own since upstream replaced them by the executive view standard",
+  "commit": "dbf43f429",
+  "last_changed_in": "dbf43f429",
+  "date": "2026-10-13",
+  "refresh": "when the checker changes upstream, copy its SECTIONS and TABLES here, update copied_from, commit and date, and change C23 to match; a new upstream rule that is particular to the CAOS product template goes in sizing_check.overlay-only.json with its reason (decision 20) instead of into C23; the tests fail until both agree",
   "sections": [
     "Problem",
     "Executive brief",
