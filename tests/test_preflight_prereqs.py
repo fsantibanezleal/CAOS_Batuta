@@ -23,7 +23,9 @@ class Prereqs(DeviceCase):
         return {"name": name, "why": f"why {name}", "owner_action": f"do {name}", "probe": probe(code), **extra}
 
     def prereqs(self, path, *extra):
-        return self.cli("preflight", "prereqs", "--register", str(path), *extra)
+        # a generous default timeout: an interpreter start-up alone took over 20 s on a loaded machine; a test that
+        # needs a short one passes its own (the last occurrence wins)
+        return self.cli("preflight", "prereqs", "--register", str(path), "--timeout", "600", *extra)
 
     def test_present_and_missing(self):
         path = self.register([self.item("good", "raise SystemExit(0)"), self.item("bad", "raise SystemExit(1)")])
