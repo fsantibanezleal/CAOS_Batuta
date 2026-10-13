@@ -128,8 +128,24 @@ def _load_config(args, items):
         return None
 
 
+def _refuse_escape(base, rels, items):
+    """True (with a REFUSED item) when a relative path resolves outside `base` once links, junctions and symlinks are
+    resolved: a write or a removal there would leave the folder the caller owns."""
+    base = Path(base)
+    root = Path(os.path.realpath(base))
+    for rel in rels:
+        if not dp._inside(Path(os.path.realpath(base / rel)), root):
+            items.append(item("REFUSED", f"{rel} resolves outside {base.as_posix()} (a link or junction inside it); "
+                                         f"nothing written or removed"))
+            return True
+    return False
+
+
 def _sync(base, desired, areas, apply, items):
-    """Mirror `desired` into `base`; files outside `areas` are never removed. Returns (new, changed, removed, same)."""
+    """Mirror `desired` into `base`; files outside `areas` are never removed. Returns (new, changed, removed, same), or
+    None (a REFUSED item, nothing written or removed) when a path or an area resolves outside `base`."""
+    if _refuse_escape(base, [*desired, *areas], items):
+        return None
     new, changed, removed, same = {}, 0, 0, 0
     for rel, data in sorted(desired.items()):
         target = base / rel
@@ -220,6 +236,8 @@ def _deploy(args):
     except (dp.ProfileError, RuntimeError) as exc:
         items.append(item("FAIL", str(exc)))
         return done("device deploy: failed")
+    if _refuse_escape(deploy, [*desired, dp.PROFILE_FILE, *MIRRORED], items):
+        return done("device deploy: refused, nothing written")
     profile_bytes = dp.profile_text(profile).encode("utf-8")
     # the profile goes first so an interrupted deploy is recognised and can be repeated
     target = deploy / dp.PROFILE_FILE
@@ -229,7 +247,10 @@ def _deploy(args):
         items.append(item("CHANGED", dp.PROFILE_FILE))
     if args.apply and (not target.exists() or target.read_bytes() != profile_bytes):
         _write_bytes(target, profile_bytes)
-    n_new, n_changed, n_removed, same = _sync(deploy, desired, MIRRORED, args.apply, items)
+    counts = _sync(deploy, desired, MIRRORED, args.apply, items)
+    if counts is None:
+        return done("device deploy: refused, nothing written")
+    n_new, n_changed, n_removed, same = counts
     return done(f"device deploy: {n_new} new, {n_changed} changed, {n_removed} removed, {same} unchanged files "
                 f"in {deploy.as_posix()} ({_mode(args.apply)})")
 
@@ -283,11 +304,24 @@ def _user_core(cfg, profile, deploy, items):
     if not isinstance(uc, dict) or not uc.get("template"):
         items.append(item("WARN", "user core skipped: set user_core.template (and user_core.values) in batuta.json"))
         return None
-    template = Path(str(uc["template"]))
-    if not template.is_absolute():
-        template = Path(deploy) / template
-    values = uc.get("values") if isinstance(uc.get("values"), dict) else {}
-    values = {**{k: str(v) for k, v in values.items()}, **dp.render_values(profile)}
+    # the shape the frozen C01 `user_core` allows, enforced here too so a configuration that was not validated cannot
+    # render an arbitrary file into the user's always-loaded core
+    raw = uc["template"]
+    parts = re.split(r"[\\/]", raw) if isinstance(raw, str) else []
+    if (not isinstance(raw, str) or Path(raw).is_absolute() or re.match(r"^([A-Za-z]:|[\\/])", raw)
+            or ".." in parts or "." in parts):
+        items.append(item("REFUSED", "user_core.template must be a relative path inside the device copy (no drive, no "
+                                     "leading slash, no '.' or '..' segment)"))
+        return None
+    values = uc.get("values", {})
+    if not isinstance(values, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in values.items()):
+        items.append(item("REFUSED", "user_core.values must be an object of text values"))
+        return None
+    template = Path(deploy) / raw
+    if not dp._inside(Path(os.path.realpath(template)), Path(os.path.realpath(deploy))):
+        items.append(item("REFUSED", "user_core.template resolves outside the device copy (a link inside it)"))
+        return None
+    values = {**values, **dp.render_values(profile)}
     try:
         return render.render_file(template, values)
     except (OSError, render.RenderError) as exc:
@@ -396,15 +430,19 @@ def _restore(args):
     except sm.SettingsError as exc:
         items.append(item("FAIL", str(exc)))
         return done("device restore: refused, nothing written")
+    except OSError as exc:
+        items.append(item("FAIL", f"{path.as_posix()} cannot be read ({type(exc).__name__}: {exc}); nothing written"))
+        return done("device restore: failed, nothing written")
     rows = sm.plan(current, preset)
     settings_items = [item(tag, f"settings.json {label}") for tag, label in rows]
     if args.apply and any(tag == "NEW" for tag, _ in rows):
         notes = []
         try:
             result = sm.write_verified(path, preset, read=_settings_read, sleep=_settings_sleep, notes=notes)
-        except sm.SettingsError as exc:
+        except (sm.SettingsError, OSError) as exc:
             items.extend(item("WARN", n) for n in notes)
-            items.append(item("FAIL", str(exc)))
+            items.append(item("FAIL", str(exc) if isinstance(exc, sm.SettingsError) else
+                              f"{path.as_posix()} could not be written ({type(exc).__name__}: {exc})"))
             settings_items = []
         else:
             items.extend(item("WARN", n) for n in notes)
@@ -437,8 +475,34 @@ def _restore_fix(profile_python, deploy):
     return f'"{profile_python}" "{(Path(deploy) / "scripts" / "batuta.py").as_posix()}" device restore --apply' + _root_flag(deploy)
 
 
+def _same_folder(a, b):
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _deploy_source(deploy):
+    """The folder a `device deploy` can run from to repair the copy at `deploy`: the plugin this code runs from when it
+    is not the copy itself, else the source the copy was deployed from (`deployed_from` of its profile, read leniently
+    because the profile may be what is broken). None when neither exists: a deploy never copies a copy into itself."""
+    candidates = [PLUGIN_ROOT]
+    try:
+        doc = json.loads((Path(deploy) / dp.PROFILE_FILE).read_text(encoding="utf-8-sig"))
+        if isinstance(doc, dict) and isinstance(doc.get("deployed_from"), str):
+            candidates.append(Path(doc["deployed_from"]))
+    except (OSError, ValueError):
+        pass
+    for folder in candidates:
+        if (Path(folder) / "scripts" / "batuta.py").is_file() and not _same_folder(folder, deploy):
+            return Path(folder)
+    return None
+
+
 def _deploy_fix(deploy):
-    return f'"{Path(sys.executable).as_posix()}" "{(PLUGIN_ROOT / "scripts" / "batuta.py").as_posix()}" device deploy --apply' + _root_flag(deploy)
+    source = _deploy_source(deploy)
+    if source is None:
+        return ("reinstall the Batuta plugin from its plugin channel (the copy cannot repair itself), "
+                "then run `device deploy --apply` from the reinstalled plugin" + _root_flag(deploy))
+    return (f'"{Path(sys.executable).as_posix()}" "{(source / "scripts" / "batuta.py").as_posix()}" '
+            f'device deploy --apply' + _root_flag(deploy))
 
 
 def _root_flag(deploy):
@@ -521,21 +585,26 @@ def _check_items(home, deploy, config_arg=None, env=None):
 
 
 def _hook_text(items):
-    bad = [i for i in items if i["tag"] in ("FAIL", "WARN", "REFUSED", "DIFFERENT", "MISSING")]
-    if not bad:
-        return f"Batuta device check: OK ({len(items)} items)"
+    """OK, or INCOMPLETE with the exact fix. A WARN (a user value kept on purpose, a preset skipped because the
+    launcher of the hooks unit is not installed) is a note: it is shown but never makes the line INCOMPLETE."""
+    bad = [i for i in items if i["tag"] in ("FAIL", "REFUSED", "DIFFERENT", "MISSING")]
+    notes = [i for i in items if i["tag"] == "WARN"]
     fixes = []
     for i in bad:
         if i.get("fix") and i["fix"] not in fixes:
             fixes.append(i["fix"])
-    head = f"Batuta device check: INCOMPLETE ({len(bad)} of {len(items)} items)"
+    if bad:
+        head = f"Batuta device check: INCOMPLETE ({len(bad)} of {len(items)} items)"
+    else:
+        head = f"Batuta device check: OK ({len(items)} items" + (f", {len(notes)} note(s))" if notes else ")")
     tail = ("\nFix: " + "; then ".join(fixes)) if fixes else ""
     room = HOOK_CAP - len(head) - len(tail) - 60
+    shown = [(i["tag"], i["message"]) for i in bad] + [("NOTE", i["message"]) for i in notes]
     lines, used = [], 0
-    for n, i in enumerate(bad):
-        line = f"\n- {i['tag']} {i['message']}"
+    for n, (tag, message) in enumerate(shown):
+        line = f"\n- {tag} {message}"
         if used + len(line) > room:
-            lines.append(f"\n- ... and {len(bad) - n} more")
+            lines.append(f"\n- ... and {len(shown) - n} more")
             break
         lines.append(line)
         used += len(line)
@@ -583,14 +652,13 @@ def _check(args):
 # ------------------------------------------------------------------ backup
 
 
-def decode_for_scan(data):
-    """Text of a file for the secret scan: UTF-16 (BOM, or NUL bytes) as UTF-16, the rest as UTF-8."""
-    if data[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in data[:4096]:
-        try:
-            return data.decode("utf-16", "replace")
-        except UnicodeError:
-            pass
-    return data.decode("utf-8", "replace")
+def decode_views(data):
+    """Every plausible text of a file for the secret scan: UTF-8, UTF-16 little endian, UTF-16 big endian (the
+    BOM, when there is one, only adds a character), and an ASCII view of the raw bytes with the NUL bytes removed.
+    A guess about the encoding is never trusted: a UTF-8 file with one NUL byte and a big-endian file without a BOM
+    both hid every token from a scan that picked one decoding."""
+    return [data.decode("utf-8", "replace"), data.decode("utf-16-le", "replace"), data.decode("utf-16-be", "replace"),
+            bytes(b for b in data if b).decode("latin-1")]
 
 
 def line_sha(line):
@@ -608,6 +676,24 @@ def find_secrets(text, allowed=None):
             if pattern.search(line):
                 hits.append((number, label))
     return hits
+
+
+def _scan(data, allowed=None):
+    """(line number, label, sha256 of the line) for a hit in any decoding of `data`, without repeats."""
+    out, seen = [], set()
+    for text in decode_views(data):
+        lines = text.splitlines()
+        for number, label in find_secrets(text, allowed):
+            sha = line_sha(lines[number - 1])
+            if (number, label, sha) not in seen:
+                seen.add((number, label, sha))
+                out.append((number, label, sha))
+    return out
+
+
+def scan_secrets(data, allowed=None):
+    """(line number, label) for every secret-pattern hit in any decoding of `data` (bytes)."""
+    return [(number, label) for number, label, _ in _scan(data, allowed)]
 
 
 def _collect(home, cfg, items):
@@ -659,28 +745,41 @@ def _backup(args):
     desired = _collect(home, cfg.config, items)
     if any(i["tag"] == "FAIL" for i in items):
         return done("device backup: failed, nothing written")
+    out = Path(args.out)
+    if out.exists() and not out.is_dir():
+        items.append(item("FAIL", f"{out.as_posix()} is not a folder"))
+        return done("device backup: failed, nothing written")
+    if out.is_dir() and any(out.iterdir()) and not (out / "MANIFEST.json").is_file():
+        items.append(item("REFUSED", f"{out.as_posix()} is not empty and has no MANIFEST.json from an earlier backup; "
+                                     f"refusing to mirror into a folder that is not a bundle"))
+        return done("device backup: refused, nothing written")
     allowed = {str(s).lower() for s in args.allow or []}
     leaks = []
     for rel, data in sorted(desired.items()):
-        text = decode_for_scan(data)
-        lines = text.splitlines()
-        for number, label in find_secrets(text, allowed):
-            leaks.append(item("REFUSED", f"{rel}:{number} matches a {label} pattern (reviewed and safe? pass "
-                                         f"--allow {line_sha(lines[number - 1])})"))
+        name_hits = find_secrets(rel)
+        shown = "<file name withheld>" if name_hits else rel
+        for number, label, sha in _scan(data, allowed):
+            leaks.append(item("REFUSED", f"{shown}:{number} matches a {label} pattern (reviewed and safe? pass "
+                                         f"--allow {sha})"))
+        for _, label in name_hits:             # a secret in a file name would reach the bundle path and MANIFEST.json
+            leaks.append(item("REFUSED", f"a file name under {rel.split('/')[0]}/ matches a "
+                                         f"{label} pattern; rename or remove that file (the name is not echoed)"))
     if leaks:
         items.extend(leaks)
         return done(f"device backup: refused, {len(leaks)} secret hit(s), nothing written")
     if not desired:
         items.append(item("WARN", f"nothing to back up under {(home / '.claude').as_posix()}"))
         return done("device backup: nothing collected")
-    out = Path(args.out)
     areas = ("agents", "memory", "rules", "user", "config")
     manifest = {"batuta_version": version_area.read_version(),
                 "files": [{"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
                           for rel, data in sorted(desired.items())]}
     full = dict(desired)
     full["MANIFEST.json"] = (json.dumps(manifest, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    n_new, n_changed, n_removed, same = _sync(out, full, areas, args.apply, items)
+    counts = _sync(out, full, areas, args.apply, items)
+    if counts is None:
+        return done("device backup: refused, nothing written")
+    n_new, n_changed, n_removed, same = counts
     return done(f"device backup: {n_new} new, {n_changed} changed, {n_removed} removed, {same} unchanged files "
                 f"in {out.as_posix()} ({_mode(args.apply)})")
 

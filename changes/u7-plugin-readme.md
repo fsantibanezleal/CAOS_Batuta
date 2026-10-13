@@ -37,6 +37,19 @@ python scripts/batuta.py preflight prereqs --register FILE [--timeout SECONDS]
   `batuta.json` and, when it is not rendered from a template, `CLAUDE.md`. Rendered files and generated stubs are
   rebuilt, never backed up. Any secret pattern refuses the whole backup and writes nothing; a reviewed line is exempted
   by its sha256 with `--allow`.
+- The secret scan reads every file in every plausible decoding (UTF-8, UTF-16 little and big endian, and the raw bytes
+  with the NUL bytes removed) and also scans each file name; a hit in any refuses the whole backup. `--out` must be
+  empty, new, or hold a `MANIFEST.json` from an earlier backup (a bundle), and every path and area must resolve inside
+  it once links and junctions are resolved, or nothing is written or removed. Deploy applies the same resolve-inside check.
+- A re-read or replace that fails with a file-system error (a sharing violation, which running sessions cause on
+  Windows) or that finds a half-written file counts as a lost race: it is retried, and after the last attempt the error
+  names the missing items and the cause. Residual race, not closable without a file lock that Claude Code does not
+  take: another session's write that lands in the microseconds between restore's compare read and its `os.replace` is
+  lost, and restore still reports success; the verified write detects its own items being dropped afterwards, not that.
+- The session-start line is INCOMPLETE only for a failed item with its exact fix. A user value kept on purpose (an
+  existing `env` key with another value) and a preset skipped for a missing launcher are shown as notes and leave it OK.
+  A broken device copy is repaired from the source it was deployed from (`deployed_from` in its profile), never by
+  deploying the copy into itself; when no source exists the fix says to reinstall the plugin.
 - `preflight limits` reports a missing GPU or Node as absent (Node is needed only by the `npx` entry), not as an error.
   `preflight prereqs` reads a register of `name`, `why`, `owner_action` and `probe` (a command list or a shell string),
   never prints a probe's output, and exits 1 when any prerequisite is missing.

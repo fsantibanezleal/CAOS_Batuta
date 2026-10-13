@@ -229,6 +229,10 @@ class _Changed(Exception):
     pass
 
 
+class _Lost(Exception):
+    pass
+
+
 def _write_atomic(path, data, expected, read):
     """Write through a temp file in the same folder and os.replace, unless the file changed since it was read."""
     path = Path(path)
@@ -260,40 +264,64 @@ def _backup(path, make_stamp):
     return target
 
 
+def _cause(exc):
+    return f"{type(exc).__name__}: {exc}"
+
+
 def write_verified(path, preset, read=_read, sleep=time.sleep, make_stamp=stamp, attempts=ATTEMPTS, delay=DELAY,
                    notes=None):
     """Merge `preset` into the settings file at `path`, then re-read and repeat until nothing is missing.
 
     Returns {"attempts": n, "backup": path or None, "wrote": bool}; nothing is written (and no backup made) when
     nothing is missing. `read(path) -> bytes or None` and `sleep(seconds)` are injectable for tests. Raises
-    SettingsError for an unusable file and VerifyError after the last attempt."""
+    SettingsError when the file is unusable at the start (nothing is touched) and VerifyError after the last attempt.
+
+    Inside the attempts, a failure of the file system (a sharing violation on the re-read or on `os.replace`, which
+    running sessions cause on Windows), a file another session is still writing (not valid JSON when re-read) and a
+    write that lost a race are all one thing: a lost race, retried after `delay` and, after the last attempt, named in
+    the VerifyError together with the cause."""
     path = Path(path)
-    backup, wrote, left = None, False, []
+    backup, wrote = None, False
+    names = gaps(None, preset)          # what is missing, from the last readable copy of the file
+    cause = ""
     for attempt in range(1, attempts + 1):
-        raw = read(path)
-        current = parse(raw, path)
-        check_shapes(current, preset, path)
-        if not gaps(current, preset):
-            return {"attempts": attempt - 1 if wrote else 0, "backup": backup, "wrote": wrote}
-        if attempt > 1:
-            if notes is not None:
-                notes.append(f"settings.json was rewritten meanwhile (missing: {', '.join(left)}); merging again, "
-                             f"attempt {attempt} of {attempts}")
-            sleep(delay)
-            raw = read(path)
-            current = parse(raw, path)
-            check_shapes(current, preset, path)
-        if backup is None and raw is not None:
-            backup = _backup(path, make_stamp)
         try:
+            if attempt > 1:
+                if notes is not None:
+                    notes.append(f"settings.json was rewritten or locked meanwhile ({cause or 'missing: ' + ', '.join(names)}); "
+                                 f"merging again, attempt {attempt} of {attempts}")
+                sleep(delay)
+            raw = read(path)
+            try:
+                current = parse(raw, path)
+                check_shapes(current, preset, path)
+            except SettingsError as exc:
+                if attempt == 1 and not wrote:
+                    raise                          # the user's own file is unusable: refuse, nothing written
+                raise _Lost(f"the file was not valid when re-read, another session may be writing it "
+                            f"({str(exc).replace('; not touched', '')})") from exc
+            names = gaps(current, preset)
+            if not names:
+                return {"attempts": attempt - 1 if wrote else 0, "backup": backup, "wrote": wrote}
+            if backup is None and raw is not None:
+                backup = _backup(path, make_stamp)
             _write_atomic(path, merge(current, preset), raw, read)
             wrote = True
+            try:
+                after = parse(read(path), path)
+            except SettingsError as exc:
+                raise _Lost(f"the file was not valid when re-read after the write, another session may be writing it "
+                            f"({str(exc).replace('; not touched', '')})") from exc
+            names = gaps(after, preset)
+            cause = ""
+            if not names:
+                return {"attempts": attempt, "backup": backup, "wrote": True}
         except _Changed:
-            left = ["a write that lost a race with another session"]
-            continue
-        after = parse(read(path), path)
-        left = gaps(after, preset)
-        if not left:
-            return {"attempts": attempt, "backup": backup, "wrote": True}
-    raise VerifyError(f"{path.as_posix()} still lacks {', '.join(left)} after {attempts} attempts: another Claude "
-                      f"session keeps rewriting settings.json; close other sessions or re-run restore --apply", left)
+            cause = "another session wrote the file between our read and our replace"
+        except _Lost as exc:
+            cause = str(exc)
+        except OSError as exc:
+            cause = _cause(exc)
+    why = cause or "another Claude session keeps rewriting settings.json"
+    raise VerifyError(f"{path.as_posix()} still lacks {', '.join(names)} after {attempts} attempts: {why}; close other "
+                      f"sessions or re-run restore --apply", names)
