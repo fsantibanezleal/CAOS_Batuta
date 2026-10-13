@@ -732,6 +732,13 @@ class Minors(unittest.TestCase):
         doc["entries"][1]["supersedes"] = "c" * 64
         self.assertTrue(mentions(check_doc("C07", doc), "live"))
 
+    def test_R16_a_supersedes_that_names_no_entry_of_the_same_path_is_refused(self):
+        # restored as written in the red commit 07315ab (revision 4, R3-12): it was replaced by the test above
+        doc = json.loads(read("C07", "valid-superseding.json"))
+        doc.pop("_why", None)
+        doc["entries"][1]["supersedes"] = "c" * 64
+        self.assertTrue(mentions(check_doc("C07", doc), "supersedes"))
+
     def test_R17_the_reserved_trailer_key_has_one_spelling(self):
         msg = "[green] T-001 add the parser\n\nbody\n\n{key}: CR-1\n"
         self.assertEqual(check_text("C32", msg.format(key="Test-Change-Approved")), [])
