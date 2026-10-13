@@ -1,0 +1,14 @@
+{
+  "_why": "a rendered entry has no placeholder left: {{python}} was never filled",
+  "_expect": "placeholder",
+  "profile": "rendered",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "{{python}}", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "automation-guard"] }
+        ]
+      }
+    ]
+  }
+}

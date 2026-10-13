@@ -15,6 +15,13 @@ Batuta describes the formats the running tools produce and the method CAOS uses:
 files `delegation.py` and `check_report.py` write and read, the sizing is the CPD `sizing.md`, the interface artifact
 is the CPD contract catalog. There is no second machine-readable inventory (ADR-0003).
 
+## Freeze
+
+Every contract in the catalog below, C01 to C33, is frozen at version 1.0 since 2026-10-13, after the fourth
+adversarial review returned PASS-WITH-FIXES and every fix was re-checked (ADR-0005). C12, C13, C14 and the C01
+`budgets` block were frozen first, on 2026-10-12. From the freeze on, a contract changes only additively, by a minor
+version with its own adversarial check; a breaking change is a new major version and reopens the spec freeze.
+
 ## Catalog
 
 | Id | File | Artifact and location | Producer | Consumers | Version |
@@ -199,7 +206,9 @@ catalog row and a readiness document whose `catalog_sha256` is not the hash of t
 Every area reads its configuration through `batuta_lib/config.py`: the order is `--config`, `BATUTA_CONFIG`, the project
 file `.batuta/batuta.json`, the user file `<BATUTA_HOME>/batuta.json` (`BATUTA_HOME` defaults to `~/.batuta`), then the
 built-in defaults; a named file that is missing is an error; `$VAR` and `${VAR}` expand from the environment and an unset
-root falls back to `<BATUTA_HOME>/temp|data|worktrees`. Every area prints through `batuta_lib/output.py`: tag lines
+root falls back to `<BATUTA_HOME>/temp|data|worktrees`. The loader never expands a field that holds an environment variable
+NAME (`dispatch.providers.*.credential_env` and `endpoint_env`): they refuse any `$`, and every ConfigError quotes the value
+as written in the file, never an expanded one (an environment value can be a secret). Every area prints through `batuta_lib/output.py`: tag lines
 (`OK`, `NEW`, `CHANGED`, `SAME`, `SKIP`, `MERGED`, `REMOVED`, `MISSING`, `DIFFERENT`, `REFUSED`, `WARN`, `FAIL`), the C20 object with
 `--json`, and the exit code (1 for a `FAIL` or `REFUSED`, 2 for a `WARN`, else 0).
 
@@ -222,6 +231,14 @@ or the provider kind. Evaluation rings are `adopt`, `trial`, `assess` and `cauti
 `training`, `candidate`, `released` or `retired`, and a model that is not released reports in its `serving` block which
 released version or the baseline answered.
 
+## Approval phrase
+
+The approval record (C06) keeps what the human typed in `prompt_excerpt`, and it starts with the phrase
+`approve <spec_id> <approved_spec_sha256_prefix>` after any leading whitespace: text may follow it, but a sentence that merely
+contains it (`do not approve 001-x ab12...`) is no approval. The keyword and the hex match case-insensitively (`APPROVE 001-x AB12...`
+is accepted), the spec id matches exactly, and the stored prefix is lower case. The phrase ends at whitespace or the end of
+the text, never inside a longer token (a 13th hex character is refused).
+
 ## Ledger
 
 C04 is the Markdown table the CAOS delegation tool writes, so there is one representation: the columns ID, Agent, Model,
@@ -230,19 +247,40 @@ billed when its Provider is not `-` (`anthropic` for the sdk lane, the provider 
 Tokens in, Tokens out and Cost USD (a number, never negative). Status maps the C30 result of a dispatch to the ledger as it
 is: C30 `complete`, `incomplete`, `defective`, `pending`, `error`, `timeout` and `over-budget` are C04 statuses of the same
 name (`contract lint` checks that every C30 result status is a C04 status); the ledger adds `drafted`, `launched`,
-`accepted`, `superseded` and `lost`. `accepted` goes with Accepted `yes`, `superseded` with a Superseded by value. The sdk
+`accepted`, `superseded` and `lost`. `accepted` goes with Accepted `yes`, `superseded` with a Superseded by value. Status is
+a strict enum: the evidence of an acceptance ("accepted after verification: ...", "check_report COMPLETE and diff re-read")
+goes in the optional free-text Notes column. Accepted is `yes` or `no`; `y` and `n` in any case are aliases, anything else is
+refused. The seven mandatory columns come first and in that order (the CAOS reader is positional) and the optional columns
+follow in any order; Brief and Report are relative paths of the shared pattern. The ledgers the coordination repository holds
+today carry free text in Status and Accepted; the contract does not admit them and the CAOS side migrates them to Notes. The sdk
 lane reads the key from `ANTHROPIC_API_KEY` or from the file named by `dispatch.sdk.key_file` of C01 (a path, never the key).
 
 ## Hooks
 
 `plugins/batuta/hooks/hooks.json` is the registry and the file Claude Code reads (C31): the event map under `hooks`, each
-entry with the official fields (`type`, `command`, `args`, `timeout`, `if`, `shell`, `onFailure`, `async`, `statusMessage`,
+entry with the official fields (`type`, `command`, `args`, `timeout`, `if`, `shell`, `onFailure`, `async`, `asyncRewake`, `statusMessage`,
 `once`). Every entry runs the one launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py` with the handler id as its last argument,
-in exec form (`"command": "python", "args": ["-I", "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"]`, preferred) or in
-shell form with the placeholder in double quotes. A fail-closed handler (a guard that must block when it cannot decide)
+in shell form with the placeholder in double quotes (the shipped form: `"command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I
+\"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" report-check", "shell": "bash"`) or in exec form (`"command": "python", "args": ["-I",
+"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"]`, the rendered default, see the profiles below). A fail-closed handler (a guard that must block when it cannot decide)
 sets `"onFailure": "block"`, accepted on the events that can block through it (`PreToolUse`, `UserPromptSubmit`) and refused
-on `SessionStart`, `SubagentStop` and `Stop`; a fail-open handler leaves it out. Matchers are allowed on `PreToolUse` (tool
-names), `SessionStart` (the start source) and `SubagentStop` (the agent type).
+on `SessionStart`, `SubagentStop` and `Stop`; a fail-open handler leaves it out or writes `"onFailure": "continue"` (the
+official default, accepted everywhere). `onFailure` is refused together with `"async": true` or `"asyncRewake": true`: the
+platform ignores it on an async hook, so a fail-closed entry would fail open. Matchers are allowed on `PreToolUse` (tool
+names), `SessionStart` (the start source) and `SubagentStop` (the agent type) and refused on every other event (`Stop`,
+`UserPromptSubmit`), where the platform ignores them and a hook scoped by one would run unscoped.
+
+The entry check has two profiles, `check_hook_entry(entry, event, mode)` in `batuta_lib/contract.py` (`mode` is `shipped` or
+`rendered`; `check_rendered_entry` adds the structure). The **shipped profile** is the file the plugin ships
+(`hooks/hooks.json`): the launcher is `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py"` and the interpreter is a bare name; in shell form
+only, it may instead be exactly `"$CLAUDE_PLUGIN_OPTION_PYTHON"` (in double quotes, the user's python option), and such an entry
+sets `"shell": "bash"`; exec form keeps the bare name. The **rendered profile** (`$defs/rendered_entry`) is an entry a device
+writes into its settings, with nothing left to resolve: the interpreter is a bare name or an absolute path (exec form: the
+command is the path; shell form: the path in double quotes), the launcher is an absolute path ending in `/scripts/hook.py`
+(in double quotes in shell form), paths use forward slashes (`/...` or `C:/...`), and no `{{placeholder}}`,
+`${CLAUDE_PLUGIN_ROOT}` or `$CLAUDE_PLUGIN_OPTION_PYTHON` remains. Flags, the one handler id, the `onFailure` and matcher
+rules are the same in both. `contract validate C31` selects the profile with a top-level `"profile": "rendered"` in the
+document (default shipped).
 
 Handlers are discovered like command areas: an area module under `scripts/batuta_lib/areas/` may define a literal
 `HOOKS = {id: handler}`; the launcher resolves the id across the areas, an id defined twice is a lint failure and so is a
@@ -250,8 +288,7 @@ Handlers are discovered like command areas: an area module under `scripts/batuta
 therefore needs only its own area module and its entry in `hooks.json`, never the launcher's code. A handler is
 `handler(payload: dict) -> dict`: the payload is the C16 input of the event, the result is `{"contract_version": "1.0",
 "exit_code": 0 or 2, "output": a C16 output object or null, "message": the reason, required for exit code 2}`. The launcher
-prints `output` as JSON, writes `message` to stderr and exits with `exit_code`; an unknown id or an exception writes the
-reason to stderr and exits 1, which Claude Code treats as a non-blocking error unless the entry has `onFailure`.
+prints `output` as JSON, writes `message` to stderr and exits with `exit_code`; an unknown or missing handler id, an invalid handler result or an exception writes the reason to stderr and exits 1, which Claude Code treats as a non-blocking error unless the entry has `onFailure: "block"`.
 
 ## Gates
 

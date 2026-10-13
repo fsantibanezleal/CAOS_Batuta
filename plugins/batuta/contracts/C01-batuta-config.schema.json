@@ -143,6 +143,26 @@
       "type": "string",
       "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
     },
+    "user_core": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$"
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "additionalProperties": false,
+      "description": "the template the device area renders into the user's always-loaded core, and its placeholder values"
+    },
     "budgets": {
       "type": "object",
       "properties": {

@@ -3,7 +3,7 @@
   "contract_id": "C31",
   "contract_version": "1.0",
   "title": "Hooks file and handler discovery",
-  "description": "Two documents of one boundary. (1) `plugins/batuta/hooks/hooks.json` is the registry and the file Claude Code reads: the event map under a top-level `hooks` key, each entry with the official fields (type, command, args, timeout, if, shell, onFailure, async, statusMessage, once). Every command runs the one launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py` with the handler id as its last argument: either exec form (`command` a bare interpreter name, `args` the interpreter flags such as -I, the launcher, the id; recommended) or shell form (`<interpreter> [flags] \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <id>` with the placeholder in double quotes); never a machine path. A fail-closed handler (a guard that must block when it cannot decide) sets `onFailure: \"block\"`, which only the events that can block through it accept (not SessionStart, SubagentStop or Stop: a Stop-type hook returns `decision: block` itself); a fail-open handler (a quality hook) leaves it out. (2) Handler discovery: an area module under `scripts/batuta_lib/areas/` may define a literal `HOOKS = {id: handler}`; the launcher resolves the id across the areas and an id defined twice is a lint failure (`contract lint` reads the modules without importing them and checks that every id of hooks.json resolves to one handler). A handler is `handler(payload: dict) -> dict`: the payload is the C16 input of the event and the returned dict is the handler result (`$defs/handler_result`): `exit_code` 0 or 2, the C16 output object (`output`, or null) and, for exit code 2 (block, shown to the model), the `message`. The launcher prints `output` as JSON on stdout, writes `message` to stderr and exits with `exit_code`; an unknown id or an exception writes the reason to stderr and exits 1, which Claude Code treats as a non-blocking error unless the entry has `onFailure: \"block\"`.",
+  "description": "Two documents of one boundary. (1) `plugins/batuta/hooks/hooks.json` is the registry and the file Claude Code reads: the event map under a top-level `hooks` key, each entry with the official fields (type, command, args, timeout, if, shell, onFailure, async, statusMessage, once). Every command runs the one launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py` with the handler id as its last argument: either exec form (`command` a bare interpreter name, `args` the interpreter flags such as -I, the launcher, the id; the rendered default) or shell form (`<interpreter> [flags] \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <id>` with the placeholder in double quotes; the shipped form, with the interpreter `\"$CLAUDE_PLUGIN_OPTION_PYTHON\"` and `\"shell\": \"bash\"` as decision 19 says); never a machine path. A fail-closed handler (a guard that must block when it cannot decide) sets `onFailure: \"block\"`, which only the events that can block through it accept (not SessionStart, SubagentStop or Stop: a Stop-type hook returns `decision: block` itself); a fail-open handler (a quality hook) leaves it out. (2) Handler discovery: an area module under `scripts/batuta_lib/areas/` may define a literal `HOOKS = {id: handler}`; the launcher resolves the id across the areas and an id defined twice is a lint failure (`contract lint` reads the modules without importing them and checks that every id of hooks.json resolves to one handler). A handler is `handler(payload: dict) -> dict`: the payload is the C16 input of the event and the returned dict is the handler result (`$defs/handler_result`): `exit_code` 0 or 2, the C16 output object (`output`, or null) and, for exit code 2 (block, shown to the model), the `message`. The launcher prints `output` as JSON on stdout, writes `message` to stderr and exits with `exit_code`; an unknown or missing handler id, an invalid handler result or an exception writes the reason to stderr and exits 1, which Claude Code treats as a non-blocking error unless the entry has `onFailure: \"block\"`. Entry rules: `onFailure` is `continue` (the default) or `block`, and is refused together with `async: true` or `asyncRewake: true` (the platform ignores it there, so a fail-closed entry would fail open); `matcher` is accepted only on PreToolUse, SessionStart and SubagentStop (the platform silently ignores it on Stop and UserPromptSubmit). Two profiles of the same entry check: the shipped profile (`plugins/batuta/hooks/hooks.json`, launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py`; in shell form the interpreter may be exactly `\"$CLAUDE_PLUGIN_OPTION_PYTHON\"` with `\"shell\": \"bash\"`) and the rendered profile (`$defs/rendered_entry`: the entries written per device, with an absolute interpreter and an absolute launcher and nothing left to resolve); a document handed to `contract validate` selects the rendered profile with the top-level `\"profile\": \"rendered\"`.",
   "type": "object",
   "properties": {
     "hooks": {
@@ -20,6 +20,14 @@
       "properties": {
         "description": {
           "type": "string"
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "shipped",
+            "rendered"
+          ],
+          "description": "Only in a document handed to the validator: which entry profile applies (default shipped). The shipped hooks.json Claude Code reads carries none."
         },
         "hooks": {
           "type": "object",
@@ -130,11 +138,15 @@
         "onFailure": {
           "type": "string",
           "enum": [
+            "continue",
             "block"
           ],
-          "description": "block: a hook that fails (non-zero exit other than a decision, a crash, a timeout) blocks the action. Fail-closed guards set it."
+          "description": "continue (the default): a failing hook does not stop the action. block: a hook that fails (non-zero exit other than a decision, a crash, a timeout) blocks the action; fail-closed guards set it. Refused with async or asyncRewake, and block is refused on SessionStart, SubagentStop and Stop."
         },
         "async": {
+          "type": "boolean"
+        },
+        "asyncRewake": {
           "type": "boolean"
         },
         "statusMessage": {
@@ -149,6 +161,10 @@
         "command"
       ],
       "additionalProperties": false
+    },
+    "rendered_entry": {
+      "$ref": "#/$defs/entry",
+      "description": "The rendered profile of an entry: what a device writes into its settings, not what the plugin ships. The same fields and rules as `entry`, except that nothing is left to resolve: the interpreter is a bare name or an absolute path (forward slashes, `/...` or `C:/...`; exec form: the command is the path; shell form: the path in double quotes), the launcher is an absolute path ending in /scripts/hook.py (in double quotes in shell form), and no `{{placeholder}}`, `${CLAUDE_PLUGIN_ROOT}` or `$CLAUDE_PLUGIN_OPTION_PYTHON` remains. Flags, the one handler id, onFailure and matcher rules are those of the shipped profile; `contract.check_hook_entry(entry, event, mode)` checks both."
     },
     "handler_result": {
       "type": "object",

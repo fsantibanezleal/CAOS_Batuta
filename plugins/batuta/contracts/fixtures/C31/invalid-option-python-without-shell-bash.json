@@ -1,0 +1,13 @@
+{
+  "_why": "the python option variable is the interpreter of the shell form only with shell bash",
+  "_expect": "bash",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" report-check", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
