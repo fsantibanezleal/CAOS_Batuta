@@ -647,5 +647,77 @@ class D19(unittest.TestCase):
                 self.assertTrue((FX / "C31" / name).is_file(), name)
 
 
+# ------------------------------------------------------------------ decision 20: CAOS-only upstream rules are recorded, not adopted
+
+def r3_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("review_r3_for_r4", ROOT / "tests" / "test_review_r3.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+OVERLAY_PATH = FX / "_upstream" / "sizing_check.overlay-only.json"
+OVERLAY_REASON = "particular to the CAOS product template; not part of the generic C23 (decision 20)"
+SAMPLE_MESSAGES = [
+    "Executive brief: no 'Data file: content/executive.json' line (the executive view standard, conventions/problem-context-first.md)",
+    "Executive brief: it must not restate the executive view, only name content/executive.json (found: - Initiative: reduce missed alerts)",
+]
+
+
+class D20(unittest.TestCase):
+    def overlay(self):
+        return json.loads(OVERLAY_PATH.read_text(encoding="utf-8"))
+
+    def test_D20_the_overlay_record_lists_the_caos_only_rules(self):
+        entries = self.overlay()
+        self.assertEqual(len(entries), 2)
+        for e in entries:
+            self.assertEqual(sorted(e), ["date", "reason", "rule", "upstream_commit"])
+            self.assertEqual(e["reason"], OVERLAY_REASON)
+            self.assertRegex(e["date"], r"^\d{4}-\d{2}-\d{2}$")
+            self.assertRegex(e["upstream_commit"], r"^[0-9a-f]{7,40}$")
+        self.assertIn("Data file: content/executive.json", entries[0]["rule"])
+        self.assertIn("must not restate the executive view", entries[1]["rule"])
+
+    def test_D20_the_recorded_copy_is_refreshed_to_the_executive_view_commit(self):
+        rec = json.loads((FX / "_upstream" / "sizing_check.recorded.json").read_text(encoding="utf-8"))
+        self.assertTrue(rec["last_changed_in"].startswith("dbf43f429"), rec["last_changed_in"])
+        self.assertRegex(rec["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertGreaterEqual(rec["date"], "2026-10-13")
+
+    def test_D20_a_classified_disagreement_is_accepted_and_an_unclassified_one_is_not(self):
+        r3 = r3_module()
+        entries = self.overlay()
+        self.assertEqual(r3.unclassified(SAMPLE_MESSAGES, entries), [])
+        self.assertEqual(r3.unclassified(SAMPLE_MESSAGES + ["missing section: Problem"], entries), ["missing section: Problem"])
+        self.assertEqual(r3.unclassified(SAMPLE_MESSAGES, entries[1:]), SAMPLE_MESSAGES[:1])
+        self.assertEqual(r3.unclassified(SAMPLE_MESSAGES, []), SAMPLE_MESSAGES)
+
+    def test_D20_the_match_is_exact_not_a_prefix(self):
+        r3 = r3_module()
+        loose = SAMPLE_MESSAGES[0] + " and more"
+        self.assertEqual(r3.unclassified([loose], self.overlay()), [loose])
+
+    @unittest.skipUnless(CAOS_TOOLS, "BATUTA_CAOS_TOOLS is not set")
+    def test_D20_the_live_checker_disagrees_only_with_overlay_rules_and_a_shortened_record_fails(self):
+        sys.path.insert(0, CAOS_TOOLS)
+        import sizing_check  # noqa: E402
+        r3 = r3_module()
+        entries = self.overlay()
+        seen = []
+        for path in sorted((FX / "C23").glob("valid-*.md")):
+            theirs = sizing_check.check_text(path.read_text(encoding="utf-8"))
+            self.assertEqual(r3.unclassified(theirs, entries), [], path.name)
+            seen.extend(theirs)
+        self.assertTrue(seen, "the live checker raised no overlay rule: the record may be stale")
+        for i in range(len(entries)):
+            shortened = entries[:i] + entries[i + 1:]
+            if any(m for m in seen if r3.unclassified([m], entries) == [] and r3.unclassified([m], shortened)):
+                break
+        else:
+            self.fail("removing an entry from the exclusion record never made a disagreement unclassified")
+
+
 if __name__ == "__main__":
     unittest.main()
