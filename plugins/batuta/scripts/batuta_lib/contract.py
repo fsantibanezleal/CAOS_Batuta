@@ -521,7 +521,9 @@ def _check_c01(inst, schema):
     providers = d.get("providers", {})
     for lane in d["lanes"]:
         if lane.startswith("provider:") and lane[len("provider:"):] not in providers:
-            errs.append(f"/dispatch/lanes: lane '{lane}' needs dispatch.providers.{lane[len('provider:'):]}")
+            # the lane is quoted whole and never cut into pieces, so a caller that rewrites quoted values (the configuration
+            # loader, which validates the expanded document) can print it as written
+            errs.append(f"/dispatch/lanes: lane {lane!r} needs a key of dispatch.providers named after it")
     return errs
 
 
@@ -530,14 +532,15 @@ def _check_c06(inst, schema):
     if inst["approved_spec_sha256_prefix"] != inst["spec_sha256"][:12]:
         errs.append(f"/approved_spec_sha256_prefix: '{inst['approved_spec_sha256_prefix']}' is not the first 12 characters "
                     f"of spec_sha256 ('{inst['spec_sha256'][:12]}')")
-    # decision 16: what the human typed holds the whole phrase `approve <spec_id> <prefix>`: the keyword and the hex match
-    # case-insensitively, the spec id exactly, and the phrase is delimited by whitespace or the text ends (a whole phrase,
-    # never a piece of a longer token)
-    phrase = (r"(?<!\S)(?i:approve)[ \t]+" + re.escape(inst["spec_id"]) + r"[ \t]+(?i:" + re.escape(inst["approved_spec_sha256_prefix"])
+    # decisions 16 and 28: what the human typed STARTS with the phrase `approve <spec_id> <prefix>` after leading whitespace
+    # (so "do not approve ..." is no approval): the keyword and the hex match case-insensitively, the spec id exactly, and
+    # the phrase ends at whitespace or the end of the text (never a piece of a longer token)
+    phrase = (r"\s*(?i:approve)[ \t]+" + re.escape(inst["spec_id"]) + r"[ \t]+(?i:" + re.escape(inst["approved_spec_sha256_prefix"])
               + r")(?!\S)")
-    if not re.search(phrase, inst["prompt_excerpt"]):
-        errs.append(f"/prompt_excerpt: the typed text must contain the whole phrase 'approve {inst['spec_id']} "
-                    f"{inst['approved_spec_sha256_prefix']}' (the keyword and the hex in any case, the spec id exactly)")
+    if not re.match(phrase, inst["prompt_excerpt"]):
+        errs.append(f"/prompt_excerpt: the typed text must start with the phrase 'approve {inst['spec_id']} "
+                    f"{inst['approved_spec_sha256_prefix']}' after any leading whitespace (the keyword and the hex in any case, "
+                    f"the spec id exactly)")
     for key in ("contracts_sha256", "named_tests_sha256", "adrs_sha256"):
         for path in inst[key]:
             if _bad_relpath(path):
@@ -614,7 +617,7 @@ def hook_entry_id(entry):
 
 HOOK_PROFILES = ("shipped", "rendered")
 OPTION_PYTHON = '"$CLAUDE_PLUGIN_OPTION_PYTHON"'   # the shipped shell-form interpreter that the user's python option fills
-ABS_PATH = re.compile(r'(?:/|[A-Za-z]:/)[^"\x00-\x1f]*\Z')   # a POSIX or a drive-letter path, forward slashes, no quote
+ABS_PATH = re.compile(r'(?:/|[A-Za-z]:/)[^"\\\x00-\x1f]*\Z')   # a POSIX or a drive-letter path, forward slashes, no quote
 UNRESOLVED = re.compile(r"\{\{|\$")
 RENDERED_LAUNCHER_END = "/scripts/hook.py"
 MATCHER_EVENTS = ("PreToolUse", "SessionStart", "SubagentStop")   # the events whose matcher the platform reads
@@ -720,6 +723,9 @@ def check_hook_entry(entry, event, mode="shipped", matcher=None):
     interpreter, flags, hid, problem = _hook_entry_parts(entry, mode)
     if problem:
         errs.append(f"/command: {problem}")
+    if mode == "rendered" and entry.get("shell") == "powershell" and "args" not in entry:
+        errs.append("/shell: a rendered shell-form command quotes its paths and PowerShell cannot run a quoted string followed by "
+                    "arguments (it needs `&`): use exec form (command and args) or shell bash")
     on_failure = entry.get("onFailure")
     if on_failure == "block" and event in NO_ON_FAILURE:
         why = "SessionStart cannot block" if event == "SessionStart" else "a Stop-type hook returns decision block itself"
@@ -1553,6 +1559,11 @@ def validate_file(path, schema_path, contract_id=None):
             # only a fixture (named valid-* or invalid-*, as `contract lint` requires) carries the keys that say why it
             # is valid or not; in a production artifact they are unknown keys like any other
             doc = {k: v for k, v in doc.items() if k not in FIXTURE_KEYS}
+        if cid == "C31" and path.name == "hooks.json" and isinstance(doc, dict) and "profile" in doc:
+            # the shipped file is always the shipped profile; the rendered profile is chosen by the caller for a file a device
+            # renderer writes, never by the file itself
+            return ["/profile: the shipped hooks.json carries no 'profile' key (the rendered profile is selected by the caller, "
+                    "for the files a device renderer writes)"]
         return validate_instance(cid, doc, schema)
     if ext == ".jsonl":
         return validate_jsonl(text, schema, cid)   # a project's own line-oriented contract: no shipped one is JSONL

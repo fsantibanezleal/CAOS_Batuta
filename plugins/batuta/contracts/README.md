@@ -226,11 +226,11 @@ released version or the baseline answered.
 
 ## Approval phrase
 
-The approval record (C06) keeps what the human typed in `prompt_excerpt`, and it must contain the whole phrase
-`approve <spec_id> <approved_spec_sha256_prefix>`. The keyword and the hex match case-insensitively (`APPROVE 001-x AB12...`
-is accepted), the spec id matches exactly, and the stored prefix is lower case. The phrase is delimited by whitespace or the
-ends of the text, so it can sit inside a longer prompt but never inside a longer token (`xapprove ...` or a 13th hex character
-is refused).
+The approval record (C06) keeps what the human typed in `prompt_excerpt`, and it starts with the phrase
+`approve <spec_id> <approved_spec_sha256_prefix>` after any leading whitespace: text may follow it, but a sentence that merely
+contains it (`do not approve 001-x ab12...`) is no approval. The keyword and the hex match case-insensitively (`APPROVE 001-x AB12...`
+is accepted), the spec id matches exactly, and the stored prefix is lower case. The phrase ends at whitespace or the end of
+the text, never inside a longer token (a 13th hex character is refused).
 
 ## Ledger
 
@@ -251,10 +251,11 @@ lane reads the key from `ANTHROPIC_API_KEY` or from the file named by `dispatch.
 ## Hooks
 
 `plugins/batuta/hooks/hooks.json` is the registry and the file Claude Code reads (C31): the event map under `hooks`, each
-entry with the official fields (`type`, `command`, `args`, `timeout`, `if`, `shell`, `onFailure`, `async`, `statusMessage`,
+entry with the official fields (`type`, `command`, `args`, `timeout`, `if`, `shell`, `onFailure`, `async`, `asyncRewake`, `statusMessage`,
 `once`). Every entry runs the one launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py` with the handler id as its last argument,
-in exec form (`"command": "python", "args": ["-I", "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"]`, preferred) or in
-shell form with the placeholder in double quotes. A fail-closed handler (a guard that must block when it cannot decide)
+in shell form with the placeholder in double quotes (the shipped form: `"command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I
+\"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" report-check", "shell": "bash"`) or in exec form (`"command": "python", "args": ["-I",
+"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"]`, the rendered default, see the profiles below). A fail-closed handler (a guard that must block when it cannot decide)
 sets `"onFailure": "block"`, accepted on the events that can block through it (`PreToolUse`, `UserPromptSubmit`) and refused
 on `SessionStart`, `SubagentStop` and `Stop`; a fail-open handler leaves it out or writes `"onFailure": "continue"` (the
 official default, accepted everywhere). `onFailure` is refused together with `"async": true` or `"asyncRewake": true`: the

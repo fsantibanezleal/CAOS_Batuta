@@ -60,6 +60,22 @@ repository.
     required when the object is present) and `values` (an object of strings): the template the device area renders into the
     user's always-loaded core, and its placeholder values. The frozen `budgets` block is untouched.
 
+28. **The approval phrase starts the typed text (supersedes the "contains" wording of decision 16).** `prompt_excerpt`
+    must start with `approve <spec_id> <prefix>` after any leading whitespace (keyword and hex case-insensitive, spec id
+    exact), so `do not approve 001-example aaaaaaaaaaaa` is refused.
+
+The fourth re-check (PASS-WITH-FIXES, five minors) added these fixes:
+
+- R4-01: the C01 semantic message quotes a lane whole (`lane 'provider:...' needs a key of dispatch.providers named after
+  it`) and never cuts a piece of it, so the loader's rewrite of quoted values prints the lane as written.
+- R4-02: the shipped `hooks/hooks.json` carries no `profile` key (refused by the lint and by `contract validate` on a file
+  named hooks.json); the rendered profile is selected by the caller for a file a device renderer writes.
+- R4-03: a rendered shell-form command with `shell: powershell` is refused (PowerShell cannot run a quoted string followed by
+  arguments); exec form and bash stay valid.
+- R4-04: rendered paths admit forward slashes only (`ABS_PATH` excludes the backslash).
+- R4-05: the C31 description and the README name the shell form with the option interpreter as the shipped form and exec
+  form as the rendered default; `asyncRewake` is in the README field list.
+
 Smaller fixes of the same revision: a C07 `supersedes` names the sha256 of an earlier entry of the same path (R3-12); `contract
 lint` checks that the change-request id pattern is equal in C07, C32 and C33 (R3-11); the F15 test calls `discover_hook_ids` on
 two modules instead of reading its source (R3-09); the red test `test_R16_a_supersedes_that_names_no_entry_of_the_same_path_is_refused`
