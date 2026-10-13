@@ -44,6 +44,39 @@ class ContractFixtures(unittest.TestCase):
                     self.assertEqual(core.validate_file(fx, sp), [])
 
 
+class AtomicWrite(unittest.TestCase):
+    def test_a_replace_that_windows_refuses_for_a_moment_is_retried(self):
+        import os
+        import tempfile
+        from unittest import mock
+        from batuta_lib import tdd_lock
+        real = os.replace
+        calls = []
+
+        def flaky(src, dst):
+            calls.append(src)
+            if len(calls) < 3:
+                raise PermissionError(5, "Access is denied")
+            return real(src, dst)
+
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(tdd_lock.os, "replace", flaky):
+            target = Path(d) / "sub" / "lock.json"
+            tdd_lock.atomic_write(target, "x\n")
+            self.assertEqual(target.read_text(encoding="utf-8"), "x\n")
+            self.assertEqual(len(calls), 3)
+            self.assertEqual([p.name for p in target.parent.iterdir()], ["lock.json"])
+
+    def test_a_replace_that_keeps_failing_gives_up_and_leaves_no_temp_file(self):
+        import tempfile
+        from unittest import mock
+        from batuta_lib import tdd_lock
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(tdd_lock.os, "replace", side_effect=PermissionError(5, "no")), \
+                mock.patch.object(tdd_lock.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                tdd_lock.atomic_write(Path(d) / "lock.json", "x\n")
+            self.assertEqual(list(Path(d).iterdir()), [])
+
+
 class DefaultLockPath(unittest.TestCase):
     def test_the_default_lock_file_is_the_one_the_contract_catalog_names(self):
         import re
