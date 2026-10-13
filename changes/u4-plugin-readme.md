@@ -6,7 +6,7 @@ separate hook.
 
 ```
 python scripts/batuta.py tdd lock --task T-001 tests/test_x.py [--supersedes --change-request CR-001] [--apply]
-python scripts/batuta.py tdd change-request new --test tests/test_x.py --requirement REQ-X-001 --reason TEXT --proposed TEXT [--feature NAME] [--apply]
+python scripts/batuta.py tdd change-request new --test tests/test_x.py --requirement REQ-X-001 --reason TEXT --proposed TEXT --feature NAME [--apply]
 python scripts/batuta.py tdd commit --red|--green|--refactor T-001 -m TITLE PATH... [--approved CR-001] [--apply]
 python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay]
 ```
@@ -15,6 +15,8 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay]
   refused unless `--supersedes --change-request <id>` names a row of `specs/**/test-change-requests.md` (C33) with Status
   `approved`, a Decided by and the same Test path. Requirement ids come from `# REQ: REQ-X-001` (or `// REQ:`) lines of
   the test file; a file without one is locked with a `WARN`. The hash reads CRLF as LF.
+- A change request always belongs to a feature (`--feature` is required): it is written to
+  `specs/<feature>/test-change-requests.md`; `check` reads every `specs/**/test-change-requests.md`.
 - An agent adds an `open` change request (`change-request new`) and stops; only a person turns it `approved`. The
   request ids are `CR-NNN`, unique across features because the id is the commit trailer.
 - Commit messages are C32: `[red] T-001 title`, `[green] T-001 title`, `[refactor] T-001 title`, a blank line, a body and

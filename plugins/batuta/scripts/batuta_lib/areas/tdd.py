@@ -201,7 +201,7 @@ def _change_request_new(args):
         problems.append(why)
     if not lk.REQ_ID.match(args.requirement):
         problems.append(f"requirement {args.requirement!r} must look like REQ-AUTH-001")
-    if args.feature is not None and not lk.FEATURE.match(args.feature):
+    if not lk.FEATURE.match(args.feature):
         problems.append(f"feature {args.feature!r} must be a folder name such as 001-auth")
     for name in ("reason", "proposed"):
         if not str(getattr(args, name)).strip():
@@ -211,7 +211,7 @@ def _change_request_new(args):
             items.append(item("REFUSED", p))
         return emit(AREA, "change-request new", items, "tdd change-request new: refused, nothing written", as_json)
 
-    rel = f"specs/{args.feature}/{lk.REQUEST_FILE}" if args.feature else f"specs/{lk.REQUEST_FILE}"
+    rel = f"specs/{args.feature}/{lk.REQUEST_FILE}"
     target = root / rel
     existing = target.read_text(encoding="utf-8-sig") if target.is_file() else None
     texts = [(root / p).read_text(encoding="utf-8-sig") for p in lk.request_paths(root)]
@@ -394,8 +394,8 @@ def register(subparsers):
     n.add_argument("--requirement", required=True, metavar="REQ-ID", help="the requirement the test serves")
     n.add_argument("--reason", required=True, help="why the test is wrong")
     n.add_argument("--proposed", required=True, help="the change that is proposed")
-    n.add_argument("--feature", default=None, metavar="NAME", help="the feature folder: specs/<NAME>/test-change-requests.md "
-                                                                    "(default specs/test-change-requests.md)")
+    n.add_argument("--feature", required=True, metavar="NAME", help="the feature the request belongs to: "
+                                                                     "specs/<NAME>/test-change-requests.md")
     n.add_argument("--apply", action="store_true", help="write the file (default: dry run)")
     n.set_defaults(func=_change_request_new)
 

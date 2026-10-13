@@ -169,7 +169,7 @@ def request_row(rid, test_path, requirement, reason, proposed, date):
 def append_request(existing, row, feature):
     """The request file text with `row` added. `existing` is None for a new file."""
     if existing is None:
-        title = f"# Test change requests: {feature}" if feature else "# Test change requests"
+        title = f"# Test change requests: {feature}"
         return (f"{title}\n\n| " + " | ".join(HEADERS) + " |\n|" + "---|" * len(HEADERS) + f"\n{row}\n")
     lines = existing.replace("\r\n", "\n").rstrip("\n").split("\n")
     if not lines or not lines[-1].lstrip().startswith("|"):
