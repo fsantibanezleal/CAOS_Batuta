@@ -269,7 +269,7 @@ class R303(unittest.TestCase):
         for p in sorted((FX / "C06").glob("valid-*.json")):
             with self.subTest(p.name):
                 d = json.loads(p.read_text(encoding="utf-8"))
-                self.assertIn(f"approve {d['spec_id']} {d['approved_spec_sha256_prefix']}", d["prompt_excerpt"])
+                self.assertIn(f"approve {d['spec_id']} {d['approved_spec_sha256_prefix']}".lower(), d["prompt_excerpt"].lower())
 
     def test_R303_an_excerpt_without_the_phrase_is_refused(self):
         for bad in ("approve spec 001", "ok", "approved", "approve 001-example", "approve aaaaaaaaaaaa", "approve  "):
@@ -583,12 +583,12 @@ class D19(unittest.TestCase):
 
     RENDERED = [
         ("exec windows path with spaces", {"type": "command", "command": "C:/Program Files/Python 3/python.exe",
-                                           "args": ["-I", "C:/Users/a b/plugins/batuta/scripts/hook.py", "report-check"]}),
-        ("exec posix path", {"type": "command", "command": "/usr/bin/python3", "args": ["/home/a/.claude/plugins/batuta/scripts/hook.py", "report-check"]}),
-        ("exec bare interpreter", {"type": "command", "command": "python", "args": ["/home/a/plugins/batuta/scripts/hook.py", "report-check"]}),
-        ("shell windows path quoted", {"type": "command", "command": '"C:/Program Files/Python 3/python.exe" -I "C:/Users/a b/plugins/batuta/scripts/hook.py" report-check'}),
-        ("shell posix path quoted", {"type": "command", "command": '"/usr/bin/python3" "/home/a/plugins/batuta/scripts/hook.py" report-check'}),
-        ("shell bare interpreter", {"type": "command", "command": 'python -I "/home/a/plugins/batuta/scripts/hook.py" report-check'}),
+                                           "args": ["-I", "D:/Tools/a b/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("exec posix path", {"type": "command", "command": "/usr/bin/python3", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("exec bare interpreter", {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("shell windows path quoted", {"type": "command", "command": '"C:/Program Files/Python 3/python.exe" -I "D:/Tools/a b/plugins/batuta/scripts/hook.py" report-check'}),
+        ("shell posix path quoted", {"type": "command", "command": '"/usr/bin/python3" "/opt/tools/plugins/batuta/scripts/hook.py" report-check'}),
+        ("shell bare interpreter", {"type": "command", "command": 'python -I "/opt/tools/plugins/batuta/scripts/hook.py" report-check'}),
     ]
 
     def test_D19_rendered_entries_are_valid(self):
@@ -599,19 +599,19 @@ class D19(unittest.TestCase):
 
     def test_D19_a_rendered_entry_refuses_what_is_not_resolved(self):
         cases = {
-            "leftover {{python}} exec": {"type": "command", "command": "{{python}}", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]},
-            "leftover {{python}} shell": {"type": "command", "command": '{{python}} "/h/plugins/batuta/scripts/hook.py" report-check'},
+            "leftover {{python}} exec": {"type": "command", "command": "{{python}}", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]},
+            "leftover {{python}} shell": {"type": "command", "command": '{{python}} "/opt/tools/plugins/batuta/scripts/hook.py" report-check'},
             "leftover plugin root exec": {"type": "command", "command": "python", "args": [LAUNCHER, "report-check"]},
             "leftover plugin root shell": {"type": "command", "command": f'python {SHIPPED_LAUNCHER} report-check'},
-            "leftover option var": {"type": "command", "command": f'{OPT} "/h/plugins/batuta/scripts/hook.py" report-check', "shell": "bash"},
+            "leftover option var": {"type": "command", "command": f'{OPT} "/opt/tools/plugins/batuta/scripts/hook.py" report-check', "shell": "bash"},
             "relative launcher exec": {"type": "command", "command": "python", "args": ["plugins/batuta/scripts/hook.py", "report-check"]},
             "relative launcher shell": {"type": "command", "command": 'python "plugins/batuta/scripts/hook.py" report-check'},
-            "launcher is not scripts/hook.py": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/hook.py", "report-check"]},
-            "launcher is another script": {"type": "command", "command": 'python "/h/plugins/batuta/scripts/other.py" report-check'},
-            "relative interpreter path": {"type": "command", "command": "bin/python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]},
-            "unquoted absolute interpreter in shell form": {"type": "command", "command": 'C:/Python/python.exe "/h/plugins/batuta/scripts/hook.py" report-check'},
-            "handler id not lower case": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "Report"]},
-            "extra argument": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check", "x"]},
+            "launcher is not scripts/hook.py": {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/hook.py", "report-check"]},
+            "launcher is another script": {"type": "command", "command": 'python "/opt/tools/plugins/batuta/scripts/other.py" report-check'},
+            "relative interpreter path": {"type": "command", "command": "bin/python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]},
+            "unquoted absolute interpreter in shell form": {"type": "command", "command": 'C:/Python/python.exe "/opt/tools/plugins/batuta/scripts/hook.py" report-check'},
+            "handler id not lower case": {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "Report"]},
+            "extra argument": {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check", "x"]},
         }
         for label, e in cases.items():
             with self.subTest(label):
@@ -619,7 +619,7 @@ class D19(unittest.TestCase):
                 self.assertTrue(check_doc("C31", one_entry_doc(e, profile="rendered")), label)
 
     def test_D19_the_rendered_profile_keeps_the_on_failure_and_matcher_rules(self):
-        e = {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]}
+        e = {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]}
         self.assertTrue(contract.check_hook_entry(dict(e, onFailure="block"), "SessionStart", "rendered"))
         self.assertTrue(contract.check_hook_entry(dict(e, onFailure="block", **{"async": True}), "PreToolUse", "rendered"))
         self.assertTrue(contract.check_hook_entry(e, "Stop", "rendered", matcher="Bash"))
@@ -628,7 +628,7 @@ class D19(unittest.TestCase):
         self.assertTrue(check_doc("C31", one_entry_doc(e, "Stop", profile="rendered", matcher="Bash")))
 
     def test_D19_check_rendered_entry_validates_structure_and_semantics(self):
-        e = {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]}
+        e = {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]}
         self.assertEqual(contract.check_rendered_entry(e, "PreToolUse"), [])
         self.assertTrue(contract.check_rendered_entry(dict(e, retry=3), "PreToolUse"))
 

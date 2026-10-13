@@ -11,7 +11,9 @@ Resolution order, first hit wins:
 A path named by `--config` or `BATUTA_CONFIG` that does not exist is an error, never a silent fallback. A file is a
 whole C01 document: `$VAR` and `${VAR}` expand from the environment first, then the expanded document is validated (the
 same check as `contract validate C01`), so a variable cannot carry a path C01 refuses (a `..` segment, an absolute path)
-into an area. An unset root variable falls back to `<BATUTA_HOME>/temp|data|worktrees`; an unset variable in
+into an area. A field that holds an environment variable NAME (`credential_env`, `endpoint_env`: the C01 fields
+whose pattern is the name pattern) is never expanded and refuses any `$`, and every ConfigError quotes the value as
+written in the file, never the expanded one (an environment value can be a secret). An unset root variable falls back to `<BATUTA_HOME>/temp|data|worktrees`; an unset variable in
 `coordination_root` or `knowledge_manifest` is an error that names the variable and the field; an unset variable
 anywhere else stays as written and is listed in `Resolved.unresolved`. No drive letter or user path is built into the
 defaults.
@@ -30,6 +32,7 @@ PROJECT_DIR = ".batuta"
 ROOT_NAMES = ("temp", "data", "worktrees")
 PATH_FIELDS = ("coordination_root", "knowledge_manifest")   # relative paths: C01 refuses `..`, absolute and malformed ones
 _VAR = re.compile(r"\$(?:\{(\w+)\}|(\w+))", re.ASCII)
+ENV_NAME_PATTERN = "^[A-Z][A-Z0-9_]*$"   # the C01 pattern of a field that holds an environment variable name
 
 
 class ConfigError(ValueError):
@@ -105,16 +108,47 @@ def expand(value, env=None):
     return _VAR.sub(sub, value), missing
 
 
-def _expand_tree(node, env, missing):
+def env_name_keys():
+    """Keys of C01 that hold an environment variable NAME (their schema pattern is the name pattern): never expanded."""
+    found = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, sub in node.get("properties", {}).items():
+                if isinstance(sub, dict) and sub.get("pattern") == ENV_NAME_PATTERN:
+                    found.add(key)
+            for sub in node.values():
+                walk(sub)
+        elif isinstance(node, list):
+            for sub in node:
+                walk(sub)
+
+    walk(_schema())
+    return found
+
+
+def _expand_tree(node, env, missing, seen, skip=frozenset()):
+    """Expand every string except the values of `skip` keys (environment variable names). `seen` collects the
+    (written, expanded) pairs so an error message can quote the value as written."""
     if isinstance(node, str):
         text, miss = expand(node, env)
         missing.extend(miss)
+        if text != node:
+            seen.append((node, text))
         return text
     if isinstance(node, list):
-        return [_expand_tree(x, env, missing) for x in node]
+        return [_expand_tree(x, env, missing, seen, skip) for x in node]
     if isinstance(node, dict):
-        return {k: _expand_tree(v, env, missing) for k, v in node.items()}
+        return {k: v if k in skip else _expand_tree(v, env, missing, seen, skip) for k, v in node.items()}
     return node
+
+
+def _as_written(message, seen):
+    """A validation message with every expanded value replaced by the value as written in the file (never print an
+    environment value: it can be a secret)."""
+    for written, expanded in sorted(seen, key=lambda pair: -len(pair[1])):
+        message = message.replace(repr(expanded), repr(written)).replace(f"'{expanded}'", repr(written))
+    return message
 
 
 def default_config(env=None):
@@ -160,8 +194,8 @@ def load(config_arg=None, project_root=None, env=None):
         doc = contract.loads_strict(path.read_text(encoding="utf-8-sig"))
     except ValueError as exc:
         raise ConfigError(f"{path.as_posix()}: invalid JSON ({exc})") from exc
-    missing = []
-    out = _expand_tree(doc, e, missing)
+    missing, seen = [], []
+    out = _expand_tree(doc, e, missing, seen, env_name_keys())
     if isinstance(doc, dict):
         # a variable that is unset where a path is needed: name the variable and the field, never a partial path
         for field_name in PATH_FIELDS:
@@ -180,7 +214,8 @@ def load(config_arg=None, project_root=None, env=None):
     # that C01 refuses (a `..` segment, an absolute path)
     problems = validate(out)
     if problems:
-        raise ConfigError(f"{path.as_posix()} does not satisfy C01 after $VAR expansion: " + "; ".join(problems))
+        raise ConfigError(f"{path.as_posix()} does not satisfy C01 after $VAR expansion: "
+                          + "; ".join(_as_written(p, seen) for p in problems))
     return Resolved(out, source, path, sorted(set(missing)))
 
 

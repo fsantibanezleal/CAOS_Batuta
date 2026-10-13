@@ -530,6 +530,14 @@ def _check_c06(inst, schema):
     if inst["approved_spec_sha256_prefix"] != inst["spec_sha256"][:12]:
         errs.append(f"/approved_spec_sha256_prefix: '{inst['approved_spec_sha256_prefix']}' is not the first 12 characters "
                     f"of spec_sha256 ('{inst['spec_sha256'][:12]}')")
+    # decision 16: what the human typed holds the whole phrase `approve <spec_id> <prefix>`: the keyword and the hex match
+    # case-insensitively, the spec id exactly, and the phrase is delimited by whitespace or the text ends (a whole phrase,
+    # never a piece of a longer token)
+    phrase = (r"(?<!\S)(?i:approve)[ \t]+" + re.escape(inst["spec_id"]) + r"[ \t]+(?i:" + re.escape(inst["approved_spec_sha256_prefix"])
+              + r")(?!\S)")
+    if not re.search(phrase, inst["prompt_excerpt"]):
+        errs.append(f"/prompt_excerpt: the typed text must contain the whole phrase 'approve {inst['spec_id']} "
+                    f"{inst['approved_spec_sha256_prefix']}' (the keyword and the hex in any case, the spec id exactly)")
     for key in ("contracts_sha256", "named_tests_sha256", "adrs_sha256"):
         for path in inst[key]:
             if _bad_relpath(path):
@@ -551,6 +559,9 @@ def _check_c07(inst, schema):
             target = next((j for j in range(i) if entries[j]["path"] == e["path"] and entries[j]["sha256"] == e["supersedes"]), None)
             if target is not None:
                 superseded.add(target)
+            else:
+                errs.append(f"/entries/{i}/supersedes: names no earlier entry of '{e['path']}' with that sha256 "
+                            f"(supersedes must name the sha256 of an earlier entry of the same path)")
     live = {}
     for i, e in enumerate(entries):
         if i in superseded:
@@ -592,7 +603,7 @@ LAUNCHER_PATH = "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py"
 HOOK_ID = re.compile(r"[a-z][a-z0-9-]*\Z", re.ASCII)
 HOOK_INTERPRETER = re.compile(r"[A-Za-z0-9._-]+\Z", re.ASCII)
 HOOK_FLAG = re.compile(r"-[A-Za-z0-9]+\Z", re.ASCII)
-# events whose hook cannot block through `onFailure` (the platform has no failure-to-block path for them)
+# events whose hook cannot block through `onFailure: block` (the platform has no failure-to-block path for them)
 NO_ON_FAILURE = ("SessionStart", "SubagentStop", "Stop")
 
 
@@ -601,31 +612,92 @@ def hook_entry_id(entry):
     return _hook_entry_parts(entry)[2]
 
 
-def _hook_entry_parts(entry):
-    """(interpreter, flags, handler id, problem) of a hooks.json entry in exec form (`command` and `args`) or shell form
-    (`command` alone: `<interpreter> [flags] "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py" <id>`, the placeholder in double quotes).
-    One grammar for both: an interpreter name, flags, the launcher, the handler id."""
+HOOK_PROFILES = ("shipped", "rendered")
+OPTION_PYTHON = '"$CLAUDE_PLUGIN_OPTION_PYTHON"'   # the shipped shell-form interpreter that the user's python option fills
+ABS_PATH = re.compile(r'(?:/|[A-Za-z]:/)[^"\x00-\x1f]*\Z')   # a POSIX or a drive-letter path, forward slashes, no quote
+UNRESOLVED = re.compile(r"\{\{|\$")
+RENDERED_LAUNCHER_END = "/scripts/hook.py"
+MATCHER_EVENTS = ("PreToolUse", "SessionStart", "SubagentStop")   # the events whose matcher the platform reads
+
+
+def _abs_problem(path, what, ending=None):
+    if UNRESOLVED.search(path):
+        return f"{what} {path!r} still holds a placeholder or a variable (a rendered entry has none left)"
+    if not ABS_PATH.fullmatch(path):
+        return f"{what} {path!r} is an absolute path with forward slashes ('/...' or 'C:/...') in a rendered entry"
+    if ending and not path.endswith(ending):
+        return f"{what} {path!r} ends in {ending}"
+    return None
+
+
+def _hook_entry_parts(entry, mode="shipped"):
+    """(interpreter, flags, handler id, problem) of a hook entry in exec form (`command` and `args`) or shell form
+    (`command` alone: `<interpreter> [flags] "<launcher>" <id>`, the launcher in double quotes). One grammar for both: an
+    interpreter, flags, the launcher, the handler id.
+
+    `shipped` (plugins/batuta/hooks/hooks.json): the launcher is `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py`; the interpreter is a
+    bare name, or in shell form only exactly `"$CLAUDE_PLUGIN_OPTION_PYTHON"` with `shell: bash`.
+    `rendered` (the entries written per device): the launcher is an absolute path ending in /scripts/hook.py and the interpreter
+    a bare name or an absolute path (in double quotes in shell form); no placeholder or variable is left."""
+    if mode not in HOOK_PROFILES:
+        raise ValueError(f"the hook entry profile is one of {', '.join(HOOK_PROFILES)}, got {mode!r}")
+    rendered = mode == "rendered"
     command, args = entry.get("command", ""), entry.get("args")
+    interpreter, flags = None, []
     if args is None:
-        m = re.fullmatch(r'(\S+)((?: -[A-Za-z0-9]+)*) "' + re.escape(LAUNCHER_PATH) + r'" (\S+)', command)
+        if rendered:
+            m = re.fullmatch(r'("[^"]+"|\S+)((?: -[A-Za-z0-9]+)*) "([^"]+)" (\S+)', command)
+            shape = '<interpreter> [flags] "<absolute launcher>" <handler id> (an absolute path in double quotes)'
+        else:
+            m = re.fullmatch(r'("\$CLAUDE_PLUGIN_OPTION_PYTHON"|\S+)((?: -[A-Za-z0-9]+)*) "' + re.escape(LAUNCHER_PATH) + r'" (\S+)', command)
+            shape = f'<interpreter> [flags] "{LAUNCHER_PATH}" <handler id> (the placeholder in double quotes)'
         if m is None:
-            return None, [], None, (f"command {command!r} must be '<interpreter> [flags] \"{LAUNCHER_PATH}\" <handler id>' "
-                                    f"(the placeholder in double quotes), or a bare interpreter name with args")
-        interpreter, flags, hid = m.group(1), m.group(2).split(), m.group(3)
+            if rendered and UNRESOLVED.search(command):
+                return None, [], None, f"command {command!r} still holds a placeholder or a variable (a rendered entry has none left)"
+            return None, [], None, f"command {command!r} must be '{shape}', or a bare interpreter name with args"
+        interpreter, flags, hid = m.group(1), m.group(2).split(), m.group(m.lastindex)
+        if rendered:
+            launcher_problem = _abs_problem(m.group(3), "the launcher", RENDERED_LAUNCHER_END)
+            if launcher_problem:
+                return None, [], None, launcher_problem
+            if interpreter.startswith('"'):
+                problem = _abs_problem(interpreter[1:-1], "the interpreter", None)
+                if problem:
+                    return None, [], None, problem
+                interpreter = interpreter[1:-1]
+            elif ABS_PATH.match(interpreter):
+                return None, [], None, f"the absolute interpreter path {interpreter!r} is in double quotes in shell form"
+        elif interpreter == OPTION_PYTHON:
+            if entry.get("shell") != "bash":
+                return None, [], None, f"the interpreter {OPTION_PYTHON} (the user's python option) needs \"shell\": \"bash\" in the entry"
     else:
-        interpreter, flags = command, []
-        if not HOOK_INTERPRETER.fullmatch(command):
+        interpreter = command
+        if "CLAUDE_PLUGIN_OPTION_PYTHON" in command and not rendered:
+            return None, [], None, "the python option variable is for the shell form only (with shell bash); exec form names a bare interpreter"
+        if rendered:
+            problem = _abs_problem(command, "the interpreter", None) if (ABS_PATH.match(command) or UNRESOLVED.search(command)) else None
+            if problem:
+                return None, [], None, problem
+        elif not HOOK_INTERPRETER.fullmatch(command):
             return None, [], None, f"command {command!r} is a bare interpreter name (no path, no space) when args are given"
-        if LAUNCHER_PATH not in args:
-            return None, [], None, f"args must contain the launcher {LAUNCHER_PATH}"
-        k = args.index(LAUNCHER_PATH)
+        if rendered:
+            k = next((i for i, a in enumerate(args) if not HOOK_FLAG.fullmatch(a)), len(args))
+            if k >= len(args):
+                return None, [], None, "args must contain the launcher, an absolute path ending in /scripts/hook.py"
+            problem = _abs_problem(args[k], "the launcher", RENDERED_LAUNCHER_END)
+            if problem:
+                return None, [], None, problem
+        else:
+            if LAUNCHER_PATH not in args:
+                return None, [], None, f"args must contain the launcher {LAUNCHER_PATH}"
+            k = args.index(LAUNCHER_PATH)
         flags = args[:k]
         if not all(HOOK_FLAG.fullmatch(f) for f in flags):
             return None, [], None, f"only interpreter flags such as -I come before the launcher, got {flags}"
         if len(args) != k + 2:
             return None, [], None, "the launcher is followed by exactly one argument, the handler id"
         hid = args[k + 1]
-    if not HOOK_INTERPRETER.fullmatch(interpreter):
+    if interpreter != OPTION_PYTHON and not (rendered and ABS_PATH.fullmatch(interpreter)) and not HOOK_INTERPRETER.fullmatch(interpreter):
         return None, [], None, f"the interpreter is a bare command name (no path), got {interpreter!r}"
     if not all(HOOK_FLAG.fullmatch(f) for f in flags):
         return None, [], None, f"interpreter flags look like -I, got {flags}"
@@ -634,22 +706,55 @@ def _hook_entry_parts(entry):
     return interpreter, flags, hid, None
 
 
+def _matcher_problem(event):
+    if event in MATCHER_EVENTS:
+        return None
+    return f"{event} has no matcher support, the platform ignores a matcher there (matchers: {', '.join(MATCHER_EVENTS)})"
+
+
+def check_hook_entry(entry, event, mode="shipped", matcher=None):
+    """Problems of one hook entry of `event` in a profile (`shipped` or `rendered`), as strings that start with the entry
+    field (`/command: ...`, `/onFailure: ...`, `/matcher: ...`). The entry is structurally sound (C31 `entry`; use
+    `check_rendered_entry` for the structure too). `matcher` is the matcher of the entry's group, when it has one."""
+    errs = []
+    interpreter, flags, hid, problem = _hook_entry_parts(entry, mode)
+    if problem:
+        errs.append(f"/command: {problem}")
+    on_failure = entry.get("onFailure")
+    if on_failure == "block" and event in NO_ON_FAILURE:
+        why = "SessionStart cannot block" if event == "SessionStart" else "a Stop-type hook returns decision block itself"
+        errs.append(f"/onFailure: a {event} hook cannot block through onFailure ({why})")
+    if on_failure is not None and (entry.get("async") is True or entry.get("asyncRewake") is True):
+        which = "async" if entry.get("async") is True else "asyncRewake"
+        errs.append(f"/onFailure: onFailure is ignored by an {which} hook, so a fail-closed entry would fail open; drop one of them")
+    if matcher is not None:
+        mp = _matcher_problem(event)
+        if mp:
+            errs.append(f"/matcher: {mp}")
+    return errs
+
+
+def check_rendered_entry(entry, event, matcher=None):
+    """The rendered profile of one entry: the C31 `rendered_entry` structure, then `check_hook_entry` in `rendered` mode."""
+    schema = load_schema(find_schema(Path(__file__).resolve().parents[2] / "contracts", "C31"))
+    errs = validate_def(entry, schema, "rendered_entry")
+    return errs or check_hook_entry(entry, event, "rendered", matcher)
+
+
 def _check_c31(inst, schema):
     """The rendered hooks.json (`hooks`) or a handler result (`exit_code`)."""
     if "hooks" in inst:
         errs = validate_def(inst, schema, "hooks_file")
         if errs:
             return errs
+        mode = inst.get("profile", "shipped")
         for event, groups in inst["hooks"].items():
             for gi, g in enumerate(groups):
+                if "matcher" in g and _matcher_problem(event):
+                    errs.append(f"/hooks/{event}/{gi}/matcher: {_matcher_problem(event)}")
                 for hi, h in enumerate(g["hooks"]):
                     here = f"/hooks/{event}/{gi}/hooks/{hi}"
-                    problem = _hook_entry_parts(h)[3]
-                    if problem:
-                        errs.append(f"{here}/command: {problem}")
-                    if "onFailure" in h and event in NO_ON_FAILURE:
-                        why = "SessionStart cannot block" if event == "SessionStart" else "a Stop-type hook returns decision block itself"
-                        errs.append(f"{here}/onFailure: a {event} hook cannot block through onFailure ({why})")
+                    errs.extend(f"{here}{e}" for e in check_hook_entry(h, event, mode))
         return errs
     if "exit_code" in inst:
         errs = validate_def(inst, schema, "handler_result")
@@ -813,6 +918,9 @@ def _coerce(cell, kind):
         items = [x for x in items if x]
         return [] if items in (["-"], ["none"]) else items
     cell = _strip_ticks(cell)
+    if kind == "yesno":
+        # y and yes, n and no in any case, as the CAOS ledger reader takes them; anything else stays as written (and fails the enum)
+        return {"y": "yes", "yes": "yes", "n": "no", "no": "no"}.get(cell.strip().lower(), cell)
     if kind == "int":
         if cell == "":
             return None
@@ -834,6 +942,12 @@ def _bind_headers(found, tspec):
     canon = {_norm_header(h): h for h in list(tspec["headers"]) + list(tspec.get("optional_headers", []))}
     names = [canon.get(_norm_header(h), h) for h in found]
     missing = [h for h in tspec["headers"] if h not in names]
+    if not missing and tspec.get("headers_lead"):
+        # a positional reader (the CAOS delegation tool) takes the first columns by place: the spec headers come first, in order
+        n = len(tspec["headers"])
+        wrong = [h for i, h in enumerate(tspec["headers"]) if names[i:i + 1] != [h]]
+        if names[:n] != list(tspec["headers"]):
+            return None, [f"{h} (must be column {tspec['headers'].index(h) + 1})" for h in wrong]
     return (names if not missing else None), missing
 
 
@@ -871,7 +985,7 @@ def _body_of(text):
 SECTIONS_KEYS = {"contract_id", "contract_version", "description", "front_matter", "coerce", "mode", "line_prefix",
                  "min_lines", "sections", "required_sections", "required_sections_when", "case_insensitive_titles",
                  "section_patterns", "line_rules", "forbidden", "forbidden_prose", "final_lines", "tables", "rules"}
-TABLE_KEYS = {"name", "headers", "headers_match", "optional_headers", "row_def", "min_rows", "optional", "section", "coerce"}
+TABLE_KEYS = {"name", "headers", "headers_match", "headers_lead", "optional_headers", "row_def", "min_rows", "optional", "section", "coerce"}
 RULE_KEYS = {
     "nonempty_sections": {"sections"},
     "forbid_text": {"pattern"},
@@ -896,7 +1010,7 @@ RULE_KEYS = {
 RULE_COMMON = {"type", "when", "message"}
 PATTERN_KEYS = {"pattern", "sections_pattern", "item_pattern", "require", "key_pattern", "check_pattern"}
 FRONT_MATTER_MODES = ("required", "bullets", "none")
-COERCE_KINDS = ("list", "int")
+COERCE_KINDS = ("list", "int", "yesno")
 
 
 def check_sections_spec(spec):

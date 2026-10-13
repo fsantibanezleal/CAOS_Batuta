@@ -3,7 +3,7 @@
   "contract_id": "C04",
   "contract_version": "1.0",
   "title": "Delegation ledger",
-  "description": "The ledger `wip/<slug>/delegation/ledger.md` (CAOS) or `.batuta/delegation/ledger.md`: a Markdown table with the columns the delegation tool writes (ID, Agent, Model, Brief, Report, Status, Accepted) and, for the dispatch lanes (C30), the optional columns Provider, Tokens in, Tokens out and Cost USD, plus Superseded by. A row says who ran a brief, on which model, where the brief and the report are and how it ended. Status is the delegation tool's drafted, pending, complete, incomplete and defective, plus launched, accepted, superseded, lost and the C30 outcomes timeout, error and over-budget; a C30 result status is the C04 status of the same name (complete, incomplete, defective, error, timeout, over-budget, pending), so `dispatch run` writes the result status as it is. Accepted is `yes` or `no` (the parent session's acceptance after it re-checked the report); a row with status `accepted` has Accepted `yes`. Provider is `-` for the subagent lane, `anthropic` for the sdk lane and the provider name for a provider lane: a billed row (a Provider other than `-`) records Tokens in, Tokens out and Cost USD (a number, never negative). A superseded row names its replacement in Superseded by. The table the CAOS tool writes (seven columns) is a valid ledger.",
+  "description": "The ledger `wip/<slug>/delegation/ledger.md` (CAOS) or `.batuta/delegation/ledger.md`: a Markdown table with the columns the delegation tool writes (ID, Agent, Model, Brief, Report, Status, Accepted) and, for the dispatch lanes (C30), the optional columns Provider, Tokens in, Tokens out and Cost USD, plus Superseded by. A row says who ran a brief, on which model, where the brief and the report are and how it ended. Status is the delegation tool's drafted, pending, complete, incomplete and defective, plus launched, accepted, superseded, lost and the C30 outcomes timeout, error and over-budget; a C30 result status is the C04 status of the same name (complete, incomplete, defective, error, timeout, over-budget, pending), so `dispatch run` writes the result status as it is. Accepted is `yes` or `no` (the parent session's acceptance after it re-checked the report); `y` and `n` in any case are aliases, as the CAOS reader takes them, and any other text is refused; a row with status `accepted` has Accepted `yes`. The seven mandatory columns come first and in that order (the CAOS reader is positional); the optional columns, among them the free-text Notes, follow in any order. Brief and Report are relative paths. Status stays strict: the evidence of an acceptance goes in Notes. Provider is `-` for the subagent lane, `anthropic` for the sdk lane and the provider name for a provider lane: a billed row (a Provider other than `-`) records Tokens in, Tokens out and Cost USD (a number, never negative). A superseded row names its replacement in Superseded by. The table the CAOS tool writes (seven columns) is a valid ledger.",
   "type": "object",
   "$defs": {
     "ledger_row": {
@@ -23,11 +23,13 @@
         },
         "Brief": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
+          "description": "POSIX relative path of the brief (the shared relative path pattern): no leading slash, drive letter, backslash or .. segment."
         },
         "Report": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
+          "description": "POSIX relative path of the report (the shared relative path pattern)."
         },
         "Status": {
           "type": "string",
@@ -51,7 +53,8 @@
           "enum": [
             "yes",
             "no"
-          ]
+          ],
+          "description": "yes or no after the reader maps y, n, Y, N, Yes and No (the sections file coerces `yesno`)."
         },
         "Provider": {
           "type": "string",
@@ -82,6 +85,10 @@
         },
         "Superseded by": {
           "type": "string"
+        },
+        "Notes": {
+          "type": "string",
+          "description": "Free text: the acceptance evidence (what the parent session re-checked), a reason, a pointer. Never read by a gate."
         }
       },
       "required": [

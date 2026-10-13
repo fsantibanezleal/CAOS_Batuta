@@ -1,0 +1,13 @@
+{
+  "_why": "onFailure is ignored by an asyncRewake hook",
+  "_expect": "asyncRewake",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"], "onFailure": "block", "asyncRewake": true }
+        ]
+      }
+    ]
+  }
+}
