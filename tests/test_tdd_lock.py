@@ -44,6 +44,17 @@ class ContractFixtures(unittest.TestCase):
                     self.assertEqual(core.validate_file(fx, sp), [])
 
 
+class DefaultLockPath(unittest.TestCase):
+    def test_the_default_lock_file_is_the_one_the_contract_catalog_names(self):
+        import re
+        from batuta_lib import tdd_lock
+        catalog = (CONTRACTS / "README.md").read_text(encoding="utf-8")
+        row = next(line for line in catalog.splitlines() if line.startswith("| C07 |"))
+        named = re.search(r"`(\.batuta/[^`]+\.json)`", row).group(1)
+        self.assertEqual(tdd_lock.DEFAULT_LOCK, named)
+        self.assertEqual(LOCK, named)
+
+
 class LockWrites(TddCase):
     def setUp(self):
         self.repo = self.fresh(self.id().rsplit(".", 1)[-1])
