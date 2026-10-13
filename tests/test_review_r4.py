@@ -524,5 +524,128 @@ class R312(unittest.TestCase):
         self.assertTrue(mentions(errs, "supersedes", "no earlier entry"))
 
 
+# ------------------------------------------------------------------ D19: the shipped and the rendered hook entry profiles
+
+OPT = '"$CLAUDE_PLUGIN_OPTION_PYTHON"'
+SHIPPED_LAUNCHER = '"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py"'
+
+
+def shell_entry(command, **kw):
+    return {"type": "command", "command": command, **kw}
+
+
+def one_entry_doc(e, event="PreToolUse", profile=None, **group):
+    doc = {"hooks": {event: [{"hooks": [e], **group}]}}
+    if profile:
+        doc["profile"] = profile
+    return doc
+
+
+class D19(unittest.TestCase):
+    def test_D19_the_option_variable_is_the_shell_form_interpreter_with_shell_bash(self):
+        for flags in ("", " -I", " -I -B"):
+            with self.subTest(flags):
+                e = shell_entry(f"{OPT}{flags} {SHIPPED_LAUNCHER} report-check", shell="bash")
+                self.assertEqual(check_doc("C31", one_entry_doc(e)), [])
+
+    def test_D19_the_variable_needs_shell_bash(self):
+        for extra in ({}, {"shell": "powershell"}):
+            with self.subTest(extra):
+                e = shell_entry(f"{OPT} {SHIPPED_LAUNCHER} report-check", **extra)
+                self.assertTrue(mentions(check_doc("C31", one_entry_doc(e)), "shell", "bash"))
+
+    def test_D19_the_variable_is_refused_in_exec_form_and_unquoted(self):
+        exec_form = {"type": "command", "command": "$CLAUDE_PLUGIN_OPTION_PYTHON", "args": [LAUNCHER, "report-check"], "shell": "bash"}
+        self.assertTrue(check_doc("C31", one_entry_doc(exec_form)))
+        exec_quoted = dict(exec_form, command=OPT)
+        self.assertTrue(check_doc("C31", one_entry_doc(exec_quoted)))
+        unquoted = shell_entry(f"$CLAUDE_PLUGIN_OPTION_PYTHON {SHIPPED_LAUNCHER} report-check", shell="bash")
+        self.assertTrue(check_doc("C31", one_entry_doc(unquoted)))
+
+    def test_D19_any_other_variable_is_refused(self):
+        e = shell_entry(f'"$PYTHON" {SHIPPED_LAUNCHER} report-check', shell="bash")
+        self.assertTrue(check_doc("C31", one_entry_doc(e)))
+
+    def test_D19_check_hook_entry_is_a_function_other_units_call(self):
+        self.assertTrue(callable(contract.check_hook_entry))
+        ok = shell_entry(f"{OPT} {SHIPPED_LAUNCHER} report-check", shell="bash")
+        self.assertEqual(contract.check_hook_entry(ok, "PreToolUse", "shipped"), [])
+        self.assertTrue(contract.check_hook_entry(dict(ok, shell="powershell"), "PreToolUse", "shipped"))
+        self.assertTrue(contract.check_hook_entry(ok, "Stop", "shipped", matcher="Bash"))
+        self.assertTrue(contract.check_hook_entry(dict(ok, onFailure="block"), "SessionStart", "shipped"))
+        with self.assertRaises(ValueError):
+            contract.check_hook_entry(ok, "PreToolUse", "nonsense")
+
+    def test_D19_c31_describes_the_rendered_profile(self):
+        defs = json.loads(sp("C31").read_text(encoding="utf-8"))["$defs"]
+        self.assertIn("rendered_entry", defs)
+        self.assertRegex(defs["rendered_entry"]["description"].lower(), r"absolute")
+
+    RENDERED = [
+        ("exec windows path with spaces", {"type": "command", "command": "C:/Program Files/Python 3/python.exe",
+                                           "args": ["-I", "C:/Users/a b/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("exec posix path", {"type": "command", "command": "/usr/bin/python3", "args": ["/home/a/.claude/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("exec bare interpreter", {"type": "command", "command": "python", "args": ["/home/a/plugins/batuta/scripts/hook.py", "report-check"]}),
+        ("shell windows path quoted", {"type": "command", "command": '"C:/Program Files/Python 3/python.exe" -I "C:/Users/a b/plugins/batuta/scripts/hook.py" report-check'}),
+        ("shell posix path quoted", {"type": "command", "command": '"/usr/bin/python3" "/home/a/plugins/batuta/scripts/hook.py" report-check'}),
+        ("shell bare interpreter", {"type": "command", "command": 'python -I "/home/a/plugins/batuta/scripts/hook.py" report-check'}),
+    ]
+
+    def test_D19_rendered_entries_are_valid(self):
+        for label, e in self.RENDERED:
+            with self.subTest(label):
+                self.assertEqual(check_doc("C31", one_entry_doc(e, profile="rendered")), [])
+                self.assertEqual(contract.check_hook_entry(e, "PreToolUse", "rendered"), [])
+
+    def test_D19_a_rendered_entry_refuses_what_is_not_resolved(self):
+        cases = {
+            "leftover {{python}} exec": {"type": "command", "command": "{{python}}", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]},
+            "leftover {{python}} shell": {"type": "command", "command": '{{python}} "/h/plugins/batuta/scripts/hook.py" report-check'},
+            "leftover plugin root exec": {"type": "command", "command": "python", "args": [LAUNCHER, "report-check"]},
+            "leftover plugin root shell": {"type": "command", "command": f'python {SHIPPED_LAUNCHER} report-check'},
+            "leftover option var": {"type": "command", "command": f'{OPT} "/h/plugins/batuta/scripts/hook.py" report-check', "shell": "bash"},
+            "relative launcher exec": {"type": "command", "command": "python", "args": ["plugins/batuta/scripts/hook.py", "report-check"]},
+            "relative launcher shell": {"type": "command", "command": 'python "plugins/batuta/scripts/hook.py" report-check'},
+            "launcher is not scripts/hook.py": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/hook.py", "report-check"]},
+            "launcher is another script": {"type": "command", "command": 'python "/h/plugins/batuta/scripts/other.py" report-check'},
+            "relative interpreter path": {"type": "command", "command": "bin/python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]},
+            "unquoted absolute interpreter in shell form": {"type": "command", "command": 'C:/Python/python.exe "/h/plugins/batuta/scripts/hook.py" report-check'},
+            "handler id not lower case": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "Report"]},
+            "extra argument": {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check", "x"]},
+        }
+        for label, e in cases.items():
+            with self.subTest(label):
+                self.assertTrue(contract.check_hook_entry(e, "PreToolUse", "rendered"), label)
+                self.assertTrue(check_doc("C31", one_entry_doc(e, profile="rendered")), label)
+
+    def test_D19_the_rendered_profile_keeps_the_on_failure_and_matcher_rules(self):
+        e = {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]}
+        self.assertTrue(contract.check_hook_entry(dict(e, onFailure="block"), "SessionStart", "rendered"))
+        self.assertTrue(contract.check_hook_entry(dict(e, onFailure="block", **{"async": True}), "PreToolUse", "rendered"))
+        self.assertTrue(contract.check_hook_entry(e, "Stop", "rendered", matcher="Bash"))
+        self.assertEqual(contract.check_hook_entry(dict(e, onFailure="block"), "PreToolUse", "rendered", matcher="Bash"), [])
+        self.assertTrue(check_doc("C31", one_entry_doc(dict(e, onFailure="block"), "SessionStart", profile="rendered")))
+        self.assertTrue(check_doc("C31", one_entry_doc(e, "Stop", profile="rendered", matcher="Bash")))
+
+    def test_D19_check_rendered_entry_validates_structure_and_semantics(self):
+        e = {"type": "command", "command": "python", "args": ["/h/plugins/batuta/scripts/hook.py", "report-check"]}
+        self.assertEqual(contract.check_rendered_entry(e, "PreToolUse"), [])
+        self.assertTrue(contract.check_rendered_entry(dict(e, retry=3), "PreToolUse"))
+
+    def test_D19_the_readme_documents_both_profiles(self):
+        for word in ("shipped profile", "rendered profile", "CLAUDE_PLUGIN_OPTION_PYTHON", "check_hook_entry", "/scripts/hook.py"):
+            with self.subTest(word):
+                self.assertIn(word, README)
+
+    def test_D19_the_fixtures_for_the_new_rules_exist(self):
+        for name in ("valid-hooks-file-option-python-shell-bash.json", "valid-rendered-windows-path-with-spaces.json",
+                     "valid-rendered-posix-path.json", "invalid-option-python-without-shell-bash.json",
+                     "invalid-option-python-in-exec-form.json", "invalid-option-python-unquoted.json",
+                     "invalid-rendered-leftover-placeholder.json", "invalid-rendered-relative-launcher.json",
+                     "invalid-rendered-launcher-not-hook-py.json"):
+            with self.subTest(name):
+                self.assertTrue((FX / "C31" / name).is_file(), name)
+
+
 if __name__ == "__main__":
     unittest.main()
