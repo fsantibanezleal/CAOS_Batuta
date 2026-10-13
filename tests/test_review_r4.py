@@ -750,7 +750,7 @@ class D21(unittest.TestCase):
         schema = json.loads(sp("C01").read_text(encoding="utf-8"))
         self.assertEqual(schema["properties"]["user_core"]["properties"]["template"]["pattern"], contract.REL_PATH_PATTERN)
         self.assertEqual(schema["properties"]["user_core"]["description"],
-                         "the template the device area renders into the user's always-loaded core, and the placeholder values")
+                         "the template the device area renders into the user's always-loaded core, and its placeholder values")
         self.assertIs(schema["properties"]["user_core"]["additionalProperties"], False)
         self.assertEqual(schema["properties"]["user_core"]["required"], ["template"])
         self.assertEqual(schema["properties"]["user_core"]["properties"]["values"]["additionalProperties"], {"type": "string"})

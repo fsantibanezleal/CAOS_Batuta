@@ -51,6 +51,15 @@ repository.
     `contract.check_hook_entry(entry, event, mode, matcher=None)`; `check_rendered_entry` adds the structure; a document
     handed to `contract validate C31` selects the profile with a top-level `profile` key.
 
+20. **CAOS-only upstream rules are recorded, not adopted.** The recorded copy of the CAOS sizing checker is refreshed
+    (`fixtures/_upstream/sizing_check.recorded.json`, CAOS commit `dbf43f429`) and the rules particular to the CAOS product
+    template (the `Data file: content/executive.json` requirement and the refusal of a brief that restates the executive view)
+    are listed in `fixtures/_upstream/sizing_check.overlay-only.json` with their reason. The live differential accepts a
+    disagreement only when the CAOS message is exactly one of those rules; C23 stays generic.
+21. **C01 defines `user_core`.** An optional top-level object, closed, with `template` (the shared relative path pattern,
+    required when the object is present) and `values` (an object of strings): the template the device area renders into the
+    user's always-loaded core, and its placeholder values. The frozen `budgets` block is untouched.
+
 Smaller fixes of the same revision: a C07 `supersedes` names the sha256 of an earlier entry of the same path (R3-12); `contract
 lint` checks that the change-request id pattern is equal in C07, C32 and C33 (R3-11); the F15 test calls `discover_hook_ids` on
 two modules instead of reading its source (R3-09); the red test `test_R16_a_supersedes_that_names_no_entry_of_the_same_path_is_refused`
