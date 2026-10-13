@@ -1,0 +1,19 @@
+{
+  "contract_version": "1.0",
+  "tool": "batuta",
+  "area": "context",
+  "verb": "check",
+  "exit_code": 0,
+  "items": [
+    {
+      "tag": "OK",
+      "message": "user core within budget"
+    },
+    {
+      "tag": "SKIP",
+      "message": "memory index not present, nothing to check",
+      "path": ".batuta/memory/MEMORY.md"
+    }
+  ],
+  "summary": "1 ok, 1 skipped"
+}

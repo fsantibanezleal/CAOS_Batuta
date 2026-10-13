@@ -1,0 +1,22 @@
+{
+  "_why": "onFailure takes only block",
+  "_expect": "not in enum",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "automation-guard"
+            ],
+            "onFailure": "allow"
+          }
+        ]
+      }
+    ]
+  }
+}

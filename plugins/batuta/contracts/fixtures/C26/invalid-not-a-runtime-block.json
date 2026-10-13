@@ -1,0 +1,7 @@
+{
+  "_why": "an artifact that carries no state is not a runtime block",
+  "_expect": "missing required property 'state'",
+  "reason": null,
+  "source": "s",
+  "age": null
+}

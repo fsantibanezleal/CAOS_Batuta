@@ -2,107 +2,98 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contract_id": "C04",
   "contract_version": "1.0",
-  "title": "Delegation ledger line",
-  "description": "One object per line of .batuta/delegation/ledger.jsonl; lines starting with # are comments. It records the run of a brief: who, on which model, the brief and report paths, the status (the delegation tool's drafted, pending, complete, incomplete and defective, plus launched, accepted, superseded and lost), and for the dispatch lanes the provider, tokens and cost (C30). The CAOS ledger.md table (ID, Agent, Model, Brief, Report, Status, Accepted) maps onto it: Accepted `yes` is accepted_by. An accepted row names who and when; a superseded row names its replacement.",
+  "title": "Delegation ledger",
+  "description": "The ledger `wip/<slug>/delegation/ledger.md` (CAOS) or `.batuta/delegation/ledger.md`: a Markdown table with the columns the delegation tool writes (ID, Agent, Model, Brief, Report, Status, Accepted) and, for the dispatch lanes (C30), the optional columns Provider, Tokens in, Tokens out and Cost USD, plus Superseded by. A row says who ran a brief, on which model, where the brief and the report are and how it ended. Status is the delegation tool's drafted, pending, complete, incomplete and defective, plus launched, accepted, superseded, lost and the C30 outcomes timeout, error and over-budget; a C30 result status is the C04 status of the same name (complete, incomplete, defective, error, timeout, over-budget, pending), so `dispatch run` writes the result status as it is. Accepted is `yes` or `no` (the parent session's acceptance after it re-checked the report); a row with status `accepted` has Accepted `yes`. Provider is `-` for the subagent lane, `anthropic` for the sdk lane and the provider name for a provider lane: a billed row (a Provider other than `-`) records Tokens in, Tokens out and Cost USD (a number, never negative). A superseded row names its replacement in Superseded by. The table the CAOS tool writes (seven columns) is a valid ledger.",
   "type": "object",
-  "properties": {
-    "contract_version": {
-      "type": "string",
-      "const": "1.0"
-    },
-    "id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "agent": {
-      "type": "string",
-      "minLength": 1
-    },
-    "model": {
-      "type": "string",
-      "minLength": 1
-    },
-    "kind": {
-      "type": "string",
-      "enum": [
-        "implement",
-        "job",
-        "skeleton",
-        "docs",
-        "review",
-        "research",
-        "lookup",
-        "run"
-      ]
-    },
-    "brief": {
-      "type": "string",
-      "minLength": 1
-    },
-    "report": {
-      "type": "string",
-      "minLength": 1
-    },
-    "status": {
-      "type": "string",
-      "enum": [
-        "drafted",
-        "pending",
-        "launched",
-        "complete",
-        "incomplete",
-        "defective",
-        "accepted",
-        "superseded",
-        "lost"
-      ]
-    },
-    "accepted_by": {
-      "type": "string",
-      "minLength": 1
-    },
-    "accepted_at": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-    },
-    "superseded_by": {
-      "type": "string",
-      "minLength": 1
-    },
-    "notes": {
-      "type": "string"
-    },
-    "lane": {
-      "type": "string",
-      "pattern": "^(subagent|sdk|provider:[a-z0-9][a-z0-9-]*)$"
-    },
-    "provider": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The provider that answered (a key of dispatch.providers, or anthropic)."
-    },
-    "tokens_in": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "tokens_out": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "cost_usd": {
-      "type": "number",
-      "minimum": 0
+  "$defs": {
+    "ledger_row": {
+      "type": "object",
+      "properties": {
+        "ID": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "Agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Brief": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "Status": {
+          "type": "string",
+          "enum": [
+            "drafted",
+            "pending",
+            "launched",
+            "complete",
+            "incomplete",
+            "defective",
+            "accepted",
+            "superseded",
+            "lost",
+            "timeout",
+            "error",
+            "over-budget"
+          ]
+        },
+        "Accepted": {
+          "type": "string",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "Provider": {
+          "type": "string",
+          "pattern": "^(-|[a-z0-9][a-z0-9-]*)?$",
+          "description": "- for the subagent lane, anthropic for the sdk lane, the provider name for a provider lane."
+        },
+        "Tokens in": {
+          "type": [
+            "integer",
+            "null",
+            "string"
+          ],
+          "minimum": 0,
+          "pattern": "^-$"
+        },
+        "Tokens out": {
+          "type": [
+            "integer",
+            "null",
+            "string"
+          ],
+          "minimum": 0,
+          "pattern": "^-$"
+        },
+        "Cost USD": {
+          "type": "string",
+          "pattern": "^(-|\\d+(\\.\\d+)?)?$"
+        },
+        "Superseded by": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ID",
+        "Agent",
+        "Model",
+        "Brief",
+        "Report",
+        "Status",
+        "Accepted"
+      ],
+      "additionalProperties": true
     }
-  },
-  "required": [
-    "contract_version",
-    "id",
-    "agent",
-    "model",
-    "kind",
-    "brief",
-    "report",
-    "status"
-  ],
-  "additionalProperties": false
+  }
 }

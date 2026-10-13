@@ -1,0 +1,45 @@
+{
+  "contract_id": "C33",
+  "contract_version": "1.0",
+  "front_matter": "none",
+  "tables": [
+    {
+      "name": "Change requests",
+      "headers": [
+        "Id",
+        "Date",
+        "Test path",
+        "Requirement",
+        "Reason",
+        "Proposed change",
+        "Status",
+        "Decided by"
+      ],
+      "headers_match": "contains",
+      "row_def": "request_row",
+      "min_rows": 1
+    }
+  ],
+  "rules": [
+    {
+      "type": "unique_column",
+      "table": "Change requests",
+      "column": "Id"
+    },
+    {
+      "type": "forbid_rows",
+      "table": "Change requests",
+      "match": {
+        "Status": [
+          "approved",
+          "rejected"
+        ],
+        "Decided by": [
+          "",
+          "-"
+        ]
+      },
+      "message": "an approved or rejected request names who decided it (Decided by)"
+    }
+  ]
+}

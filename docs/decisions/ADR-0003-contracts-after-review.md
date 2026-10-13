@@ -1,17 +1,19 @@
 ---
 id: ADR-0003
 title: The contracts after the adversarial review: the method's own artifacts, one vocabulary, the missing boundaries
-status: Accepted
+status: Superseded in part by ADR-0004
 date: 2026-10-12
 review_trigger: before the contracts are frozen, and whenever the contract-first method changes its artifacts or states
 supersedes: ADR-0002 (in part)
-superseded_by: none
+superseded_by: ADR-0004 (in part)
 ---
 
 # ADR-0003: Contracts after the adversarial review
 
-Status: Accepted, 2026-10-12. Supersedes the parts of ADR-0002 listed under "What changes in ADR-0002". It does not
-change ADR-0001.
+Status: Superseded in part by ADR-0004 (2026-10-12): the ledger format (decision 5 and open point 2), the hook registry
+(decision 6, C31) and the configuration validation (decision 7) are decided there, and the C26 declaration root (open point
+3) is retired there. Accepted 2026-10-12. Supersedes the parts of ADR-0002 listed under "What changes in ADR-0002". It does
+not change ADR-0001.
 
 ## Context
 

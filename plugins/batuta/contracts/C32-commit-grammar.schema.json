@@ -3,7 +3,7 @@
   "contract_id": "C32",
   "contract_version": "1.0",
   "title": "TDD commit grammar",
-  "description": "The commit messages the test-first protocol reads (TDD-3, TDD-4). The subject is `[red] T-NNN <title>`, `[green] T-NNN <title>` or `[refactor] T-NNN <title>` (at most 72 characters); a blank line follows; the body is free text; the last paragraph may be git trailers, among them `Test-Change-Approved: <change request id>`, the only override of a locked test. Lines starting with # are git comments and are ignored. The artifact is the plain-text message (.txt); this schema validates its parsed form (subject and trailers), and the grammar rules the parse needs (blank line, one trailer per key, trailer placement) are semantic.",
+  "description": "The commit messages the test-first protocol reads (TDD-3, TDD-4). The subject is `[red] T-NNN <title>`, `[green] T-NNN <title>` or `[refactor] T-NNN <title>` (at most 72 characters); a blank line follows; the body is free text; the last paragraph may be git trailers, among them `Test-Change-Approved: <change request id>`, the only override of a locked test. Lines starting with # are git comments and are ignored. The artifact is the plain-text message (.txt); this schema validates its parsed form (subject and trailers), and the grammar rules the parse needs (blank line, one trailer per key, trailer placement) are semantic. The reserved trailer key is written exactly `Test-Change-Approved`: git reads trailer keys without regard to case, so a parser and a producer could disagree on a lower-case spelling; a trailer whose key differs only in case is refused (the guard accepts one spelling).",
   "type": "object",
   "properties": {
     "subject": {

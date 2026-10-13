@@ -1,5 +1,5 @@
 <!-- why: every fixed finding needs its own Re-check line -->
-<!-- expect: one 'Re-check:' line per fixed finding -->
+<!-- expect: one 'Re-check: <finding id>' line -->
 ---
 gate: L7-build
 feature: 001-validator

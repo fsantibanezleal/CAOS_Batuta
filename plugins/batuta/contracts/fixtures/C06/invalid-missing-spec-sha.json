@@ -13,5 +13,6 @@
   "approved_by": "alex",
   "prompt_excerpt": "approve spec 001",
   "approved_at": "2026-10-11T12:00:00-03:00",
-  "tool_version": "0.01.000"
+  "tool_version": "0.01.000",
+  "approved_spec_sha256_prefix": "aaaaaaaaaaaa"
 }

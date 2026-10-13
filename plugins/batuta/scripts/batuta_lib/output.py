@@ -6,7 +6,7 @@ which prints and returns the exit code: 1 when any item is FAIL or REFUSED, else
 import json
 import sys
 
-TAGS = ("OK", "NEW", "CHANGED", "SAME", "MERGED", "REMOVED", "MISSING", "DIFFERENT", "REFUSED", "WARN", "FAIL")
+TAGS = ("OK", "NEW", "CHANGED", "SAME", "SKIP", "MERGED", "REMOVED", "MISSING", "DIFFERENT", "REFUSED", "WARN", "FAIL")
 CONTRACT_VERSION = "1.0"
 TOOL = "batuta"
 

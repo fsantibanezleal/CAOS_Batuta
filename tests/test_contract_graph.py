@@ -20,7 +20,7 @@ TASK_HEAD = "| Task | Title | Requirements | Contracts | Depends | Wave | Owner 
 def catalog_text(rows):
     """rows: (id, owner, frozen yes or no)."""
     return "# Catalog\n\n" + CAT_HEAD + "".join(
-        f"| {i} | 1.0.0 | {o} | s/{i}.json | e/{i}.json | t/p.py | t/c.py | drop it | fixture:f/{i}.json | - | t/s.py | active | {f} |\n"
+        f"| {i} | 1.0.0 | {o} | s/{i}.json | e/{i}.json | t/p.py | t/c.py | available: ok (test: t/a.py); missing: drop it (test: t/a.py) | fixture:f/{i}.json | - | t/s.py | active | {f} |\n"
         for i, o, f in rows)
 
 

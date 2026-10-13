@@ -139,7 +139,7 @@ class Lint(unittest.TestCase):
             "| id | version | owner | schema file | example | producer test | consumer test | missing-data behavior | provider | model io | swap test | status |\n"
             "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
             "| alert-event | 1.0.0 | u-api | docs/contracts/alert-event.schema.json | docs/contracts/alert-event.json | tests/p.py | tests/c.py "
-            "| drop it | fixture:tests/fixtures/alert-event.json | - | tests/s.py | active |\n", encoding="utf-8")
+            "| available: ok (test: t/a.py); missing: drop it (test: t/a.py) | fixture:tests/fixtures/alert-event.json | - | tests/s.py | active |\n", encoding="utf-8")
         spec = root / "specs" / "001-x"
         spec.mkdir(parents=True)
         (spec / "spec.md").write_text(
@@ -322,7 +322,7 @@ class Validate(unittest.TestCase):
     def test_validate_markdown_and_jsonl(self):
         code, _ = call("validate", "C02", str(OWN / "fixtures" / "C02" / "valid-implement-from-delegation-new.md"))
         self.assertEqual(code, 0)
-        code, _ = call("validate", "C04", str(OWN / "fixtures" / "C04" / "valid-drafted-pending-complete.jsonl"))
+        code, _ = call("validate", "C04", str(OWN / "fixtures" / "C04" / "valid-drafted-pending-complete-accepted.md"))
         self.assertEqual(code, 0)
 
     def test_validate_unknown_contract_or_file_fails(self):
@@ -340,8 +340,8 @@ class Validate(unittest.TestCase):
 class Graph(unittest.TestCase):
     CAT = ("| id | version | owner | schema file | example | producer test | consumer test | missing-data behavior | provider | model io "
            "| swap test | status | frozen |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
-           "| a-contract | 1.0.0 | u-1 | s.json | e.json | p.py | c.py | drop it | fixture:f.json | - | s.py | active | yes |\n"
-           "| b-contract | 1.0.0 | u-1 | s.json | e.json | p.py | c.py | drop it | fixture:f.json | - | s.py | active | no |\n")
+           "| a-contract | 1.0.0 | u-1 | s.json | e.json | p.py | c.py | available: ok (test: t/a.py); missing: drop it (test: t/a.py) | fixture:f.json | - | s.py | active | yes |\n"
+           "| b-contract | 1.0.0 | u-1 | s.json | e.json | p.py | c.py | available: ok (test: t/a.py); missing: drop it (test: t/a.py) | fixture:f.json | - | s.py | active | no |\n")
     TASKS = "| Task | Title | Requirements | Contracts | Depends | Wave | Owner role | Unit |\n|---|---|---|---|---|---|---|---|\n"
 
     def _files(self, d, rows):
@@ -386,7 +386,7 @@ class Graph(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d = pathlib.Path(d)
             shutil.copy(OWN / "fixtures" / "C23" / "valid-product-sizing.md", d / "sizing.md")
-            rows = "".join(f"| {i} | 1.0.0 | {o} | s.json | e.json | p.py | c.py | drop it | fixture:f.json | - | s.py | active | no |\n"
+            rows = "".join(f"| {i} | 1.0.0 | {o} | s.json | e.json | p.py | c.py | available: ok (test: t/a.py); missing: drop it (test: t/a.py) | fixture:f.json | - | s.py | active | no |\n"
                            for i, o in (("alert-event", "u-pipeline"), ("alert-list", "u-api"), ("severity-score", "u-model")))
             (d / "catalog.md").write_text(self.CAT.split("| a-contract")[0] + rows, encoding="utf-8")
             code, out = call("graph", "--catalog", str(d / "catalog.md"), "--sizing", str(d / "sizing.md"))
