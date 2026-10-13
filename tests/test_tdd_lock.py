@@ -249,17 +249,19 @@ class ChangeRequestNew(TddCase):
 
     def test_a_bad_requirement_id_or_test_path_is_refused(self):
         code, out = run_cli("--config", self.cfg, "tdd", "change-request", "new", "--repo", self.repo.root, "--test",
-                            "tests/test_calc.py", "--requirement", "REQ", "--reason", "r", "--proposed", "p", "--apply")
+                            "tests/test_calc.py", "--requirement", "REQ", "--reason", "r", "--proposed", "p", "--feature", "calc",
+                            "--apply")
         self.assertEqual(code, 1, out)
         code, out = self.new(test="../x.py")
         self.assertEqual(code, 1, out)
         self.assertFalse(self.path().exists())
 
-    def test_without_a_feature_the_flat_file_is_used(self):
+    def test_a_request_always_belongs_to_a_feature(self):
         code, out = run_cli("--config", self.cfg, "tdd", "change-request", "new", "--repo", self.repo.root, "--test",
                             "tests/test_calc.py", "--requirement", "REQ-CALC-001", "--reason", "r", "--proposed", "p", "--apply")
-        self.assertEqual(code, 0, out)
-        self.assertTrue((self.repo.root / "specs" / "test-change-requests.md").is_file())
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("--feature", out)
+        self.assertFalse((self.repo.root / "specs").exists())
 
 
 if __name__ == "__main__":
