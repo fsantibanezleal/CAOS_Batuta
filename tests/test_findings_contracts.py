@@ -230,10 +230,11 @@ class Major(unittest.TestCase):
                 doc = copy.deepcopy(base)
                 doc["entries"][0]["path"] = bad
                 self.assertTrue(check_doc("C07", doc), bad)
+        # revision 4 (R3-12): a supersedes names the sha256 of an earlier entry of the same path, so it needs two entries
         doc = copy.deepcopy(base)
-        doc["entries"][0]["supersedes"] = "f" * 64
+        doc["entries"].append(dict(doc["entries"][0], sha256="e" * 64, supersedes=doc["entries"][0]["sha256"]))
         self.assertTrue(any("change request" in e for e in check_doc("C07", doc)))
-        doc["entries"][0]["change_request"] = "CR-001"
+        doc["entries"][1]["change_request"] = "CR-001"
         self.assertEqual(check_doc("C07", doc), [])
 
     def test_F13_c30_exists_and_c04_and_c01_carry_the_dispatch_fields(self):
@@ -268,7 +269,13 @@ class Major(unittest.TestCase):
         doc = load("C31", "valid-hooks-file-exec-form-fail-closed.json")
         guard = doc["hooks"]["PreToolUse"][0]["hooks"][0]
         self.assertEqual(guard["onFailure"], "block")
-        self.assertIn("duplicate handler id", inspect_source(contract.discover_hook_ids))
+        # revision 4 (R3-09): the behavior, not a source string: two modules that define one id are a problem
+        with tempfile.TemporaryDirectory() as areas:
+            for name in ("first_area", "second_area"):
+                pathlib.Path(areas, f"{name}.py").write_text('HOOKS = {"one-id": lambda payload: {}}\n', encoding="utf-8")
+            found, problems = contract.discover_hook_ids(areas)
+        self.assertEqual(found, {"one-id": ["first_area", "second_area"]})
+        self.assertEqual(problems, ["duplicate handler id 'one-id' defined by first_area, second_area"])
 
     def test_F16_the_approval_hashes_the_accepted_adrs(self):
         full = load("C06", "valid-full.json")

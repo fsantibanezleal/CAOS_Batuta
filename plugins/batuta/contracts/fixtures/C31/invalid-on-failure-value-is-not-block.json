@@ -1,5 +1,5 @@
 {
-  "_why": "onFailure takes only block",
+  "_why": "onFailure takes only continue or block",
   "_expect": "not in enum",
   "hooks": {
     "PreToolUse": [

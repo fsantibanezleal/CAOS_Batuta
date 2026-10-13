@@ -1,18 +1,8 @@
 {
-  "_why": "a supersedes that names no earlier entry of the path supersedes nothing, so the path has two live locks",
-  "_expect": "two live locks",
+  "_why": "a supersedes must name the sha256 of an earlier entry of the same path; a single entry that names a sha256 no entry has supersedes nothing",
+  "_expect": "no earlier entry",
   "contract_version": "1.0",
   "entries": [
-    {
-      "path": "tests/test_a.py",
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "task_id": "T-001",
-      "req_ids": [
-        "REQ-AUTH-001"
-      ],
-      "locked_commit": "abc1234",
-      "locked_at": "2026-10-11T12:00:00Z"
-    },
     {
       "path": "tests/test_a.py",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

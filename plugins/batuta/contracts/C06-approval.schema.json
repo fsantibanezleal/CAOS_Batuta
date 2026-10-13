@@ -3,7 +3,7 @@
   "contract_id": "C06",
   "contract_version": "1.0",
   "title": "Spec approval record",
-  "description": "Hash-bound approval written when a human approves a frozen spec. It proves the freeze: the SHA-256 of the spec, of every contract and accepted ADR it references and of every test file the gates name. Any later change of a hashed file voids it. Map keys are POSIX relative paths. The approval is typed by the human as `approve <spec id> <first 12 hex of the spec's sha256>`; the record keeps that prefix and it must match the spec hash.",
+  "description": "Hash-bound approval written when a human approves a frozen spec. It proves the freeze: the SHA-256 of the spec, of every contract and accepted ADR it references and of every test file the gates name. Any later change of a hashed file voids it. Map keys are POSIX relative paths. The approval is typed by the human as `approve <spec id> <first 12 hex of the spec's sha256>`; the record keeps that prefix and it must match the spec hash. The prompt_excerpt starts with that phrase after any leading whitespace (the keyword and the hex in any case, the spec id exactly), so a sentence that merely contains it, such as do not approve ..., is no approval.",
   "type": "object",
   "properties": {
     "contract_version": {
