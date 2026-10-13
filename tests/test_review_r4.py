@@ -719,5 +719,56 @@ class D20(unittest.TestCase):
             self.fail("removing an entry from the exclusion record never made a disagreement unclassified")
 
 
+# ------------------------------------------------------------------ decision 21: C01 defines user_core
+
+class D21(unittest.TestCase):
+    def base(self):
+        return fixture_doc("C01", "valid-minimal.json")
+
+    def test_D21_user_core_with_template_and_values_is_valid(self):
+        doc = {**self.base(), "user_core": {"template": "templates/user-core.md", "values": {"name": "Alex", "language": "English"}}}
+        self.assertEqual(check_doc("C01", doc), [])
+
+    def test_D21_user_core_with_a_template_only_is_valid(self):
+        self.assertEqual(check_doc("C01", {**self.base(), "user_core": {"template": "templates/user-core.md"}}), [])
+
+    def test_D21_the_template_is_required_when_user_core_is_present(self):
+        self.assertTrue(mentions(check_doc("C01", {**self.base(), "user_core": {"values": {"a": "b"}}}), "template"))
+        self.assertTrue(check_doc("C01", {**self.base(), "user_core": {}}))
+
+    def test_D21_the_template_is_a_relative_path(self):
+        for bad in ("/etc/core.md", "C:/x/core.md", "../core.md", "a/../core.md", "./core.md", "a\\core.md"):
+            with self.subTest(bad):
+                self.assertTrue(mentions(check_doc("C01", {**self.base(), "user_core": {"template": bad}}), "template"))
+
+    def test_D21_values_are_strings_and_user_core_is_closed(self):
+        self.assertTrue(check_doc("C01", {**self.base(), "user_core": {"template": "t.md", "values": {"n": 5}}}))
+        self.assertTrue(check_doc("C01", {**self.base(), "user_core": {"template": "t.md", "values": ["x"]}}))
+        self.assertTrue(mentions(check_doc("C01", {**self.base(), "user_core": {"template": "t.md", "extra": 1}}), "extra"))
+
+    def test_D21_the_template_pattern_is_the_shared_one_and_the_budgets_block_is_untouched(self):
+        schema = json.loads(sp("C01").read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["user_core"]["properties"]["template"]["pattern"], contract.REL_PATH_PATTERN)
+        self.assertEqual(schema["properties"]["user_core"]["description"],
+                         "the template the device area renders into the user's always-loaded core, and the placeholder values")
+        self.assertIs(schema["properties"]["user_core"]["additionalProperties"], False)
+        self.assertEqual(schema["properties"]["user_core"]["required"], ["template"])
+        self.assertEqual(schema["properties"]["user_core"]["properties"]["values"]["additionalProperties"], {"type": "string"})
+
+    def test_D21_the_fixtures_exist(self):
+        for name in ("valid-user-core-template-and-values.json", "valid-user-core-template-only.json", "invalid-user-core-template-is-absolute.json",
+                     "invalid-user-core-template-traverses-up.json", "invalid-user-core-value-is-not-a-string.json",
+                     "invalid-user-core-unknown-key.json"):
+            with self.subTest(name):
+                self.assertTrue((FX / "C01" / name).is_file(), name)
+
+    def test_D21_the_loader_accepts_a_configuration_with_user_core(self):
+        with tempfile.TemporaryDirectory() as d:
+            doc = config.default_config({"BATUTA_HOME": d})
+            doc["user_core"] = {"template": "templates/user-core.md", "values": {"name": "Alex"}}
+            r = config.load(config_arg=str(write(d, doc)), env={"BATUTA_HOME": d})
+            self.assertEqual(r.config["user_core"]["template"], "templates/user-core.md")
+
+
 if __name__ == "__main__":
     unittest.main()
