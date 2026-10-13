@@ -2,127 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contract_id": "C31",
   "contract_version": "1.0",
-  "title": "Hook registration and launcher invocation",
-  "description": "Two documents of one boundary. The registry (`handlers`, written by the guards unit) declares every hook handler: its event, matcher, the launcher argv, the timeout, whether an internal error fails open or closed, what it writes to stdout and which exit codes it uses. `hooks/hooks.json` (`hooks`, rendered from the registry by the distribution unit) is the file Claude Code reads. Every command runs through the one launcher scripts/hook.py with the handler id as its argument. The stdin payload of a handler is the C16 input of its event; its stdout is a C16 output (block, pretooluse or sessionstart) or nothing.",
+  "title": "Hooks file and handler discovery",
+  "description": "Two documents of one boundary. (1) `plugins/batuta/hooks/hooks.json` is the registry and the file Claude Code reads: the event map under a top-level `hooks` key, each entry with the official fields (type, command, args, timeout, if, shell, onFailure, async, statusMessage, once). Every command runs the one launcher `${CLAUDE_PLUGIN_ROOT}/scripts/hook.py` with the handler id as its last argument: either exec form (`command` a bare interpreter name, `args` the interpreter flags such as -I, the launcher, the id; recommended) or shell form (`<interpreter> [flags] \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <id>` with the placeholder in double quotes); never a machine path. A fail-closed handler (a guard that must block when it cannot decide) sets `onFailure: \"block\"`, which only the events that can block through it accept (not SessionStart, SubagentStop or Stop: a Stop-type hook returns `decision: block` itself); a fail-open handler (a quality hook) leaves it out. (2) Handler discovery: an area module under `scripts/batuta_lib/areas/` may define a literal `HOOKS = {id: handler}`; the launcher resolves the id across the areas and an id defined twice is a lint failure (`contract lint` reads the modules without importing them and checks that every id of hooks.json resolves to one handler). A handler is `handler(payload: dict) -> dict`: the payload is the C16 input of the event and the returned dict is the handler result (`$defs/handler_result`): `exit_code` 0 or 2, the C16 output object (`output`, or null) and, for exit code 2 (block, shown to the model), the `message`. The launcher prints `output` as JSON on stdout, writes `message` to stderr and exits with `exit_code`; an unknown id or an exception writes the reason to stderr and exits 1, which Claude Code treats as a non-blocking error unless the entry has `onFailure: \"block\"`.",
   "type": "object",
   "properties": {
-    "contract_version": {
-      "type": "string",
-      "const": "1.0"
-    },
-    "handlers": {
-      "type": "array"
-    },
     "hooks": {
       "type": "object"
+    },
+    "exit_code": {
+      "type": "integer"
     }
   },
   "additionalProperties": true,
   "$defs": {
-    "registry": {
-      "type": "object",
-      "properties": {
-        "contract_version": {
-          "type": "string",
-          "const": "1.0"
-        },
-        "handlers": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/handler"
-          }
-        }
-      },
-      "required": [
-        "contract_version",
-        "handlers"
-      ],
-      "additionalProperties": false
-    },
-    "handler": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$"
-        },
-        "event": {
-          "type": "string",
-          "enum": [
-            "SessionStart",
-            "PreToolUse",
-            "SubagentStop",
-            "UserPromptSubmit",
-            "Stop"
-          ]
-        },
-        "matcher": {
-          "type": "string",
-          "minLength": 1
-        },
-        "argv": {
-          "type": "array",
-          "minItems": 3,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "description": "[interpreter, ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py, handler id]."
-        },
-        "timeout_s": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 600
-        },
-        "failure": {
-          "type": "string",
-          "enum": [
-            "fail-open",
-            "fail-closed"
-          ],
-          "description": "fail-open: an internal error is logged and the launcher exits 0 (quality hooks). fail-closed: the handler blocks when it cannot decide (security guards)."
-        },
-        "stdout": {
-          "type": "string",
-          "enum": [
-            "none",
-            "block",
-            "pretooluse",
-            "sessionstart"
-          ],
-          "description": "The C16 output the handler writes: none, output_block, output_pretooluse or output_sessionstart."
-        },
-        "exit_codes": {
-          "type": "object",
-          "properties": {
-            "0": {
-              "type": "string",
-              "minLength": 1
-            },
-            "2": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "0"
-          ],
-          "additionalProperties": false,
-          "description": "Exit code to meaning. 0 always; 2 (block, stderr shown to the model) only for a fail-closed handler."
-        }
-      },
-      "required": [
-        "id",
-        "event",
-        "argv",
-        "timeout_s",
-        "failure",
-        "stdout",
-        "exit_codes"
-      ],
-      "additionalProperties": false
-    },
     "hooks_file": {
       "type": "object",
       "properties": {
@@ -182,39 +74,111 @@
         "matcher": {
           "type": "string",
           "minLength": 1,
-          "description": "Tool name or alternatives (Bash, Write|Edit); only PreToolUse groups have one."
+          "description": "What the event is matched against: a tool name or alternatives (Bash, Write|Edit) for PreToolUse, the start source for SessionStart (startup|resume), the agent type for SubagentStop."
         },
         "hooks": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "command"
-              },
-              "command": {
-                "type": "string",
-                "pattern": "^[A-Za-z0-9._-]+ \"?\\$\\{CLAUDE_PLUGIN_ROOT\\}/scripts/hook\\.py\"? [a-z][a-z0-9-]*$",
-                "description": "`<interpreter> \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <handler id>`: the one launcher, never a machine path."
-              },
-              "timeout": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 600
-              }
-            },
-            "required": [
-              "type",
-              "command"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/entry"
           }
         }
       },
       "required": [
         "hooks"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "command"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exec form: a bare interpreter name with args. Shell form: `<interpreter> [flags] \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" <handler id>`."
+        },
+        "args": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Exec form: the interpreter flags, then ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py, then the handler id."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "if": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shell": {
+          "type": "string",
+          "enum": [
+            "bash",
+            "powershell"
+          ],
+          "description": "The shell that runs a shell-form command: bash or powershell (the Claude Code settings schema, hooks.*.hooks[].shell)."
+        },
+        "onFailure": {
+          "type": "string",
+          "enum": [
+            "block"
+          ],
+          "description": "block: a hook that fails (non-zero exit other than a decision, a crash, a timeout) blocks the action. Fail-closed guards set it."
+        },
+        "async": {
+          "type": "boolean"
+        },
+        "statusMessage": {
+          "type": "string"
+        },
+        "once": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "handler_result": {
+      "type": "object",
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "exit_code": {
+          "type": "integer",
+          "enum": [
+            0,
+            2
+          ]
+        },
+        "output": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "A C16 output object (block, pretooluse or sessionstart), or null."
+        },
+        "message": {
+          "type": "string",
+          "description": "Required, non-blank, for exit code 2: why the action is blocked."
+        }
+      },
+      "required": [
+        "contract_version",
+        "exit_code"
       ],
       "additionalProperties": false
     }

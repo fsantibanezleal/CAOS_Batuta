@@ -4,6 +4,7 @@
   "contract_version": "1.0",
   "spec_id": "001-example",
   "spec_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approved_spec_sha256_prefix": "aaaaaaaaaaaa",
   "contracts_sha256": {
     "/etc/contracts/C01.json": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },

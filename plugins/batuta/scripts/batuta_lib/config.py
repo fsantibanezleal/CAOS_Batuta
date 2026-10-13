@@ -9,10 +9,12 @@ Resolution order, first hit wins:
 5. the built-in defaults (`default_config`), when no file exists at all
 
 A path named by `--config` or `BATUTA_CONFIG` that does not exist is an error, never a silent fallback. A file is a
-whole C01 document: it is validated as written (the same check as `contract validate C01`), then `$VAR` and `${VAR}`
-expand from the environment. An unset root variable falls back to `<BATUTA_HOME>/temp|data|worktrees`; an unset
-variable anywhere else stays as written and is listed in `Resolved.unresolved`. No drive letter or user path is built
-into the defaults.
+whole C01 document: `$VAR` and `${VAR}` expand from the environment first, then the expanded document is validated (the
+same check as `contract validate C01`), so a variable cannot carry a path C01 refuses (a `..` segment, an absolute path)
+into an area. An unset root variable falls back to `<BATUTA_HOME>/temp|data|worktrees`; an unset variable in
+`coordination_root` or `knowledge_manifest` is an error that names the variable and the field; an unset variable
+anywhere else stays as written and is listed in `Resolved.unresolved`. No drive letter or user path is built into the
+defaults.
 """
 import os
 import re
@@ -26,6 +28,7 @@ ENV_HOME = "BATUTA_HOME"
 FILE_NAME = "batuta.json"
 PROJECT_DIR = ".batuta"
 ROOT_NAMES = ("temp", "data", "worktrees")
+PATH_FIELDS = ("coordination_root", "knowledge_manifest")   # relative paths: C01 refuses `..`, absolute and malformed ones
 _VAR = re.compile(r"\$(?:\{(\w+)\}|(\w+))", re.ASCII)
 
 
@@ -157,16 +160,27 @@ def load(config_arg=None, project_root=None, env=None):
         doc = contract.loads_strict(path.read_text(encoding="utf-8-sig"))
     except ValueError as exc:
         raise ConfigError(f"{path.as_posix()}: invalid JSON ({exc})") from exc
-    problems = validate(doc)
-    if problems:
-        raise ConfigError(f"{path.as_posix()} does not satisfy C01: " + "; ".join(problems))
     missing = []
     out = _expand_tree(doc, e, missing)
-    home = home_dir(e)
-    for name in ROOT_NAMES:
-        if _VAR.search(out["roots"][name]):
-            out["roots"][name] = str(home / name)
-            missing = [m for m in missing if m not in _vars_of(doc["roots"][name])]
+    if isinstance(doc, dict):
+        # a variable that is unset where a path is needed: name the variable and the field, never a partial path
+        for field_name in PATH_FIELDS:
+            value = doc.get(field_name)
+            unset = sorted(m for m in _vars_of(value) if m not in e) if isinstance(value, str) else []
+            if unset:
+                raise ConfigError(f"{path.as_posix()}: the environment variable {unset[0]} used by '{field_name}' is not set")
+        home = home_dir(e)
+        roots, written = out.get("roots"), doc.get("roots")
+        if isinstance(roots, dict) and isinstance(written, dict):
+            for name in ROOT_NAMES:
+                if isinstance(roots.get(name), str) and _VAR.search(roots[name]):
+                    roots[name] = str(home / name)
+                    missing = [m for m in missing if m not in _vars_of(written[name])]
+    # decision 9: validate what the areas will use, the expanded values, so a variable cannot smuggle in a path
+    # that C01 refuses (a `..` segment, an absolute path)
+    problems = validate(out)
+    if problems:
+        raise ConfigError(f"{path.as_posix()} does not satisfy C01 after $VAR expansion: " + "; ".join(problems))
     return Resolved(out, source, path, sorted(set(missing)))
 
 

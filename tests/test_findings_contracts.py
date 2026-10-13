@@ -34,9 +34,14 @@ def load(cid, name):
     return json.loads(read(cid, name))
 
 
+def inspect_source(fn):
+    import inspect
+    return inspect.getsource(fn)
+
+
 def check_text(cid, text, name=None, root=None):
     """Validate text as contract `cid` through the file path the CLI uses."""
-    ext = {"C04": ".jsonl", "C32": ".txt"}.get(cid, ".md" if list(CONTRACTS.glob(f"{cid}-*.sections.json")) else ".json")
+    ext = {"C32": ".txt"}.get(cid, ".md" if list(CONTRACTS.glob(f"{cid}-*.sections.json")) else ".json")
     with tempfile.TemporaryDirectory() as d:
         p = pathlib.Path(d) / (name or f"artifact{ext}")
         p.write_text(text, encoding="utf-8", newline="")
@@ -61,7 +66,7 @@ class Critical(unittest.TestCase):
         self.assertFalse(list(CONTRACTS.glob("C23-inventory*")), "the withdrawn inventory schema is gone")
         self.assertTrue(sp("C23").name.startswith("C23-sizing"))
         spec = json.loads(sp("C23").with_name("C23-sizing.sections.json").read_text(encoding="utf-8"))
-        self.assertEqual(spec["required_sections"], ["Problem", "ADR constraints", "Repositories", "Components", "Modules and functions",
+        self.assertEqual(spec["required_sections"], ["Problem", "Executive brief", "ADR constraints", "Repositories", "Components", "Modules and functions",
                                                      "Boundaries", "Technology matrix", "Machine limits", "Parallel units",
                                                      "Integrator and merge order", "Reservations"])
         self.assertEqual([t["name"] for t in spec["tables"]], ["Modules and functions", "Boundaries", "Technology matrix", "Parallel units"])
@@ -82,7 +87,7 @@ class Critical(unittest.TestCase):
                   "| swap test | status |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
         row = ('| alert-event | 1.0.0 | unit | docs/contracts/alert-event.schema.json | docs/contracts/examples/alert-event.json | '
                'tests/contracts/test_alert_producer.py::test_schema | tests/contracts/test_alert_consumer.py::test_schema | '
-               'drop the event, log a warning, show "no data" | fixture:tests/fixtures/alert-event.json | - | '
+               'available: ok (test: t/a.py); missing: drop the event (test: t/a.py) | fixture:tests/fixtures/alert-event.json | - | '
                'tests/contracts/test_alert_swap.py | active |\n')
         self.assertTrue(sp("C22").name.startswith("C22-catalog"))
         self.assertEqual(check_text("C22", header + row), [])
@@ -117,7 +122,7 @@ class Major(unittest.TestCase):
             (d / "catalog.md").write_text(
                 "| id | version | owner | schema file | example | producer test | consumer test | missing-data behavior | provider | model io | swap test | status | frozen |\n"
                 "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n" + "".join(
-                    f"| {i} | 1.0.0 | {o} | s | e | p | c | drop | fixture:f | - | w | active | no |\n"
+                    f"| {i} | 1.0.0 | {o} | s | e | p | c | available: ok (test: t/a.py); missing: drop (test: t/a.py) | fixture:f | - | w | active | no |\n"
                     for i, o in (("alert-event", "u-pipeline"), ("alert-list", "u-api"), ("severity-score", "u-model"))), encoding="utf-8")
             (d / "tasks.md").write_text(
                 "| Task | Title | Requirements | Contracts | Depends | Wave | Owner role | Unit |\n|---|---|---|---|---|---|---|---|\n"
@@ -233,10 +238,9 @@ class Major(unittest.TestCase):
 
     def test_F13_c30_exists_and_c04_and_c01_carry_the_dispatch_fields(self):
         self.assertIsNotNone(sp("C30"))
-        row = json.loads(read("C04", "valid-dispatch-run-with-cost.jsonl").splitlines()[0])
-        self.assertEqual(row["cost_usd"], 1.84)
-        self.assertEqual(check_text("C04", json.dumps(row)), [])
-        self.assertEqual(check_text("C04", json.dumps({**row, "status": "pending"})), [])
+        ledger = read("C04", "valid-dispatch-columns-billed-and-subagent.md")
+        self.assertIn("| anthropic | 1200 | 300 | 0.42 |", ledger)
+        self.assertEqual(check_text("C04", ledger), [])
         full = load("C01", "valid-full.json")
         self.assertEqual(full["caps"]["max_cost_usd_per_task"], 5.0)
         self.assertIn("dispatch", full)
@@ -247,8 +251,8 @@ class Major(unittest.TestCase):
     def test_F14_the_hook_registration_and_the_commit_grammar_have_contracts(self):
         self.assertIsNotNone(sp("C31"))
         self.assertIsNotNone(sp("C32"))
-        self.assertEqual(check_text("C31", read("C31", "valid-registry.json")), [])
-        self.assertEqual(check_text("C31", read("C31", "valid-hooks-file.json")), [])
+        self.assertEqual(check_text("C31", read("C31", "valid-hooks-file-exec-form-fail-closed.json")), [])
+        self.assertEqual(check_text("C31", read("C31", "valid-handler-result-allow.json")), [])
         self.assertEqual(check_text("C32", "[red] T-001 lock the tests\n"), [])
         self.assertEqual(check_text("C32", "[green] T-001 update\n\nTest-Change-Approved: CR-001\n"), [])
         self.assertTrue(check_text("C32", "green: T-001 update\n"))
@@ -259,11 +263,12 @@ class Major(unittest.TestCase):
         self.assertIs(area.emit, output.emit)
         self.assertIs(area.item, output.item)
 
-    def test_F15_one_unit_owns_the_locked_test_guard_in_the_registry(self):
-        reg = load("C31", "valid-registry.json")
-        guards = [h for h in reg["handlers"] if "locked" in h["id"]]
-        self.assertEqual([h["id"] for h in guards], ["guard-locked-tests"])
-        self.assertEqual(guards[0]["failure"], "fail-closed")
+    def test_F15_a_handler_id_has_one_owner_and_a_guard_fails_closed(self):
+        # revision 3 (ADR-0004): hooks.json is the registry and a duplicate handler id across areas is a lint failure
+        doc = load("C31", "valid-hooks-file-exec-form-fail-closed.json")
+        guard = doc["hooks"]["PreToolUse"][0]["hooks"][0]
+        self.assertEqual(guard["onFailure"], "block")
+        self.assertIn("duplicate handler id", inspect_source(contract.discover_hook_ids))
 
     def test_F16_the_approval_hashes_the_accepted_adrs(self):
         full = load("C06", "valid-full.json")
@@ -278,8 +283,8 @@ class Major(unittest.TestCase):
             d = pathlib.Path(d)
             cat = ("| id | version | owner | schema file | example | producer test | consumer test | missing-data behavior | provider | model io "
                    "| swap test | status | frozen |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
-                   "| a-1 | 1.0.0 | u | s.json | e.json | p | c | drop | fixture:f | - | w | active | yes |\n"
-                   "| b-1 | 1.0.0 | u | s.json | e.json | p | c | drop | fixture:f | - | w | active | no |\n")
+                   "| a-1 | 1.0.0 | u | s.json | e.json | p | c | available: ok (test: t/a.py); missing: drop (test: t/a.py) | fixture:f | - | w | active | yes |\n"
+                   "| b-1 | 1.0.0 | u | s.json | e.json | p | c | available: ok (test: t/a.py); missing: drop (test: t/a.py) | fixture:f | - | w | active | no |\n")
             (d / "catalog.md").write_text(cat, encoding="utf-8")
             (d / "s.json").write_text("{}", encoding="utf-8")  # the schema file exists for both rows
             items = area.graph(d / "catalog.md")
@@ -378,13 +383,13 @@ class Minor(unittest.TestCase):
             self.assertIn("C14 needs at least 2 valid and 3 invalid fixtures", out)
 
     def test_F31_an_accepted_or_superseded_row_names_who_and_by_what(self):
-        base = json.loads(read("C04", "valid-accepted-and-superseded.jsonl").splitlines()[0])
-        self.assertEqual(check_text("C04", json.dumps(base)), [])
-        no_who = {k: v for k, v in base.items() if k not in ("accepted_by", "accepted_at")}
-        self.assertTrue(any("who accepted" in e for e in check_text("C04", json.dumps(no_who))))
-        sup = {**no_who, "status": "superseded"}
-        self.assertTrue(any("replaces" in e or "names" in e for e in check_text("C04", json.dumps(sup))))
-        self.assertEqual(check_text("C04", json.dumps({**no_who, "status": "pending"})), [])
+        # revision 3 (ADR-0004): the ledger is the Markdown table; accepted is the Accepted column
+        base = read("C04", "valid-drafted-pending-complete-accepted.md")
+        self.assertEqual(check_text("C04", base), [])
+        self.assertTrue(any("status accepted" in e for e in check_text("C04", base.replace("| accepted | yes |", "| accepted | no |"))))
+        sup = read("C04", "valid-superseded-row-names-its-replacement.md")
+        self.assertEqual(check_text("C04", sup), [])
+        self.assertTrue(any("replaces" in e for e in check_text("C04", sup.replace("| a-2026-10-12-2 |\n", "|  |\n", 1))))
 
 
 if __name__ == "__main__":

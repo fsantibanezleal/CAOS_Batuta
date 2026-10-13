@@ -65,6 +65,25 @@
         "provider",
         "swap test"
       ]
+    },
+    {
+      "type": "cell_items",
+      "table": "Catalog",
+      "column": "missing-data behavior",
+      "separator": ";",
+      "item_pattern": "^(available|partial|stale|provider\\((?:stub|simulator|fixture|baseline)\\)|training|missing): .+ \\(test: (?!/|[^)]*\\.\\.)[A-Za-z0-9_./-]+(?:::[A-Za-z0-9_\\[\\]-]+)?\\)$",
+      "key_pattern": "^([a-z]+)",
+      "message": "write each state as '<state>: <behavior> (test: <path>[::name])' with <state> one of available, partial, stale, provider(stub|simulator|fixture|baseline), training, missing and a relative test path; separate states with ';'",
+      "must_include": [
+        {
+          "pattern": "^available:",
+          "message": "declare the 'available' state (what the consumer does when the input is there)"
+        },
+        {
+          "pattern": "^(partial|stale|provider|training|missing)",
+          "message": "declare at least one state other than 'available' (partial, stale, provider(kind), training or missing)"
+        }
+      ]
     }
   ]
 }

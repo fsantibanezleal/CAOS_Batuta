@@ -1,0 +1,7 @@
+# why: the reserved trailer key has one spelling
+# expect: must be written 'Test-Change-Approved'
+[green] T-001 add the parser
+
+body
+
+test-change-approved: CR-1

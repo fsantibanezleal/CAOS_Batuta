@@ -3,7 +3,7 @@
   "contract_id": "C02",
   "contract_version": "1.0",
   "title": "Delegation brief",
-  "description": "A brief as `brief new` writes it (template tools/agents/brief-template.md): a title, metadata bullets under it (`- id: ...`, the keys lowercased, read before the first `##` heading), then the sections. The header is validated here; the sections file lists the required sections (case-insensitive, matched by title prefix like the delegation lint), which depend on the kind: implement, job and skeleton briefs carry the contract-first sections.",
+  "description": "A brief as `brief new` writes it (template tools/agents/brief-template.md): a title, metadata bullets under it (`- id: ...`, the keys lowercased, read before the first `##` heading), then the sections. The header is validated here; the sections file lists the required sections (case-insensitive, matched by title prefix like the delegation lint), which depend on the kind: implement, job and skeleton briefs carry the contract-first sections. A brief that still carries a `<fill: ...>` template slot anywhere (code blocks included) is refused: a launched brief never has one (the delegation lint refuses it too). Rules of the delegation lint that stay in code, because a schema cannot express them: the escalation warning (an agent pinned to a model whose brief names another model), the warning for write scopes that overlap a sibling brief of the same ledger, the warning for more than eight deliverables, and the fable warning.",
   "type": "object",
   "properties": {
     "id": {

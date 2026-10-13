@@ -5,6 +5,7 @@
   "case_insensitive_titles": true,
   "required_sections": [
     "Problem",
+    "Executive brief",
     "ADR constraints",
     "Repositories",
     "Components",
@@ -77,6 +78,7 @@
       "type": "nonempty_sections",
       "sections": [
         "Problem",
+        "Executive brief",
         "ADR constraints",
         "Repositories",
         "Components",
@@ -104,6 +106,22 @@
       "table": "Parallel units",
       "owner_column": "Unit",
       "scope_column": "Write scope"
+    },
+    {
+      "type": "labeled_parts",
+      "section": "Executive brief",
+      "labels": [
+        "Initiative",
+        "Outcomes",
+        "Positioning",
+        "Credibility"
+      ],
+      "min_words": 5,
+      "exempt_prefix": "Not a product",
+      "exempt_min_words": 5,
+      "check_label": "Initiative",
+      "check_pattern": "(?=.*\\d)(?=.*(?:https?://|\\b10\\.\\d{4,}/|\\b(?:wip|plans|docs)/[\\w./-]+))",
+      "message": "the Initiative is not quantified with its source (a number and a URL, a DOI or a dossier path)"
     }
   ]
 }

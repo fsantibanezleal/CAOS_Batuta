@@ -4,6 +4,12 @@
 
 ## Problem
 
+## Executive brief
+- Initiative: reduce missed equipment alerts by 40 percent for plant operators (https://example.org/study-2026).
+- Outcomes: operators see every alert with its provenance within one minute of arrival.
+- Positioning: a small service for teams that run telemetry fleets without a monitoring suite.
+- Credibility: built from the maintainers' own incident reviews and a recorded fleet sample.
+
 ## ADR constraints
 - ADR-0080 (contract-first parallel delivery): no deviation.
 - ADR-0057 (product repository archetype): no deviation.
