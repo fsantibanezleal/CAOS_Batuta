@@ -70,6 +70,15 @@ def with_brief(text, body):
     return re.sub(r"(?m)^## Executive brief\n.*?(?=^## )", "## Executive brief\n" + body + "\n\n", text, flags=re.S)
 
 
+def unclassified(problems, overlay):
+    """The messages of the CAOS checker that match no CAOS-only rule of the overlay record (decision 20). A rule is the exact
+    message; `{found}` stands for the quoted excerpt of the offending line."""
+    patterns = [re.compile("".join(".*" if part == "{found}" else re.escape(part)
+                                   for part in re.split(r"(\{found\})", entry["rule"])), re.DOTALL)
+                for entry in overlay]
+    return [m for m in problems if not any(p.fullmatch(m) for p in patterns)]
+
+
 class R01(unittest.TestCase):
     def test_R01_a_sizing_without_the_executive_brief_is_refused(self):
         text = without_section(SIZING, "Executive brief")
@@ -126,7 +135,9 @@ class R01(unittest.TestCase):
                 ours = contract.validate_file(path, sp("C23"))
                 theirs = sizing_check.check_text(path.read_text(encoding="utf-8"))
                 if path.name.startswith("valid-"):
-                    self.assertEqual((ours, theirs), ([], []))
+                    # decision 20: the CAOS checker may disagree only with a rule recorded as CAOS-only
+                    overlay = json.loads((FX / "_upstream" / "sizing_check.overlay-only.json").read_text(encoding="utf-8"))
+                    self.assertEqual((ours, unclassified(theirs, overlay)), ([], []))
                 else:
                     self.assertTrue(ours, "C23 accepts an invalid fixture")
 
