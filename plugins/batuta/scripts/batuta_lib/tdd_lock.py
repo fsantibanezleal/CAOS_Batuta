@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 
 from batuta_lib import config
@@ -17,7 +18,9 @@ from batuta_lib import contract as core
 DEFAULT_LOCK = ".batuta/test-locks.json"   # the path the contract catalog names for C07
 REQUEST_FILE = "test-change-requests.md"
 HEADERS = ["Id", "Date", "Test path", "Requirement", "Reason", "Proposed change", "Status", "Decided by"]
-TASK_ID = re.compile(r"T-\d{3}\Z", re.ASCII)
+REPLACE_ATTEMPTS = 6
+REPLACE_PAUSE = 0.2
+TASK_ID =re.compile(r"T-\d{3}\Z", re.ASCII)
 REQ_ID = re.compile(r"REQ-[A-Z0-9]+-\d{3}\Z", re.ASCII)
 FEATURE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z", re.ASCII)
 _REL = core.compile_pattern(core.REL_PATH_PATTERN)
@@ -75,7 +78,15 @@ def atomic_write(path, text):
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
-        os.replace(tmp, path)
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                # Windows refuses a replace for a moment while a scanner or indexer holds the file
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(REPLACE_PAUSE * (attempt + 1))
     except BaseException:
         if os.path.exists(tmp):
             os.unlink(tmp)
