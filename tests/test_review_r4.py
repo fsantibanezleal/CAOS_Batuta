@@ -276,10 +276,16 @@ class R303(unittest.TestCase):
             with self.subTest(bad):
                 self.assertTrue(mentions(check_doc("C06", self.doc(bad)), "prompt_excerpt"))
 
-    def test_R303_the_phrase_alone_and_inside_a_longer_prompt(self):
-        for ok in ("approve 001-example aaaaaaaaaaaa", "looks good, approve 001-example aaaaaaaaaaaa now", "x\napprove 001-example aaaaaaaaaaaa\ny"):
+    def test_R303_the_phrase_starts_the_text_after_leading_whitespace(self):
+        # decision 28 (it replaces "anywhere in the text"): a phrase buried in a longer prompt is not an approval
+        for ok in ("approve 001-example aaaaaaaaaaaa", "  approve 001-example aaaaaaaaaaaa", "\n\t approve 001-example aaaaaaaaaaaa please",
+                   "approve 001-example aaaaaaaaaaaa\nthanks"):
             with self.subTest(ok):
                 self.assertEqual(check_doc("C06", self.doc(ok)), [])
+        for bad in ("looks good, approve 001-example aaaaaaaaaaaa now", "x\napprove 001-example aaaaaaaaaaaa\ny",
+                    "do not approve 001-example aaaaaaaaaaaa", "I would not approve 001-example aaaaaaaaaaaa"):
+            with self.subTest(bad):
+                self.assertTrue(mentions(check_doc("C06", self.doc(bad)), "prompt_excerpt", "start"))
 
     def test_R303_the_keyword_and_the_hex_match_case_insensitively(self):
         for ok in ("APPROVE 001-example AAAAAAAAAAAA", "Approve 001-example aAaAaAaAaAaA"):
@@ -768,6 +774,76 @@ class D21(unittest.TestCase):
             doc["user_core"] = {"template": "templates/user-core.md", "values": {"name": "Alex"}}
             r = config.load(config_arg=str(write(d, doc)), env={"BATUTA_HOME": d})
             self.assertEqual(r.config["user_core"]["template"], "templates/user-core.md")
+
+
+# ------------------------------------------------------------------ the fourth re-check: R4-01 to R4-05 and decision 28
+
+class R4Recheck(unittest.TestCase):
+    def test_R401_a_lane_built_from_a_variable_never_prints_the_value(self):
+        def doc_for(d):
+            doc = provider_config(d, credential_env="OPENAI_API_KEY")
+            doc["dispatch"]["lanes"] = ["subagent", "provider:$S"]
+            return doc
+        msg = load_error(doc_for, {"S": "sksecretlane9"})
+        self.assertIsNotNone(msg)
+        self.assertNotIn("sksecretlane9", msg)
+        self.assertIn("provider:$S", msg)
+
+    def test_R401_the_c01_messages_name_the_lane_quoted_whole(self):
+        doc = fixture_doc("C01", "valid-minimal.json")
+        doc["dispatch"] = {"default_lane": "subagent", "lanes": ["subagent", "provider:ghost"]}
+        errs = check_doc("C01", doc)
+        self.assertTrue(mentions(errs, "'provider:ghost'", "dispatch.providers"), errs)
+
+    def shipped_doc(self):
+        return {"profile": "rendered", "hooks": {"PreToolUse": [{"hooks": [
+            {"type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/scripts/hook.py", "report-check"]}]}]}}
+
+    def test_R402_the_shipped_hooks_file_carries_no_profile_key(self):
+        errs = check_doc("C31", self.shipped_doc(), name="hooks.json")
+        self.assertTrue(mentions(errs, "profile", "hooks.json"), errs)
+        self.assertEqual(check_doc("C31", self.shipped_doc(), name="settings-fragment.json"), [])   # a renderer's file may select it
+
+    def test_R402_the_lint_of_the_plugin_refuses_it_naming_the_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            hooks = pathlib.Path(d) / "hooks"
+            hooks.mkdir()
+            (hooks / "hooks.json").write_text(json.dumps(self.shipped_doc()), encoding="utf-8")
+            items = []
+            area._lint_hooks(d, items)
+        fails = [i["message"] for i in items if i["tag"] == "FAIL"]
+        self.assertTrue(any("profile" in m for m in fails), items)
+        self.assertFalse(any("'None'" in m for m in fails), fails)
+
+    def test_R403_a_rendered_shell_form_refuses_shell_powershell(self):
+        e = {"type": "command", "command": '"C:/Py/python.exe" "C:/b/scripts/hook.py" report-check', "shell": "powershell"}
+        self.assertTrue(mentions(contract.check_hook_entry(e, "PreToolUse", "rendered"), "powershell"))
+        self.assertEqual(contract.check_hook_entry(dict(e, shell="bash"), "PreToolUse", "rendered"), [])
+        exec_form = {"type": "command", "command": "C:/Py/python.exe", "args": ["C:/b/scripts/hook.py", "report-check"], "shell": "powershell"}
+        self.assertEqual(contract.check_hook_entry(exec_form, "PreToolUse", "rendered"), [])
+
+    def test_R404_the_rendered_paths_take_forward_slashes_only(self):
+        launcher = {"type": "command", "command": "python", "args": ["C:/b\\x/scripts/hook.py", "report-check"]}
+        self.assertTrue(contract.check_hook_entry(launcher, "PreToolUse", "rendered"))
+        interp = {"type": "command", "command": "C:\\Py\\python.exe", "args": ["C:/b/scripts/hook.py", "report-check"]}
+        self.assertTrue(contract.check_hook_entry(interp, "PreToolUse", "rendered"))
+        shell = {"type": "command", "command": '"C:/Py/python.exe" "C:/b\\x/scripts/hook.py" report-check'}
+        self.assertTrue(contract.check_hook_entry(shell, "PreToolUse", "rendered"))
+
+    def test_R405_the_texts_name_the_shipped_and_the_rendered_forms(self):
+        desc = json.loads(sp("C31").read_text(encoding="utf-8"))["description"]
+        for text in (desc, README):
+            self.assertNotRegex(text, r"exec form[^.]*\((?:[^)]*; )?(?:recommended|preferred)\)")
+            self.assertNotRegex(text, r"(?i)(recommended|preferred)\)? or")
+        self.assertIn("rendered default", desc)
+        self.assertIn("rendered default", README)
+        self.assertRegex(README, r"(?i)shipped form")
+        self.assertIn("asyncRewake", README.split("## Hooks", 1)[1].split("Every entry runs", 1)[0])
+
+    def test_D28_the_readme_and_the_schema_say_the_phrase_starts_the_text(self):
+        self.assertRegex(README, r"(?i)starts? with the phrase|starts? the text")
+        desc = json.loads(sp("C06").read_text(encoding="utf-8"))["description"]
+        self.assertRegex(desc.lower(), r"start")
 
 
 if __name__ == "__main__":
