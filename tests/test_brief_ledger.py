@@ -35,9 +35,10 @@ class LedgerText(unittest.TestCase):
             self.assertEqual(delegation.ledger_render(text), text, name)  # parse then write: identical bytes
             self.assertEqual(c04_problems(text), [], name)
 
-    def test_the_caos_fixtures_have_no_private_names(self):
+    def test_the_caos_fixtures_have_no_machine_paths(self):
+        # private names are the leaks scan's job (its deny-list lives outside the repository); this test names none
         for name in ("ledger-caos-new.md", "ledger-caos-pending.md", "ledger-caos-accepted.md"):
-            self.assertNotRegex(read(name), r"(?i)users|felipe|caos_manage|\bD:/|\bE:/")
+            self.assertNotRegex(read(name), r"(?i)(?<![a-z])[a-z]:[\\/]|[\\/](users|home)[\\/]")
 
     def test_rows_expose_the_columns_and_alias_values_are_not_rewritten(self):
         _cols, rows = delegation.ledger_rows(read("ledger-caos-accepted.md"))
