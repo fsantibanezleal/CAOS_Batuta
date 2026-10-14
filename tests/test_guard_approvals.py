@@ -89,15 +89,15 @@ class ApprovalsGuard(GuardCase):
         self.assertIn("approve <spec id> <first 12 hex", reason)
         self.assertIn("human", reason.lower())
 
-    def test_the_manual_approve_command_asks(self):
+    def test_the_approve_command_is_denied_to_an_agent(self):
         for command in ("python plugins/batuta/scripts/batuta.py spec approve 001-guards --apply",
                         "python batuta.py spec approve 001-guards --phrase 'approve 001-guards abcdef012345' --apply",
                         "batuta spec approve 001-guards --apply"):
             with self.subTest(command=command):
-                self.asks(handler(bash(command)), "approve")
+                self.denies(handler(bash(command)), "human")
 
-    def test_a_dry_run_of_approve_is_allowed(self):
-        self.allows(handler(bash("python batuta.py spec approve 001-guards")))
+    def test_other_spec_commands_are_allowed(self):
+        self.allows(handler(bash("python batuta.py spec show 001-guards")))
         self.allows(handler(bash("python batuta.py spec lint 001-guards --apply")))
 
     def test_no_approvals_folder_is_not_an_error(self):

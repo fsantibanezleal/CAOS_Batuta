@@ -3,8 +3,9 @@
 The approval record (C06) proves a human approved a frozen spec: the human types `approve <spec id> <first 12 hex of
 the spec sha256>`, and the record is written from that prompt (or by the manual `spec approve` command run by the
 human). This guard denies Edit, Write and shell writes (redirects, cp or Copy-Item into the folder, sc/ac, links,
-pipe-fed deletes, globs, cmd /c bodies) to `specs/<id>/approvals/`, resolves existing links and junctions, and asks
-before an agent runs `spec approve --apply`.
+pipe-fed deletes, globs, cmd /c bodies) to `specs/<id>/approvals/`, resolves existing links and junctions, and denies
+every invocation of the approval commands (`batuta.py spec approve`, `batuta.py spec hook-approval`, `hook.py
+spec-approval`): an agent never creates an approval, in any spelling the guards parse.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import fnmatch
 import re
 from pathlib import Path
 
-from . import (FILE_TOOLS, allow, ask, candidate_roots, command_of, deny, file_path_of, has_glob, norm_path,
+from . import (FILE_TOOLS, allow, candidate_roots, command_of, deny, file_path_of, has_glob, norm_path,
                project_root, spellings, tool_name)
 from . import shell
 from . import text as textlib
@@ -21,12 +22,15 @@ from .locked_tests import INLINE_WRITE, INTERPRETERS
 NAME = "approvals"
 APPROVALS = re.compile(r"(^|/)specs/[^/]+/approvals(/|$)")
 APPROVALS_TEXT = re.compile(r"specs/[^/\s'\"]+/approvals(?:/|\b)")
-APPROVE_CMD = re.compile(r"\bspec\s+approve\b", re.IGNORECASE)
-APPLY = re.compile(r"--apply\b")
+APPROVE_CMD = re.compile(r"\bspec\s+(approve|hook-approval)\b", re.IGNORECASE)
+HOOK_CMD = re.compile(r"\bspec-approval\b", re.IGNORECASE)
+BATUTA_WORD = re.compile(r"^batuta(\.py|\.exe|\.cmd)?$", re.IGNORECASE)
+HOOK_WORD = re.compile(r"^hook(\.py)?$", re.IGNORECASE)
+CONTINUATION = re.compile(r"\\\r?\n|`\r?\n")
 EXPLAIN = [
     "Denies Edit, Write and shell writes under specs/<spec id>/approvals/ (the C06 approval records).",
     "The approval is typed by the human: `approve <spec id> <first 12 hex of the spec sha256>`; an agent never writes it.",
-    "Asks before an agent runs `spec approve ... --apply` (the manual fallback is the human's command).",
+    "Denies every invocation of `batuta.py spec approve`, `batuta.py spec hook-approval` and `hook.py spec-approval`.",
 ]
 PHRASE = "approve <spec id> <first 12 hex of the spec sha256>"
 
@@ -86,8 +90,23 @@ def decide(payload) -> dict:
         texts = [flat] + [t.replace("\\", "/").lower() for t in textlib.nested_texts(normal)]
         if any(APPROVALS_TEXT.search(t) and INLINE_WRITE.search(t) for t in texts):
             return _deny("a path under specs/<id>/approvals/")
-    for seg in segs:
-        if APPROVE_CMD.search(" ".join(seg.words)) and APPLY.search(" ".join(seg.words)):
-            return ask("guard-approvals: `spec approve --apply` records a human approval. Run it only when the human "
-                       f"typed `{PHRASE}` for this exact spec; otherwise leave it to the human.")
+    if _runs_approval_command(normal):
+        return deny("BLOCKED by guard-approvals: an approval is the human's act, never the agent's. Ask the human to type "
+                    f"`{PHRASE}` in the prompt (the hook records it), or to run `spec approve` in their own terminal. "
+                    "`spec show` and `spec freeze --check` are fine to run.")
     return allow()
+
+
+def _runs_approval_command(normal: str) -> bool:
+    """Does the command line invoke `batuta.py spec approve`, `batuta.py spec hook-approval` or `hook.py spec-approval`
+    (any launcher, path, case, quoting, nesting, assignment prefix or chaining)?"""
+    text = CONTINUATION.sub(" ", normal)
+    for variant in (text, textlib.deobfuscate(text)):
+        for seg in shell.all_segments(variant):
+            words = [w.replace("\\", "/").rsplit("/", 1)[-1] for w in seg.words]
+            joined = " ".join(w.lower() for w in seg.words)
+            if APPROVE_CMD.search(joined) and any(BATUTA_WORD.match(w) for w in words):
+                return True
+            if HOOK_CMD.search(joined) and any(HOOK_WORD.match(w) for w in words):
+                return True
+    return False

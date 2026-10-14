@@ -80,8 +80,8 @@ class GuardVerb(unittest.TestCase):
         self.assertIn("OK", out)
 
     def test_ask_prints_warn_and_exits_two(self):
-        doc = pre("Bash", self.dir, command="python batuta.py spec approve 001-x --apply")
-        code, out, _ = run_cli("guard", "approvals", "--payload", self.payload(doc))
+        doc = pre("Write", self.dir, file_path=".batuta/batuta.json", content="{}")
+        code, out, _ = run_cli("guard", "locked-tests", "--payload", self.payload(doc))
         self.assertEqual(code, 2)
         self.assertIn("WARN", out)
 

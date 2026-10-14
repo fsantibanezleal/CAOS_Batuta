@@ -21,7 +21,7 @@ The launcher behaviour is requirement GUARD-2. A deny or an ask is a C16 PreTool
 |---|---|---|---|---|
 | No unattended automation: scheduled tasks, Run keys, Startup folder, services, WMI, `.wslconfig` and `wsl.conf`, cron and systemd enablement, linger, headless `claude -p`, `--dangerously-skip-permissions`, detached or hidden processes, unbounded polling loops | `guard-automation` | `batuta.py guard automation --payload FILE`; CI: `batuta.py guard scan --diff RANGE` | GUARD-1 | block |
 | A locked test file is changed only through an approved change request (C33); the lock file (C07) is protected too | `guard-locked-tests` | `batuta.py guard locked-tests --payload FILE`; CI: the tdd area's lock check against the lock file | TDD-2 | block |
-| An agent never writes under `specs/<id>/approvals/`; `spec approve --apply` asks first | `guard-approvals` | `batuta.py guard approvals --payload FILE`; CI: the spec area's approval hash check | SDD-3 | block |
+| An agent never writes under `specs/<id>/approvals/`; every invocation of `spec approve`, `spec hook-approval` and `hook.py spec-approval` is denied | `guard-approvals` | `batuta.py guard approvals --payload FILE`; CI: the spec area's approval hash check | SDD-3 | block |
 | Files that match the secret globs are never read by an agent | `guard-secrets` | `batuta.py guard secrets --payload FILE` (no read twin beyond it: a scan of committed content does not see reads) | GUARD-3 | block |
 | Destructive command packs: force-push to protected branches, hard reset, git clean, rm -rf of roots, disk formatting | `guard-destructive` | `batuta.py guard destructive --payload FILE`; CI: `batuta.py guard scan --diff RANGE` | GUARD-3 | block |
 | An Agent launch names a brief that satisfies C02 (ask or deny per configuration) | `guard-require-brief` | `batuta.py guard require-brief --payload FILE`; CI: `batuta.py contract validate C02 FILE` | GUARD-3 | continue |
@@ -77,6 +77,15 @@ Omitting `Monitor` lets a command through the Monitor tool that the shell tools 
 spelling the guards parse. A write to `.batuta/batuta.json`, which holds the security keys (`guards.*`,
 `tdd.lock_file`), is an `ask`: only the human approves it. `guard scan --diff` reports a change to those keys in the
 reviewed diff as a WARN line (exit 2). The keys keep their C01 location.
+
+## Approvals belong to the human
+
+`guard-approvals` denies every invocation of `batuta.py spec approve`, `batuta.py spec hook-approval` and
+`hook.py spec-approval` (any launcher, path, case, nesting, assignment prefix or chaining), and every write under
+`specs/<id>/approvals/` through Edit, Write, MultiEdit, NotebookEdit and a shell. The reason tells the agent to ask the
+human to type the approval phrase in the prompt or to run `spec approve` in their own terminal. `spec show` and
+`spec freeze --check` stay allowed. The waiver of a forged record in the spec area's review rests on this guard
+(requirement SDD-3).
 
 ## `guard scan` exemptions
 
