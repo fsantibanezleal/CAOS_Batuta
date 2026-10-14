@@ -84,6 +84,7 @@ class FakeGit:
         self.tracked = {}        # path -> text, as of the last commit
         self.merges = []
         self.counter = 0
+        self.remote_head_ref = None   # what refs/remotes/origin/HEAD points at, e.g. "origin/trunk"
 
     # ---- model
     def head_sha(self):
@@ -165,6 +166,9 @@ class FakeGit:
         theirs = set(self._ancestors(sha))
         return next((c for c in self._ancestors(self.head_sha()) if c in theirs), None)
 
+    def remote_head(self, root):
+        return self.remote_head_ref
+
     def log_files(self, root, head, limit):
         """[(sha, [paths])] newest first, at most `limit` commits."""
         return [(c, sorted(self.commits[c]["files"])) for c in self._ancestors(head)[:limit]]
@@ -228,6 +232,8 @@ class Project:
         parents = [f.head_sha()] if f.head_sha() else []
         sha = f.add_commit(parents, f.pending, f.tracked, f.current)
         f.pending = set()
+        if len(f.order) == 1:       # the target branch stays where the work started
+            f.branches["origin/develop"] = sha
         return sha
 
     def orphan_commit(self):

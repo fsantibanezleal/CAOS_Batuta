@@ -103,6 +103,7 @@ class F1ThresholdsInGateCheck(Check):
         proj = self.full_project()
         proj.write(THRESH, thresholds_doc({"coverage": 80}))
         proj.commit("thresholds")
+        proj.fake.branches["origin/develop"] = proj.head()     # HEAD is the target: the range is empty
         proj.write(THRESH, thresholds_doc({"coverage": 70}))
         code, out = self.check(proj)
         self.assertEqual(1, code, out)
@@ -128,35 +129,52 @@ class F1ThresholdsInGateCheck(Check):
 
 
 class F2EvidencePredatesTheChange(Check):
-    def test_build_evidence_naming_the_spec_era_commit_fails_after_code_changed(self):
+    """A gate's evidence must not be older than the changes to its judged paths made before the next passed gate's evidence."""
+
+    def rewrite(self, proj, gates, commit):
+        for g in gates:
+            proj.evidence(g, commit=commit)
+
+    def change_then_review(self, proj, rel, text, later):
+        """One commit changes `rel`, a second one follows, and the evidence of `later` gates names the second."""
+        proj.write(rel, text)
+        proj.commit(f"change {rel}")
+        proj.write("docs/filler.md", "filler\n")
+        second = proj.commit("filler")
+        self.rewrite(proj, later, second)
+        proj.commit("evidence after the change")
+
+    def test_build_evidence_naming_the_spec_era_commit_fails_when_the_next_gate_reviews_later_code(self):
         proj = self.full_project()
         proj.write("src/a.py", "x = 1\n")
-        proj.commit("the build")
+        proj.commit("the build, first commit")
+        proj.write("src/b.py", "y = 1\n")
+        head = proj.commit("the build, second commit")
+        self.rewrite(proj, ("L9-promote", "L10-lessons"), head)
+        proj.tests_record(head)
+        proj.commit("evidence at the head")
         code, out = self.check(proj)
         self.assertEqual(1, code, out)
-        for gate in ("L6-skeleton", "L7-build", "L8-integrate"):
-            self.assertRegex(out, rf"FAIL[^\n]*{gate}[^\n]*predates the change", gate)
+        self.assertRegex(out, r"FAIL[^\n]*L8-integrate[^\n]*predates the change")     # the gate whose next evidence jumps over the code
+        self.assertNotRegex(out, r"FAIL[^\n]*L7-build[^\n]*predates")                # L7 and L8 name the same commit: nothing between them
 
     def test_the_spec_gates_follow_the_spec_folder(self):
         proj = self.full_project()
-        proj.write(f"specs/{FEATURE}/tasks.md", "tasks\n")
-        proj.commit("tasks added after the evidence")
+        self.change_then_review(proj, f"specs/{FEATURE}/tasks.md", "tasks\n", GATES[1:])
         code, out = self.check(proj)
         self.assertEqual(1, code, out)
         self.assertRegex(out, r"FAIL[^\n]*L0-understand[^\n]*predates the change")
 
     def test_the_contract_gates_follow_the_contracts(self):
         proj = self.full_project()
-        proj.write("docs/contracts/examples/more.json", "{}\n")
-        proj.commit("a contract example after the evidence")
+        self.change_then_review(proj, "docs/contracts/examples/more.json", "{}\n", GATES[4:])
         code, out = self.check(proj)
         self.assertEqual(1, code, out)
         self.assertRegex(out, r"FAIL[^\n]*L3-contracts[^\n]*predates the change")
 
     def test_the_decision_gate_follows_the_decisions(self):
         proj = self.full_project()
-        proj.write("docs/decisions/ADR-0001-x.md", "adr\n")
-        proj.commit("an ADR after the evidence")
+        self.change_then_review(proj, "docs/decisions/ADR-0001-x.md", "adr\n", GATES[3:])
         code, out = self.check(proj)
         self.assertEqual(1, code, out)
         self.assertRegex(out, r"FAIL[^\n]*L2-decide[^\n]*predates the change")
@@ -166,13 +184,13 @@ class F2EvidencePredatesTheChange(Check):
         proj.write("src/a.py", "x = 1\n")
         proj.commit("the build")
         proj.write("data/derived/readiness.json", (proj.root / "data/derived/readiness.json").read_text(encoding="utf-8") + "\n")
-        ready = proj.commit("readiness after the build")      # the readiness age and the test record follow the build too
+        ready = proj.commit("readiness after the build")
         proj.tests_record(ready)
-        for g in ("L6-skeleton", "L7-build", "L8-integrate", "L9-promote", "L10-lessons"):
-            proj.evidence(g, commit=ready)
+        self.rewrite(proj, ("L6-skeleton", "L7-build", "L8-integrate", "L9-promote", "L10-lessons"), ready)
         proj.commit("evidence at the newest change")
         code, out = self.check(proj)
         self.assertEqual(0, code, out)
+
     def test_documentation_and_other_units_do_not_age_the_build_evidence(self):
         proj = self.full_project()
         proj.write("docs/notes.md", "notes\n")
@@ -195,13 +213,14 @@ class F2EvidencePredatesTheChange(Check):
         self.assertEqual(1, code, out)
         self.assertIn("predates the change", out)
 
-
 class F3RoutingFromTheBase(Check):
     def routed_project(self):
         proj = self.full_project()
         proj.write(CONFIG, project_config())
         base = proj.commit("the configuration at the base")
         self.on_branch(proj, base)
+        proj.write("docs/work.md", "work\n")
+        proj.commit("work on the branch")
         return proj, base
 
     def test_weakening_the_critical_gates_in_the_range_does_not_weaken_the_check(self):
@@ -453,21 +472,21 @@ class TestsRecordCommand(Case):
 
     def test_dry_run_writes_nothing_and_apply_writes_a_valid_c34_record(self):
         proj = self.clean()
-        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--result", "tests/test_widget_consumer.py=pass")
+        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--result", "tests/test_widget_consumer.py=skip")
         self.assertEqual(0, code, out)
         self.assertFalse((proj.root / "docs/design/contract-tests.json").exists())
-        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--result", "tests/test_widget_consumer.py=pass", "--apply")
+        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--result", "tests/test_widget_consumer.py=skip", "--apply")
         self.assertEqual(0, code, out)
         doc = self.written(proj)
         sp = core.find_schema(config.contracts_dir(), "C34")
         self.assertEqual([], core.validate_instance("C34", doc, core.load_schema(sp)))
         self.assertEqual(proj.head(), doc["commit"])
         self.assertEqual(TODAY, doc["generated"])
-        self.assertEqual({"tests/test_widget_producer.py": "pass", "tests/test_widget_consumer.py": "pass"}, doc["results"])
+        self.assertEqual({"tests/test_widget_producer.py": "skip", "tests/test_widget_consumer.py": "skip"}, doc["results"])
 
     def test_a_second_apply_changes_nothing(self):
         proj = self.clean()
-        args = ("--result", "tests/test_widget_producer.py=pass", "--apply")
+        args = ("--result", "tests/test_widget_producer.py=skip", "--apply")
         self.command(proj, *args)
         code, out = self.command(proj, *args)
         self.assertEqual(0, code, out)
@@ -475,7 +494,7 @@ class TestsRecordCommand(Case):
 
     def test_bad_results_are_refused_before_writing(self):
         proj = self.clean()
-        for bad in ("tests/x.py=maybe", "tests/x.py", "/abs/x.py=pass", "../x.py=pass", "tests\\x.py=pass", "=pass", "tests/x.py::=pass"):
+        for bad in ("tests/x.py=maybe", "tests/x.py", "/abs/x.py=skip", "../x.py=skip", "tests\\x.py=skip", "=pass", "tests/x.py::=pass"):
             code, out = self.command(proj, "--result", bad, "--apply")
             self.assertEqual(1, code, (bad, out))
         self.assertFalse((proj.root / "docs/design/contract-tests.json").exists())
@@ -483,25 +502,25 @@ class TestsRecordCommand(Case):
     def test_a_dirty_working_tree_is_refused_because_the_tests_did_not_run_at_the_commit(self):
         proj = self.clean()
         proj.write("src/a.py", "x = 1\n")
-        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--apply")
+        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--apply")
         self.assertEqual(1, code, out)
         self.assertIn("uncommitted", out)
-        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--apply", "--allow-dirty")
+        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--apply", "--allow-dirty")
         self.assertEqual(0, code, out)
 
     def test_changes_under_specs_do_not_count_as_dirty(self):
         proj = self.clean()
         proj.write(f"specs/{FEATURE}/notes.md", "n\n")
-        self.assertEqual(0, self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--apply")[0])
+        self.assertEqual(0, self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--apply")[0])
 
     def test_the_commit_can_be_named(self):
         proj = self.clean()
         first = proj.head()
         proj.commit("another")
-        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--commit", first[:10], "--apply")
+        code, out = self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--commit", first[:10], "--apply")
         self.assertEqual(0, code, out)
         self.assertEqual(first, self.written(proj)["commit"])
-        self.assertEqual(1, self.command(proj, "--result", "tests/test_widget_producer.py=pass", "--commit", "nonexistent", "--apply")[0])
+        self.assertEqual(1, self.command(proj, "--result", "tests/test_widget_producer.py=skip", "--commit", "nonexistent", "--apply")[0])
 
     def test_run_executes_the_python_tests_the_catalog_names(self):
         proj = self.clean()
