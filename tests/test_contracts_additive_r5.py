@@ -7,6 +7,7 @@ every 1.0 document stays valid; the others carry the edge cases of each addition
 import copy
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import unittest
@@ -312,39 +313,41 @@ class C23Overlap(unittest.TestCase):
                 self.assertEqual(not fx("C23", p.name), p.name.startswith("valid-"))
 
 
+# the fence rule of contracts 1.0 (develop 57a3506), kept here as the oracle for the backtick cases
+OLD_FENCED = re.compile(r"^[ \t]*```.*?^[ \t]*```[^\n]*$", re.MULTILINE | re.DOTALL)
+
+
 class ProseFences(unittest.TestCase):
-    """F-15: the checker strips fenced code as CommonMark defines a fence, for backticks and for tildes."""
+    """F-15, F3 and F5: tilde fences are fences too; a backtick fence is stripped exactly as in 1.0 and a tilde fence the same way."""
 
     def test_tilde_fence(self):
         self.assertNotIn("TODO", contract.prose("before\n~~~\nTODO inside\n~~~\nafter\n"))
 
-    def test_four_tildes_close_only_with_four_or_more(self):
-        text = "a\n~~~~\nTODO one\n~~~\nTODO two\n~~~~\nout\n"
+    def test_four_tildes(self):
+        self.assertNotIn("TODO", contract.prose("a\n~~~~\nTODO\n~~~~\nout\n"))
+
+    def test_any_indent_before_the_marker(self):
+        for indent in ("  ", "   ", "    ", "      ", "\t", " \t"):
+            with self.subTest(indent=repr(indent)):
+                self.assertNotIn("TODO", contract.prose(f"a\n{indent}~~~\n{indent}TODO\n{indent}~~~\nb\n"))
+                self.assertNotIn("TODO", contract.prose(f"a\n{indent}```\n{indent}TODO\n{indent}```\nb\n"))
+
+    def test_a_fence_inside_a_nested_list_item(self):
+        text = "- a\n  - b\n    ```\n    TODO\n    ```\nafter\n"
         self.assertNotIn("TODO", contract.prose(text))
-
-    def test_a_longer_backtick_fence_holds_a_shorter_one(self):
-        text = "a\n````\n```\nTODO\n```\n````\nout\n"
-        self.assertNotIn("TODO", contract.prose(text))
-
-    def test_indented_fence_up_to_three_spaces(self):
-        self.assertNotIn("TODO", contract.prose("a\n   ~~~\n   TODO\n   ~~~\nb\n"))
-        self.assertNotIn("TODO", contract.prose("a\n  ```\n  TODO\n  ```\nb\n"))
-
-    def test_four_spaces_is_not_a_fence(self):
-        self.assertIn("TODO", contract.prose("a\n    ~~~\nTODO\n"))
+        self.assertNotIn("TODO", contract.prose(text.replace("```", "~~~")))
 
     def test_info_string(self):
         self.assertNotIn("TODO", contract.prose("a\n~~~python title\nTODO\n~~~\nb\n"))
         self.assertNotIn("TODO", contract.prose("a\n```json\nTODO\n```\nb\n"))
 
-    def test_an_unclosed_fence_runs_to_the_end(self):
-        out = contract.prose("keep\n~~~\nTODO\nmore\n")
-        self.assertNotIn("TODO", out)
-        self.assertIn("keep", out)
-        self.assertNotIn("TODO", contract.prose("keep\n```\nTODO\n"))
+    def test_an_unclosed_fence_is_not_stripped_as_in_1_0(self):
+        self.assertIn("TODO", contract.prose("keep\n~~~\nTODO\nmore\n"))
+        self.assertIn("TODO", contract.prose("keep\n```\nTODO\n"))
 
-    def test_a_closing_fence_with_text_does_not_close(self):
-        self.assertNotIn("TODO", contract.prose("a\n~~~\nx\n~~~ not a close\nTODO\n~~~\nb\n"))
+    def test_a_closing_line_with_text_closes_as_in_1_0(self):
+        text = "a\n~~~\nx\n~~~ trailing\nTODO\nb\n"
+        self.assertIn("TODO", contract.prose(text))
 
     def test_a_different_character_does_not_close(self):
         self.assertNotIn("TODO", contract.prose("a\n~~~\nx\n```\nTODO\n~~~\nb\n"))
@@ -352,6 +355,24 @@ class ProseFences(unittest.TestCase):
     def test_text_outside_the_fence_is_still_checked(self):
         out = contract.prose("TODO before\n~~~\nquoted\n~~~\nTODO after\n")
         self.assertEqual(out.count("TODO"), 2)
+
+    def test_every_backtick_input_is_stripped_exactly_as_in_1_0(self):
+        corpus = [
+            "a\n```\nX\n```\nb\n", "a\n```\nX\n", "```\nX\n```", "a\n  ```py\nX\n  ```  \nb\n", "a\n````\n```\nX\n```\n````\nout\n",
+            "a\n```\nX\n``` text\nY\n```\nZ\n", "a\n    ```\nX\n    ```\nb\n", "a\n\t```\nX\n\t```\nb\n", "a ```\nX\n```\n",
+            "```\n```\n```\nX\n```\n", "- a\n  - b\n    ```\n    X\n    ```\nafter\n", "a\r\n```\r\nX\r\n```\r\nb\r\n",
+            "```x```\nX\n```\n", "a\n```\n\n```\n\n```\nY\n", "",
+        ]
+        for text in corpus:
+            with self.subTest(text=text):
+                self.assertEqual(contract.strip_fences(text), OLD_FENCED.sub("", text))
+
+    def test_a_tilde_fence_is_stripped_like_the_backtick_one(self):
+        corpus = ["a\n```\nX\n```\nb\n", "a\n```\nX\n", "a\n    ```py\nX\n    ```\nb\n", "a\n```\nX\n``` text\nY\n```\nZ\n",
+                  "```\nX\n```\n```\nY\n"]
+        for text in corpus:
+            with self.subTest(text=text):
+                self.assertEqual(contract.strip_fences(text.replace("`", "~")), OLD_FENCED.sub("", text).replace("`", "~"))
 
     def test_a_report_with_a_placeholder_inside_a_tilde_fence_is_valid(self):
         text = (FX / "C03" / "valid-placeholder-words-inside-code-are-quoted-not-prose.md").read_text(encoding="utf-8")
@@ -362,6 +383,88 @@ class ProseFences(unittest.TestCase):
     def test_a_placeholder_outside_any_fence_is_still_refused(self):
         text = (FX / "C03" / "invalid-placeholder-in-prose.md").read_text(encoding="utf-8")
         self.assertTrue(contract.validate_markdown(text, schema("C03"), contract.load_sections_spec(schema_file("C03"))))
+
+
+class AdversaryFindings(unittest.TestCase):
+    """The reproductions of the adversary check of 5abe683 (F1, F2, F4, F6): the binding test is additivity."""
+
+    def test_F1_a_glob_and_a_bare_sibling_file_are_disjoint(self):
+        for a, b in (("tests/unit/test_*.py", "tests/unit/conftest.py"), ("docs/*.md", "docs/CHANGELOG.txt"),
+                     ("src/*.py", "src/py.typed"), ("src/*.py", "src/b.txt")):
+            with self.subTest(a=a, b=b):
+                self.assertFalse(contract.scopes_overlap(a, b))
+                self.assertFalse(contract.scopes_overlap(b, a))
+
+    def test_F1_a_glob_still_meets_what_it_matches(self):
+        self.assertTrue(contract.scopes_overlap("tests/unit/test_*.py", "tests/unit/test_a.py"))
+        self.assertTrue(contract.scopes_overlap("DOCS/*.md", "docs/readme.md"))
+        self.assertTrue(contract.scopes_overlap("src/*.py", "src/sub/"))
+        self.assertTrue(contract.scopes_overlap("src/*", "src/a/*.py"))
+
+    def test_F1_a_bare_name_is_a_prefix_only_below_it(self):
+        self.assertFalse(contract.scopes_overlap("a", "ab/"))
+        self.assertFalse(contract.scopes_overlap("a", "ab/x.py"))
+        self.assertFalse(contract.scopes_overlap("a", "a.txt"))
+        self.assertTrue(contract.scopes_overlap("a", "a/b.py"))
+
+    def test_F1_the_sizing_of_the_reproduction(self):
+        text = (FX / "C23" / "valid-globs-and-br-separated-scopes.md").read_text(encoding="utf-8")
+        self.assertEqual(contract.validate_markdown(text, schema("C23"), contract.load_sections_spec(schema_file("C23"))), [])
+
+    def test_F1_the_two_new_valid_fixtures(self):
+        for name in ("valid-glob-and-sibling-file.md", "valid-glob-and-sibling-file-docs.md"):
+            with self.subTest(fixture=name):
+                self.assertEqual(fx("C23", name), [])
+
+    def test_F6_casefold_not_lower(self):
+        self.assertTrue(contract.scopes_overlap("straße/", "STRASSE/"))
+        self.assertTrue(contract.scopes_overlap("STRASSE/x.py", "straße"))
+
+    def test_F2_a_1_0_document_with_any_tdd_value_stays_valid(self):
+        for value in ({"foo": 1}, "anything", 5, None, [1], {"replay_timeout_seconds": 0}):
+            with self.subTest(value=value):
+                self.assertEqual(errs01(c01(contract_version="1.0", tdd=value)), [])
+
+    def test_F2_the_closed_block_applies_to_1_1(self):
+        for value in ({"foo": 1}, "anything", 5, None, [1], {"replay_timeout_seconds": 0}):
+            with self.subTest(value=value):
+                self.assertTrue(errs01(c01(contract_version="1.1", tdd=value)))
+
+    def test_F2_the_errors_name_the_tdd_path(self):
+        errs = errs01(c01(contract_version="1.1", tdd={"retries": 3, "replay_timeout_seconds": 0}))
+        self.assertTrue(any(e.startswith("/tdd/retries") for e in errs), errs)
+        self.assertTrue(any(e.startswith("/tdd/replay_timeout_seconds") for e in errs), errs)
+        self.assertTrue(any(e.startswith("/tdd:") for e in errs01(c01(contract_version="1.1", tdd="x"))))
+
+    def test_F6_the_lock_file_is_a_json_file_that_is_not_the_configuration(self):
+        for bad in ("locks", "locks.txt", "a/", "batuta.json", ".batuta/batuta.json", ".batuta/BATUTA.JSON", "x/.json.bak"):
+            with self.subTest(value=bad):
+                self.assertTrue(errs01(c01(contract_version="1.1", tdd={"lock_file": bad})))
+        for ok in (".batuta/test-locks.json", "locks/t.json", "my-batuta.json", "batuta.json.d/locks.json"):
+            with self.subTest(value=ok):
+                self.assertEqual(errs01(c01(contract_version="1.1", tdd={"lock_file": ok})), [])
+
+    def test_F4_a_block_without_a_reason_is_valid_and_an_empty_reason_is_not(self):
+        doc = copy.deepcopy(UPS)
+        doc["decision"] = "block"
+        self.assertEqual(errs16(doc), [])
+        doc["reason"] = ""
+        self.assertTrue(errs16(doc))
+        doc["reason"] = "   "
+        self.assertTrue(errs16(doc))
+
+    def test_F6_c34_keys_are_files_without_line_breaks(self):
+        for bad in ("tests/", "tests/a.py::bad\nname", "tests/a.py::bad\tname", "tests/a.py::x\x00", "tests/a.py\r::x", "tests/a/::x"):
+            with self.subTest(key=bad):
+                self.assertTrue(errs34(c34(results={bad: "pass"})))
+        self.assertEqual(errs34(c34(results={"tests/a.py::Case::test with spaces": "pass"})), [])
+
+    def test_F7_the_readme_sentence_names_the_1_1_exception(self):
+        readme = (CONTRACTS / "README.md").read_text(encoding="utf-8")
+        line = [ln for ln in readme.splitlines() if ln.startswith("Every JSON artifact carries")]
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("C01", readme[readme.index(line[0]):readme.index(line[0]) + 400])
+        self.assertIn("1.1", readme[readme.index(line[0]):readme.index(line[0]) + 400])
 
 
 class Lint(unittest.TestCase):
