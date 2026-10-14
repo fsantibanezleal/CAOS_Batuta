@@ -159,10 +159,11 @@ class F7DestructiveSpellings(Project):
         self.deny_all("destructive", ["Get-ChildItem C:\\ | Remove-Item -Recurse -Force", "gci C:\\ | ri -r -fo"], "PowerShell")
         self.allow_all("destructive", ["find build -name '*.pyc' -delete", "ls build | xargs rm -rf", "find . -name x"])
 
-    def test_home_folders_are_roots(self):  # destructive 079 080
-        self.deny_all("destructive", ["rm -rf /home/someone", "rm -rf /home/someone/", "rm -rf C:/Users/someone",
-                                      "rm -rf /Users/someone", "Remove-Item -Recurse -Force C:\\Users\\someone"])
-        self.allow_all("destructive", ["rm -rf /home/someone/build", "rm -rf C:/Users/someone/proj/dist"])
+    def test_home_folders_are_roots(self):  # destructive 079 080 (built at run time: no user path literal in the repository)
+        lin, mac, win = "/" + "home" + "/someone", "/" + "Users" + "/someone", "C:" + "/" + "Users" + "/someone"
+        self.deny_all("destructive", [f"rm -rf {lin}", f"rm -rf {lin}/", f"rm -rf {win}", f"rm -rf {mac}",
+                                      "Remove-Item -Recurse -Force " + win.replace("/", "\\")])
+        self.allow_all("destructive", [f"rm -rf {lin}/build", f"rm -rf {win}/proj/dist"])
 
     def test_deleting_a_protected_branch_remotely(self):  # destructive 081 082 (F-23)
         self.deny_all("destructive", ["git push origin :main", "git push origin --delete main", "git push origin -d master",

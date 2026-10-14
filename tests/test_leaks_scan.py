@@ -107,9 +107,9 @@ class Tokens(Base):
         self.put("a.txt", "ghp_short\nsk-ant-x\nAKIA123\n")
         self.assertEqual(self.scan()[0], 0)
 
-    def test_the_inline_marker_skips_a_line(self):
+    def test_the_inline_marker_never_hides_a_token(self):
         self.put("a.txt", f"x = {TOKENS['github']}  # batuta-leaks: ignore\n")
-        self.assertEqual(self.scan()[0], 0)
+        self.assertEqual(self.scan()[0], 1)
 
 
 class UserPaths(Base):
@@ -216,11 +216,11 @@ class Scope(Base):
         self.put("secret.txt", f"k = {TOKENS['aws']}\n", track=False)
         self.assertEqual(self.scan()[0], 0)
 
-    def test_binary_files_are_skipped(self):
+    def test_binary_files_are_searched_for_tokens(self):
         path = self.root / "blob.bin"
         path.write_bytes(b"\x00\x01\x02" + TOKENS["aws"].encode() + b"\xff\xfe")
         git(self.root, "add", "blob.bin")
-        self.assertEqual(self.scan()[0], 0)
+        self.assertEqual(self.scan()[0], 1)
 
     def test_a_folder_that_is_not_a_git_repository_is_walked(self):
         plain = self.outside / "plain"
