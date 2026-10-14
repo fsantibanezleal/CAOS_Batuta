@@ -75,10 +75,13 @@ class PythonMarkers(unittest.TestCase):
         with self.assertRaises(tm.UnparsableTestFile):
             tm.weakening_markers("tests/test_x.py", "def broken(:\n")
 
-    def test_a_custom_marker_list_replaces_the_default(self):
+    def test_a_custom_marker_list_extends_the_default_and_never_removes_a_marker(self):
         src = "import unittest\n@unittest.skip('x')\ndef test_a(): pass\n@wip\ndef test_b(): pass\n"
         found = tm.weakening_markers("tests/test_x.py", src, {"python": ["wip"]})
-        self.assertEqual(sum(found.values()), 1)
+        self.assertEqual(sum(found.values()), 2)
+        self.assertEqual(sum(tm.weakening_markers("tests/test_x.py", src, {"python": ["unittest.skip"]}).values()), 1)
+        js = tm.weakening_markers("web/a.test.js", "it.only('a', () => {});\nwip('b', () => {});\n", {"javascript": ["wip"]})
+        self.assertEqual(sum(js.values()), 2)
 
 
 class JavascriptMarkers(unittest.TestCase):
@@ -287,6 +290,81 @@ class SecondRoundPythonMarkers(unittest.TestCase):
 
     def test_a_pyproject_without_a_pytest_section_is_clean(self):
         self.assertEqual(self.count('[tool.ruff]\nselect = ["E"]\naddopts = "-k x"\n', "pyproject.toml"), 0)
+
+
+class ThirdRoundPythonMarkers(unittest.TestCase):
+    """R3-03: the module that defines `skip`, sys.modules lookups, computed module names."""
+
+    def count(self, src):
+        return sum(tm.weakening_markers("tests/test_x.py", src).values())
+
+    def test_other_spellings_of_the_unittest_and_pytest_modules_are_resolved(self):
+        cases = [
+            "import unittest\n@unittest.case.skip('x')\ndef test_a(): pass\n",
+            "from unittest import case\n@case.skip('x')\ndef test_a(): pass\n",
+            "from unittest.case import skip\n@skip('x')\ndef test_a(): pass\n",
+            "import unittest\ndef test_a():\n    raise unittest.case.SkipTest('x')\n",
+            "import sys\nu = sys.modules['unittest']\n@u.skip('x')\ndef test_a(): pass\n",
+            "import sys\n@sys.modules['unittest'].skip('x')\ndef test_a(): pass\n",
+            "from _pytest.outcomes import skip\ndef test_a():\n    skip('x')\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_a_module_imported_by_a_computed_name_is_a_marker(self):
+        cases = [
+            "import importlib\nu = importlib.import_module('unit' + 'test')\n@u.skip('x')\ndef test_a(): pass\n",
+            "name = 'unittest'\nu = __import__(name)\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_a_literal_import_of_an_ordinary_module_is_not(self):
+        self.assertEqual(self.count("import importlib\nm = importlib.import_module('json')\n"), 0)
+
+
+class ThirdRoundListing(unittest.TestCase):
+    """R3-01 and R3-02: the recorded outcome of each locked test, parametrized ids, the JUnit report of pytest."""
+
+    def test_an_expected_failure_and_a_skip_are_problems_a_pass_is_not(self):
+        from batuta_lib import tdd_history as hist
+        base = [("C", "test_a"), ("C", "test_b"), ("C", "test_c")]
+        listing = [{"id": "test_m.C.test_a", "outcome": "passed"}, {"id": "test_m.C.test_b", "outcome": "expected failure"},
+                   {"id": "test_m.C.test_c", "outcome": "skipped"}]
+        problems = hist.compare_listing("tests/test_m.py", base, listing)
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(any("test_b" in p and "expected failure" in p for p in problems))
+        self.assertTrue(any("test_c" in p and "skipped" in p for p in problems))
+        failing = [{"id": "test_m.C.test_a", "outcome": "failed"}, {"id": "test_m.C.test_b", "outcome": "error"}]
+        self.assertEqual(hist.compare_listing("tests/test_m.py", base[:2], failing), [])
+
+    def test_a_parametrized_test_is_compared_by_its_base_name(self):
+        from batuta_lib import tdd_history as hist
+        ok = [{"id": "tests/test_p.py::test_x[1]", "outcome": "passed"}, {"id": "tests/test_p.py::test_x[2]", "outcome": "skipped"}]
+        self.assertEqual(hist.compare_listing("tests/test_p.py", [(None, "test_x")], ok), [])
+        gone = [{"id": "tests/test_p.py::test_y[1]", "outcome": "passed"}]
+        self.assertEqual(len(hist.compare_listing("tests/test_p.py", [(None, "test_x")], gone)), 1)
+        allskipped = [{"id": "tests/test_p.py::test_x[1]", "outcome": "skipped"}]
+        self.assertEqual(len(hist.compare_listing("tests/test_p.py", [(None, "test_x")], allskipped)), 1)
+
+    def test_a_junit_report_is_read_into_outcomes(self):
+        from batuta_lib import tdd_history as hist
+        xml = ('<testsuites><testsuite>'
+               '<testcase classname="tests.test_p" name="test_x[1]"/>'
+               '<testcase classname="tests.test_p" name="test_x[2]"><skipped type="pytest.skip" message="s"/></testcase>'
+               '<testcase classname="tests.test_p.C" name="test_y"><skipped type="pytest.xfail" message="x"/></testcase>'
+               '<testcase classname="tests.test_p" name="test_z"><failure message="f"/></testcase>'
+               '<testcase classname="tests.test_p" name="test_e"><error message="e"/></testcase>'
+               '</testsuite></testsuites>')
+        got = {e["id"]: e["outcome"] for e in hist.parse_junit(xml)}
+        self.assertEqual(got, {"tests.test_p.test_x[1]": "passed", "tests.test_p.test_x[2]": "skipped",
+                               "tests.test_p.C.test_y": "expected failure", "tests.test_p.test_z": "failed", "tests.test_p.test_e": "error"})
+
+    def test_an_empty_listing_is_a_listing(self):
+        from batuta_lib import tdd_history as hist
+        self.assertEqual(hist.parse_unittest_listing("no tests here\n[]\n"), [])
 
 
 class SecondRoundJavascriptMarkers(unittest.TestCase):

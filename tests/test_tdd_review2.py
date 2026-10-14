@@ -9,7 +9,7 @@ from unittest import mock
 
 from _support import SCRIPTS
 from test_tdd_check import EDITED, REQUESTS, commit_request_open_first, requests
-from test_tdd_fixtures import LOCK, TEST_CALC, message, run_cli, write_config
+from test_tdd_fixtures import LOCK, SPEC, TEST_CALC, message, run_cli, write_config
 from test_tdd_review import ReviewBase
 
 if str(SCRIPTS) not in sys.path:
@@ -163,10 +163,20 @@ class Q2ShowAndTypedPrompt(OpenRequestCase):
         self.assertEqual(core.validate_file(self.file, core.find_schema(config.contracts_dir(), "C33")), [])
         self.assertTrue(result["output"])
 
-    def test_the_typed_phrase_may_reject_and_be_followed_by_text(self):
+    def test_the_phrase_may_be_indented_and_followed_by_more_lines(self):
         _, digest = self.phrases()
-        self.hook(f"  reject CR-001 {digest} the oracle is right after all")
+        self.hook(f"  reject CR-001 {digest}  \nthe oracle is right after all")
         self.assertEqual(self.rows()[0]["Status"], "rejected")
+
+    def test_words_after_the_phrase_on_its_line_decide_nothing(self):
+        _, digest = self.phrases()
+        before = self.file.read_bytes()
+        for prompt in (f"approve CR-001 {digest} -- no wait, do not approve",
+                       f"approve CR-001 {digest} reject CR-001 {digest}",
+                       f"approve CR-001 {digest}x"):
+            with self.subTest(prompt=prompt):
+                self.hook(prompt)
+                self.assertEqual(self.file.read_bytes(), before)
 
     def test_a_phrase_that_does_not_start_the_prompt_is_ignored(self):
         _, digest = self.phrases()
@@ -243,6 +253,51 @@ class Q3RuntimeComparison(ReviewBase):
         out = "tests/test_calc.py::CalcTests::test_add\ntests/test_f.py::test_a\n\n2 tests collected in 0.01s\n"
         self.assertEqual(hist.parse_pytest_listing(out), [{"id": "tests/test_calc.py::CalcTests::test_add", "skipped": False},
                                                           {"id": "tests/test_f.py::test_a", "skipped": False}])
+
+
+class R301RuntimeOutcomes(ReviewBase):
+    # patches TestCase.setUp through setattr and a SkipTest looked up by a computed name: nothing a static rule reads
+    SKIPPER = ("import unittest\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('environment')\n\n\n"
+               "setattr(unittest.TestCase, 'setUp', _setup)\n\n\nclass Z(unittest.TestCase):\n    def test_z(self):\n"
+               "        self.assertTrue(True)\n")
+
+    def test_a_runtime_skip_of_every_locked_test_fails_the_replay(self):
+        repo = self.clone()
+        repo.write("tests/test_zz_env.py", self.SKIPPER)
+        repo.commit(message("refactor", "T-001", "environment"), "tests/test_zz_env.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)   # the static rules cannot see it
+        out = self.failing(repo, "skipped at runtime", "tests/test_calc.py", extra=("--replay",))
+        self.assertIn("CalcTests", out)
+
+    def test_the_compliant_history_still_runs_clean(self):
+        code, out = self.check(self.clone(), "--replay")
+        self.assertEqual(code, 0, out)
+
+
+class R302ApprovedMoves(ReviewBase):
+    def approve(self, repo):
+        commit_request_open_first(repo, requests())
+        repo.write("specs/calc/spec.md", SPEC)
+        repo.commit("docs: spec", "specs/calc/spec.md")
+
+    def test_an_approved_rename_does_not_fail_the_replay(self):
+        repo = self.clone()
+        self.approve(repo)
+        repo.git("mv", "tests/test_calc.py", "tests/test_calc_renamed.py")
+        code, out = self.lock(repo, "T-001", "tests/test_calc_renamed.py")
+        self.assertEqual(code, 0, out)
+        repo.commit(message("refactor", "T-001", "rename the test", "CR-001"), "tests/test_calc.py", "tests/test_calc_renamed.py", LOCK)
+        code, out = self.check(repo, "--replay")
+        self.assertEqual(code, 0, out)
+
+    def test_an_approved_deletion_does_not_fail_the_replay(self):
+        repo = self.clone()
+        self.approve(repo)
+        repo.git("rm", "-q", "tests/test_calc.py")
+        repo.commit(message("refactor", "T-001", "drop the test", "CR-001"), "tests/test_calc.py")
+        code, out = self.check(repo, "--replay")
+        self.assertEqual(code, 0, out)
 
 
 class Q3TestConfiguration(ReviewBase):
@@ -326,7 +381,7 @@ class C01Version11TddBlock(ReviewBase):
         self.assertEqual(code, 1, out)
         self.assertIn("touches locked test", out)
 
-    def test_markers_replace_the_default_list(self):
+    def test_markers_extend_the_default_list_for_every_language(self):
         cfg = self.config11("k-markers", markers=["wip"])
         repo = self.red_repo("k-markers", self.PASSING, cfg)
         repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
@@ -337,7 +392,11 @@ class C01Version11TddBlock(ReviewBase):
         repo.write("tests/test_other.py", "import unittest\n\n\n@unittest.skip('x')\nclass O(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "other"), "tests/test_other.py")
         code, out = self.check(repo, cfg=cfg)
-        self.assertNotIn("unittest.skip", out)   # the default list is replaced, not extended
+        self.assertIn("unittest.skip", out)   # a configured name adds to the defaults, it never removes one
+        repo.write("web/a.test.js", "it.only('a', () => { expect(1).toBe(1); });\n")
+        repo.commit(message("refactor", "T-001", "web"), "web/a.test.js")
+        code, out = self.check(repo, cfg=cfg)
+        self.assertIn("it.only", out)
 
     def test_every_key_together(self):
         cfg = self.config11("k-all", test_command='python -c "import sys; sys.exit(1)" {tests}', replay_timeout_seconds=60,
@@ -360,13 +419,27 @@ class C01Version11TddBlock(ReviewBase):
                 self.assertEqual(code, 1, out)
                 self.assertIn("tdd", out)
 
-    def test_the_old_object_shape_of_markers_is_refused_in_a_1_0_document_too(self):
+    def test_the_legacy_object_shape_of_markers_is_accepted_in_a_1_0_document(self):
         folder = self.tmp / "old-shape"
         folder.mkdir(exist_ok=True)
         cfg = write_config(folder, self.temp_root, markers={"python": ["wip"]})
-        code, out = self.check(self.clone(), cfg=cfg)
+        repo = self.clone()
+        repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.commit(message("refactor", "T-001", "extra"), "tests/test_extra.py")
+        code, out = self.check(repo, cfg=cfg)
         self.assertEqual(code, 1, out)
-        self.assertIn("markers", out)
+        self.assertIn("'wip'", out)
+        self.assertNotIn("does not satisfy", out)
+
+    def test_a_bad_legacy_object_is_refused_in_a_1_0_document(self):
+        for name, markers in {"language-unknown": {"cobol": ["x"]}, "not-a-list": {"python": "wip"}, "empty-name": {"python": [""]}}.items():
+            with self.subTest(case=name):
+                folder = self.tmp / ("legacy-" + name)
+                folder.mkdir(exist_ok=True)
+                cfg = write_config(folder, self.temp_root, markers=markers)
+                code, out = self.check(self.clone(), cfg=cfg)
+                self.assertEqual(code, 1, out)
+                self.assertIn("markers", out)
 
 
 if __name__ == "__main__":
