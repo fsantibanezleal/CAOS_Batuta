@@ -102,6 +102,17 @@ human to type the approval phrase in the prompt or to run `spec approve` in thei
 writer or a link. `tdd change-request new` stays allowed: it appends only `open` rows. The reason of `guard-locked-tests`
 points an agent to `tdd change-request new`, never to a hand edit of the table.
 
+## No direct run of the launcher
+
+Approvals and change requests are also created by typed-prompt handlers (`spec-approval`, `tdd-change-request`), which
+the launcher would run for anyone who pipes a payload into it. `guard-approvals` therefore denies every direct run of
+`hook.py` by an agent, whatever the handler id (or none): as a script of `python` or `py`, as the command itself, through
+`uv run`, `pipx run` or `Start-Process`, in every path, case, quoting, nesting (`bash -c`, `cmd /c`, `pwsh -c`) and
+chaining spelling, and through Monitor. The harness runs hooks itself on the tool event, never through an agent's tool
+call, so no legitimate agent action is lost; reading the file and naming it in a test (`python -m unittest`,
+`python -m py_compile`) stay allowed, and `batuta.py guard <name> --payload FILE` is the way to try a guard. The specific
+denials for `spec approve` and `tdd change-request decide` remain.
+
 ## Validation and timing
 
 The launcher validates every handler result through the contract (`validate_instance("C31", ...)`: the C16 output of

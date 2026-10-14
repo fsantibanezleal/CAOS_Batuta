@@ -25,6 +25,9 @@ APPROVALS = re.compile(r"(^|/)specs/[^/]+/approvals(/|$)")
 APPROVALS_TEXT = re.compile(r"specs/[^/\s'\"]+/approvals(?:/|\b)")
 TABLE_PATH = re.compile(r"(^|/)test-change-requests\.md$")
 TABLE_TEXT = re.compile(r"test-change-requests\.md")
+PYTHONISH = re.compile(r"^(?:python|py|pypy)[\d.]*w?$")
+HOOK_PY = re.compile(r"(?:^|[\s/\\\"'=:(])hook\.py(?![\w.-])")
+SCRIPT_RUNNERS = {"uv", "pipx", "poetry", "pdm", "hatch", "start-process", "saps", "start"}
 DECIDE_CMD = re.compile(r"\btdd\s+change-request\s+decide\b", re.IGNORECASE)
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv"}
 APPROVE_CMD = re.compile(r"\bspec\s+(approve|hook-approval)\b", re.IGNORECASE)
@@ -34,7 +37,8 @@ HOOK_WORD = re.compile(r"^hook(\.py)?$", re.IGNORECASE)
 CONTINUATION = re.compile(r"\\\r?\n|`\r?\n")
 EXPLAIN = [
     "Denies Edit, Write and shell writes under specs/<spec id>/approvals/ (the C06 approval records) and to any",
-    "  test-change-requests.md; denies `tdd change-request decide` (`tdd change-request new` stays allowed).",
+    "  test-change-requests.md; denies `tdd change-request decide` (`tdd change-request new` stays allowed), and any",
+    "  direct run of the launcher hook.py (the harness runs hooks, never an agent).",
     "The approval is typed by the human: `approve <spec id> <first 12 hex of the spec sha256>`; an agent never writes it.",
     "Denies every invocation of `batuta.py spec approve`, `batuta.py spec hook-approval` and `hook.py spec-approval`.",
 ]
@@ -129,6 +133,10 @@ def decide(payload) -> dict:
         return deny("BLOCKED by guard-approvals: a test change request is decided by the human, never by the agent. Ask the "
                     "human to run `tdd change-request decide` in their own terminal. You may file a request with "
                     "`tdd change-request new` (it appends only `open` rows).")
+    if _runs_launcher(normal):
+        return deny("BLOCKED by guard-approvals: an agent never runs the hook launcher hook.py directly: the harness runs hooks "
+                    "itself on the tool event, never through an agent's tool call. To try a guard, run "
+                    "`batuta.py guard <name> --payload FILE`; to read the launcher, use the Read tool.")
     if _runs_approval_command(normal):
         return deny("BLOCKED by guard-approvals: an approval is the human's act, never the agent's. Ask the human to type "
                     f"`{PHRASE}` in the prompt (the hook records it), or to run `spec approve` in their own terminal. "
@@ -147,6 +155,27 @@ def _runs_command(normal: str, rules) -> bool:
             for phrase, tool in rules:
                 if phrase.search(joined) and any(tool.match(w) for w in words):
                     return True
+    return False
+
+
+def _runs_launcher(normal: str) -> bool:
+    """Does the command line run `hook.py` (as a script of python or py, as the command itself, or through a runner such as
+    `uv run` or `Start-Process`), any handler id or none, in any path, case, quoting, nesting or chaining? Reading the file or
+    naming it in a test is not running it."""
+    text = CONTINUATION.sub(" ", normal)
+    for variant in (text, textlib.deobfuscate(text)):
+        for seg in shell.all_segments(variant):
+            name, args = shell.command_name(seg), shell.args_of(seg)
+            joined = " ".join(args).replace("\\", "/").lower()
+            if name == "hook.py":
+                return True
+            if not HOOK_PY.search(joined):
+                continue
+            if PYTHONISH.match(name):
+                if "-c" in args or "-m" not in args:      # `-m module hook.py` only names the file; `-c` code may run it
+                    return True
+            elif name in SCRIPT_RUNNERS:
+                return True
     return False
 
 
