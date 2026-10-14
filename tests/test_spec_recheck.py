@@ -138,7 +138,7 @@ class TestLookingGateFile(Base):
 
 class NeverFails(Base):
     def test_chains_and_no_op_commands_that_can_never_fail_are_refused(self):
-        bar = "|" + "|"
+        bar = "\\|\\|"   # a table cell carries a double pipe escaped
         cases = [f"`pytest tests/test_alerts.py {bar} true`", f"`pytest tests/test_alerts.py {bar} :`",
                  "`pytest tests/test_alerts.py; true`", "`pytest tests/test_alerts.py; exit 0`",
                  "`pytest tests/test_alerts.py & exit 0`", "`pytest tests/test_alerts.py && exit 0`",

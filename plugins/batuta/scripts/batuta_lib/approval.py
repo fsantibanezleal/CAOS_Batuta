@@ -131,7 +131,7 @@ def gather(root, spec_id, catalog=None):
         elif kind == "outside":
             g.problems.append(f"{rid}: the Gate names {detail}, which resolves outside the repository")
         elif kind == "none":
-            g.problems.append(f"{rid}: the Gate names no file or folder the freeze can hash (name the test file or folder it runs)")
+            g.problems.append(f"{rid}: the Gate names no test file or folder of tests the freeze can hash (configuration and documentation files never count)")
         elif detail not in g.missing:
             g.missing.append(detail)
     files, _, _ = sm.expand_tests(root, sm.spec_test_tokens(spec))

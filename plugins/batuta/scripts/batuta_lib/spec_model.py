@@ -7,6 +7,7 @@ lookups, and the LF-normalized SHA-256 every hash of the freeze uses (decision 4
 import hashlib
 import posixpath
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -211,10 +212,66 @@ def _lead(text):
     return words[0].strip(".,:;!?\"'`()").lower() if words else ""
 
 
-def check_gate(cell):
+RUNNERS = {
+    "pytest", "py.test", "python", "python3", "py", "pip", "pipx", "uv", "uvx", "poetry", "hatch", "tox", "nox", "ruff", "mypy",
+    "flake8", "pylint", "black", "pyright", "unittest", "coverage", "node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "vitest",
+    "jest", "mocha", "tsc", "eslint", "make", "cmake", "ctest", "cargo", "rustc", "go", "dotnet", "mvn", "gradle", "gradlew",
+    "ant", "bash", "sh", "zsh", "pwsh", "powershell", "cmd", "git", "docker", "batuta", "java", "ruby", "rake", "bundle",
+    "rspec", "php", "composer", "phpunit", "swift", "gh",
+}
+_SEGMENTS = re.compile(r"\|\||&&|;|&|\|")
+_SHELLS = {"sh", "bash", "zsh", "dash", "cmd", "python", "python3", "py", "node", "powershell", "pwsh"}
+_RUN_FLAGS = {"-c", "/c", "-command", "-e"}
+_NO_OP_BODIES = {"pass", "none"}
+
+
+def _command_word(word):
+    return posixpath.basename(word.strip("\"'").replace("\\", "/")).lower().removesuffix(".exe")
+
+
+def _no_op(segment, depth=0):
+    """True when a command segment cannot fail: `true`, `:`, `exit ...`, `echo ...`, or a shell or interpreter one-liner
+    (`sh -c true`, `cmd /c exit 0`, `python -c pass`) whose body is such a command."""
+    words = segment.split()
+    while words and "=" in words[0] and not words[0].startswith(("-", "/")):
+        words = words[1:]          # leading VAR=value assignments
+    if not words:
+        return False
+    first = _command_word(words[0])
+    if first in NO_FAIL:
+        return True
+    if first in _SHELLS:
+        for i, w in enumerate(words[1:], 1):
+            if w.lower() in _RUN_FLAGS:
+                body = " ".join(words[i + 1:]).strip("\"' ")
+                lead = _command_word(body.split()[0]) if body.split() else ""
+                return lead in _NO_OP_BODIES or (depth < 2 and _no_op(body, depth + 1))
+    return False
+
+
+def _known_command(word, root):
+    word = word.strip("\"'")
+    if _command_word(word) in RUNNERS or shutil.which(word):
+        return True
+    return bool(root) and (Path(root) / word.replace("\\", "/")).is_file()
+
+
+def _command_problem(span, root):
+    for segment in _SEGMENTS.split(span):
+        if _no_op(segment):
+            return f"'{span.strip()}' cannot fail (a no-op command or an unconditional success), so it is no gate"
+        words = [w for w in segment.split() if not ("=" in w and not w.startswith(("-", "/")))]
+        if words and not _known_command(words[0], root):
+            return (f"the first word '{words[0]}' of '{span.strip()}' is neither a known runner, an executable on the PATH "
+                    "nor a file of the repository")
+    return None
+
+
+def check_gate(cell, root=None):
     """None when the Gate cell is runnable text, else the reason. Runnable: one or more backticked commands with nothing but
-    whitespace or `;` between them, or a test id `path[::name]` of a test file; a placeholder word, prose around a span, a bare
-    file name, a `..` segment and a command that cannot fail (`true`, `exit 0`, `echo ...`) are not."""
+    whitespace or `;` between them, or a test id `path[::name]` of a test file; a placeholder word, prose around a span, prose
+    inside one, a bare file name, a `..` segment and a command that cannot fail (`true`, `exit 0`, `echo ...`, `|| true`,
+    `python -c pass`) are not. `root` lets a repository script count as a command."""
     raw = cell.strip()
     if _lead(raw.strip("`")) in PLACEHOLDER_GATES:
         return "the gate is empty or a placeholder"
@@ -222,8 +279,9 @@ def check_gate(cell):
         for span in _spans(raw):
             if _lead(span) in PLACEHOLDER_GATES:
                 return "the gate is a placeholder"
-            if span.split()[0].lower() in NO_FAIL or _lead(span) == "":
-                return f"'{span}' cannot fail, so it is no gate"
+            problem = _command_problem(span, root)
+            if problem:
+                return problem
         return None
     if _TEST_ID.match(raw):
         path = raw.split("::")[0]
@@ -336,7 +394,7 @@ def spec_test_tokens(spec, include_retired=False):
 
 def gate_findings(root, spec):
     """Per active row, what the freeze could not hash: [(requirement id, kind, detail)] with kind `escape`, `outside`, `none`
-    (the Gate names no file or folder at all) or `missing` (a test-looking path that does not exist)."""
+    (the Gate yields no test file the freeze can hash: configuration and documentation files never count) or `missing` (a test-looking path that does not exist)."""
     found = []
     for rid, tokens, escapes in gate_refs(spec):
         for e in escapes:
@@ -344,7 +402,7 @@ def gate_findings(root, spec):
         files, missing, outside = expand_tests(root, tokens)
         found.extend((rid, "outside", o) for o in outside)
         found.extend((rid, "missing", m) for m in missing)
-        if not (files or missing or outside or escapes):
+        if not (missing or outside or escapes) and not any(is_test_path(f) for f in files):
             found.append((rid, "none", ""))
     return found
 

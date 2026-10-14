@@ -39,15 +39,26 @@ def _python_markers(text):
     return ids
 
 
+_REGEX_AFTER = set("(,=:[!&|?{};+-*%<>~^")
+_REGEX_KEYWORDS = {"return", "typeof", "case", "in", "of", "delete", "void", "throw", "new", "else", "do", "instanceof", "yield", "await"}
+
+
 def _js_markers(text):
-    """Marker ids from `//` comments that start a line, outside strings, template literals and block comments."""
+    """Marker ids from `//` comments that start a line, outside strings, template literals, regular expression literals and
+    block comments. A `/` after an operator, an opening bracket, a comma, a colon, `;`, a keyword such as `return`, or at the
+    start of a line opens a regex literal (so a quote or backtick inside it never shifts the string state); after a value it is
+    a division."""
     ids = []
     state, quote, i, n = "code", "", 0, len(text)
-    line_start = True
+    line_start, prev, word, last_word, in_class = True, "", "", "", False
     while i < n:
         c = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
         if state == "code":
+            if c.isalnum() or c in "_$":
+                word += c
+            elif word:
+                last_word, word = word, ""
             if c == _NL:
                 line_start = True
             elif c in " \t\r":
@@ -64,20 +75,44 @@ def _js_markers(text):
             elif c == "/" and nxt == "*":
                 state, i, line_start = "block", i + 2, False
                 continue
+            elif c == "/":
+                tail = word or last_word
+                if line_start or prev == "" or prev in _REGEX_AFTER or (prev.isalnum() and tail in _REGEX_KEYWORDS):
+                    state, in_class = "regex", False
+                line_start = False
+                if state == "regex":
+                    i += 1
+                    continue
+                prev = c
             elif c in "'\"`":
                 state, quote, line_start = "string", c, False
             else:
                 line_start = False
+                prev = c if not (c.isalnum() or c in "_$") else "a"
+            if c.isalnum() or c in "_$":
+                line_start, prev = False, "a"
         elif state == "block":
             if c == "*" and nxt == "/":
                 state, i = "code", i + 2
                 continue
+        elif state == "regex":
+            if c == "\\":
+                i += 2
+                continue
+            if c == "[":
+                in_class = True
+            elif c == "]":
+                in_class = False
+            elif c == "/" and not in_class:
+                state, prev = "code", "a"
+            elif c == _NL:
+                state = "code"   # an unterminated regex ends at its line
         else:  # a string or a template literal
             if c == "\\":
                 i += 2
                 continue
             if c == quote:
-                state = "code"
+                state, prev = "code", "a"
             elif c == _NL and quote != "`":
                 state = "code"   # an unterminated quote ends at its line
         i += 1

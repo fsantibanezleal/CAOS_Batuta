@@ -38,3 +38,11 @@ python scripts/batuta.py spec freeze --check ID
 - Residual risk (waived for this unit, review F-02): a schema-valid approval record written by another process (an inline
   interpreter) is indistinguishable from a captured one. The controls are the approvals write guard, the guard on the three
   approval commands and the permission preset that deny agents those writes, and human review of the committed record.
+- Console reading (review F-01): `spec approve` needs a console on standard input (on Windows a console handle, on POSIX a tty
+  with a `/dev/tty` that opens) and waits at most 300 seconds for the typed phrase, then refuses with exit 1 and writes
+  nothing. Keystrokes injected into the console by another local process are the same waived class as the inline interpreter
+  above: a deliberate local-process attack that the guards deny on its direct paths.
+- A Gate passes only when it yields at least one hashable test file (a path that looks like a test); configuration and
+  documentation files named next to it are still hashed but never count. A backticked command starts with a known runner, an
+  executable on the PATH or a script of the repository, and a chain that can never fail (`|| true`, `; exit 0`,
+  `python -c pass`, `echo ...`) is refused.

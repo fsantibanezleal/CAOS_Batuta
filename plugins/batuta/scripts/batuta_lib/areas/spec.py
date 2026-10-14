@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -168,7 +169,7 @@ def lint_spec(root, d, catalog=None, ids_map=None):
     if not spec.meta:
         return items
     for row in spec.active_rows():
-        why = sm.check_gate(row.get("Gate", ""))
+        why = sm.check_gate(row.get("Gate", ""), root)
         if why:
             items.append(item("FAIL", f"{row['Id']}: gate: {why}: '{row.get('Gate', '')}'", label))
     ids_map = ids_map if ids_map is not None else sm.requirement_ids_by_spec(root)
@@ -202,7 +203,7 @@ def lint_spec(root, d, catalog=None, ids_map=None):
             elif kind == "outside":
                 items.append(item("FAIL", f"{rid}: the Gate names {detail}, which resolves outside the repository", label))
             elif kind == "none":
-                items.append(item("FAIL", f"{rid}: the Gate names no file or folder the freeze can hash (name the test file or folder it runs)", label))
+                items.append(item("FAIL", f"{rid}: the Gate names no test file or folder of tests the freeze can hash (configuration and documentation files never count)", label))
             else:
                 items.append(item("FAIL" if spec.status == "Frozen" else "WARN",
                                   f"{label}: the Gate of {rid} names {detail}, which does not exist (the freeze hashes every named test)", label))
@@ -318,8 +319,11 @@ def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None, wri
         hint = f" for {spec_id}" if spec_id else ""
         return [item("REFUSED", f"the typed text must start with `approve <spec id> <first 12 hex of the spec sha256>`{hint}")], None
     typed_id, typed_prefix = parsed
+    if len(typed_id) > 80:
+        return [item("REFUSED", f"the typed spec id {_clip(typed_id, 80)} is not a spec id")], None
     if spec_id and typed_id != spec_id:
         return [item("REFUSED", f"the typed phrase names spec {typed_id}, not {spec_id}")], None
+    typed_prefix_shown = _clip(typed_prefix, 40)
     spec_id = typed_id
     d = root / sm.SPECS_DIR / spec_id
     if not (d / "spec.md").is_file():
@@ -327,7 +331,7 @@ def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None, wri
     g = approval.gather(root, spec_id, catalog)
     shown = f"; the current prefix is {g.prefix}, type: {approval.phrase(spec_id, g.spec_sha)}"
     if not approval.valid_prefix(typed_prefix):
-        return [item("REFUSED", f"the prefix '{typed_prefix}' is not exactly 12 hex characters{shown}")], None
+        return [item("REFUSED", f"the prefix '{typed_prefix_shown}' is not exactly 12 hex characters{shown}")], None
     if g.spec.status not in FROZEN_STATES:
         return [item("REFUSED", f"spec {spec_id} is {g.spec.status or 'of unknown status'}; only a spec in Review or Frozen is approved")], None
     fails = [i for i in lint_spec(root, d, catalog) if i["tag"] == "FAIL"]
@@ -336,7 +340,7 @@ def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None, wri
     if g.refusals():
         return [item("REFUSED", f"the freeze of {spec_id} is refused: {r}") for r in g.refusals()], None
     if typed_prefix != g.prefix:
-        return [item("REFUSED", f"the prefix {typed_prefix} is not the current spec's: the spec changed since you read it{shown}")], None
+        return [item("REFUSED", f"the prefix {typed_prefix_shown} is not the current spec's: the spec changed since you read it{shown}")], None
     if not write:
         out = [item("OK", f"would record the approval of {spec_id} at {g.prefix} (dry run: nothing written)")]
         out.extend(item("OK", f"would hash {p}", p) for p in sorted(g.hashed()))
@@ -354,23 +358,68 @@ class ConsoleError(Exception):
     """There is no human at a console to type the approval phrase."""
 
 
+CONSOLE_TIMEOUT_SECONDS = 300
+ECHO_LIMIT = 200
+CONTEXT_LIMIT = 10000
+
+
+def _console_mode_ok():
+    """Windows: the standard input handle is a real console (`GetConsoleMode` succeeds). A stdin of NUL passes `isatty()`
+    but fails this call."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.windll.kernel32
+        kernel.GetStdHandle.restype = wintypes.HANDLE
+        handle = kernel.GetStdHandle(-10)
+        mode = wintypes.DWORD()
+        return bool(kernel.GetConsoleMode(handle, ctypes.byref(mode)))
+    except Exception:  # noqa: BLE001 (no ctypes, no kernel32: not a console)
+        return False
+
+
+def _stdin_is_console():
+    try:
+        if not sys.stdin.isatty():
+            return False
+    except (AttributeError, ValueError):
+        return False
+    return _console_mode_ok() if sys.platform == "win32" else True
+
+
 def _read_console():
     """One line typed at the console device (`CONIN$` on Windows, `/dev/tty` elsewhere), never the piped standard input: a
     process that pipes its own text into `spec approve` is not a human typing. Raises ConsoleError when stdin is not a
-    terminal or the console cannot be opened."""
-    try:
-        interactive = sys.stdin.isatty()
-    except (AttributeError, ValueError):
-        interactive = False
-    if not interactive:
-        raise ConsoleError("standard input is not a terminal: `spec approve` reads the phrase from the console device, "
+    console (on Windows a console handle, on POSIX a tty), the device cannot be opened, or nobody types within
+    CONSOLE_TIMEOUT_SECONDS, so a launch with nobody at the keyboard never hangs. Keystrokes injected into the console by
+    another local process are the waived residual risk (F-02): the guards deny the direct paths."""
+    if not _stdin_is_console():
+        raise ConsoleError("standard input is not a console: `spec approve` reads the phrase from the console device, "
                            "so a human must run it in an interactive terminal (where hooks run, type the phrase in the prompt)")
     device = "CONIN$" if sys.platform == "win32" else "/dev/tty"
-    try:
-        with open(device, "r", encoding="utf-8", errors="replace") as console:
-            return console.readline()
-    except OSError as exc:
-        raise ConsoleError(f"the console device {device} cannot be opened ({exc})") from exc
+    result = {}
+
+    def work():
+        try:
+            with open(device, "r", encoding="utf-8", errors="replace") as console:
+                result["line"] = console.readline()
+        except OSError as exc:
+            result["error"] = exc
+
+    reader = threading.Thread(target=work, daemon=True)
+    reader.start()
+    reader.join(CONSOLE_TIMEOUT_SECONDS)
+    if reader.is_alive():
+        raise ConsoleError(f"timed out after {CONSOLE_TIMEOUT_SECONDS:g} seconds waiting for the typed phrase; nothing was written")
+    if "error" in result:
+        raise ConsoleError(f"the console device {device} cannot be opened ({result['error']})")
+    return result.get("line", "")
+
+
+def _clip(text, limit=ECHO_LIMIT):
+    """A piece of the typed prompt echoed back, cut at `limit` characters with an ellipsis."""
+    text = str(text)
+    return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
 def _cmd_approve(args):
@@ -401,9 +450,9 @@ def approval_hook(payload):
             return quiet
         root = payload.get("cwd") or os.getcwd()
         items, _ = approve_typed(root, prompt)
-        text = "; ".join(f"{i['tag']} {i['message']}" for i in items[:6])
+        text = _clip("; ".join(f"{i['tag']} {_clip(i['message'])}" for i in items[:6]), CONTEXT_LIMIT)
     except Exception as exc:  # noqa: BLE001 (the capture must never block a prompt)
-        text = f"REFUSED approval capture failed: {exc}"
+        text = _clip(f"REFUSED approval capture failed: {exc}", CONTEXT_LIMIT)
     return {"contract_version": "1.0", "exit_code": 0,
             "output": {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text},
                        "systemMessage": text}}
