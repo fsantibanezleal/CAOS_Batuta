@@ -1,0 +1,8 @@
+{
+  "_recorded": false,
+  "systemMessage": "NEW approval recorded",
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "Approval 001-feature recorded."
+  }
+}
