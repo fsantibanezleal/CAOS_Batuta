@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": ["Agent(Explore)", "Agent(Plan)", "Agent(model:fable)"],
+    "ask": ["Agent(model:opus)"]
+  },
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "allowManagedHooksOnly": true,
+  "allowManagedPermissionRulesOnly": false
+}
