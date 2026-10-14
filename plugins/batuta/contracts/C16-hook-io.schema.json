@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contract_id": "C16",
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "title": "Hook input and output",
-  "description": "Input subset read per hook event and the outputs Batuta emits. Fixtures are payloads shaped like Claude Code hook payloads with secrets removed; no contract_version because these are not batuta-owned files.",
+  "description": "Input subset read per hook event and the outputs Batuta emits (1.1 adds the UserPromptSubmit output, as the Claude Code hooks reference defines it). Fixtures are payloads shaped like Claude Code hook payloads with secrets removed; no contract_version because these are not batuta-owned files.",
   "type": "object",
   "$defs": {
     "input_SessionStart": {
@@ -153,6 +153,62 @@
         "hookSpecificOutput"
       ],
       "additionalProperties": true
+    },
+    "output_userpromptsubmit": {
+      "type": "object",
+      "properties": {
+        "continue": {
+          "type": "boolean"
+        },
+        "stopReason": {
+          "type": "string"
+        },
+        "suppressOutput": {
+          "type": "boolean"
+        },
+        "systemMessage": {
+          "type": "string",
+          "description": "Message shown to the human."
+        },
+        "terminalSequence": {
+          "type": "string"
+        },
+        "decision": {
+          "const": "block",
+          "description": "block stops the prompt; it may come with a reason."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Optional (the reference does not require it); when present it is non-blank. Shown to the human when decision is block; not added to context."
+        },
+        "hookSpecificOutput": {
+          "type": "object",
+          "properties": {
+            "hookEventName": {
+              "const": "UserPromptSubmit"
+            },
+            "additionalContext": {
+              "type": "string",
+              "maxLength": 10000,
+              "description": "Added to the model's context alongside the submitted prompt."
+            },
+            "sessionTitle": {
+              "type": "string"
+            },
+            "suppressOriginalPrompt": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "hookEventName"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Output of a UserPromptSubmit hook (1.1): the universal fields, the top-level block decision and hookSpecificOutput, closed. Fields as listed in the Claude Code hooks reference, section UserPromptSubmit decision control."
     },
     "output_sessionstart": {
       "type": "object",

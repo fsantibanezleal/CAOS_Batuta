@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C34",
+  "contract_version": "1.0",
+  "title": "Contract-tests record",
+  "description": "The outcome of the contract tests at one commit: a map from a repository-relative test path, optionally followed by `::<name>`, to pass, fail or skip. Produced by `gate tests-record`, read by `skeleton check --tests-record`. An empty results map means nothing ran. The key shape (a relative path, then an optional non-empty `::name`) is a semantic check in batuta_lib/contract.py.",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "The commit the tests ran at: 7 to 40 lowercase hex digits."
+    },
+    "generated": {
+      "type": "string",
+      "format": "date",
+      "description": "The date the record was produced, YYYY-MM-DD."
+    },
+    "results": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "skip"
+        ]
+      },
+      "description": "Key: a POSIX relative test path, optionally `::<name>` (no leading slash or ./, no backslash, drive letter or .. segment). Value: pass, fail or skip."
+    }
+  },
+  "required": [
+    "contract_version",
+    "commit",
+    "generated",
+    "results"
+  ],
+  "additionalProperties": false
+}

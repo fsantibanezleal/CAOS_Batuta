@@ -1,0 +1,9 @@
+{
+  "_recorded": false,
+  "_why": "permissionDecision belongs to PreToolUse, not to UserPromptSubmit",
+  "_expect": "permissionDecision",
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "permissionDecision": "deny"
+  }
+}

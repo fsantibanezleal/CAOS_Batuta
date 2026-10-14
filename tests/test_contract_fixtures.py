@@ -17,6 +17,8 @@ RINGS = ["adopt", "trial", "assess", "caution"]
 MODEL_STATUS = ["planned", "training", "candidate", "released", "retired"]
 # Contracts whose artifacts are not batuta-owned files and carry no contract_version of their own.
 NO_ARTIFACT_VERSION = {"C04", "C16", "C14", "C26", "C27", "C31", "C32", "C02", "C03", "C05", "C09", "C10", "C18", "C19", "C21", "C22", "C23", "C24", "C33"}
+# Contracts raised by an additive minor revision after the freeze (ADR-0006): the schema version, not the artifact version.
+MINOR_REVISED = {"C01": "1.1", "C16": "1.1"}
 UNKNOWN_KEYS_REJECTED = {"C06", "C07", "C08", "C27"}
 
 
@@ -43,7 +45,7 @@ class EveryContractIsPresent(unittest.TestCase):
             with self.subTest(contract=cid):
                 s = json.loads(schema_path(cid).read_text(encoding="utf-8"))
                 self.assertEqual(s["contract_id"], cid)
-                self.assertEqual(s["contract_version"], "1.0")
+                self.assertEqual(s["contract_version"], MINOR_REVISED.get(cid, "1.0"))
 
     def test_every_schema_loads_in_the_supported_subset(self):
         for cid in IDS:
@@ -63,7 +65,8 @@ class EveryContractIsPresent(unittest.TestCase):
             with self.subTest(contract=cid):
                 s = json.loads(schema_path(cid).read_text(encoding="utf-8"))
                 self.assertIn("contract_version", s["required"])
-                self.assertEqual(s["properties"]["contract_version"]["const"], "1.0")
+                version = s["properties"]["contract_version"]
+                self.assertEqual(version.get("const") or version["enum"][0], "1.0")   # the artifact version stays 1.0 (C01 also accepts 1.1)
 
     def test_c04_is_a_markdown_table_whose_row_has_the_seven_columns_of_the_delegation_tool(self):
         s = json.loads(schema_path("C04").read_text(encoding="utf-8"))
