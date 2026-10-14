@@ -54,6 +54,9 @@ _DELIVERABLE = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*\**\s*(D\d+)\b")
 _HEADER_FIELD = re.compile(r"^\s*[-*]\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.+?)\s*$")
 _EOL = re.compile(r"(\r\n|\n)")
 _TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# every character str.splitlines treats as a line boundary: none may reach a header line or a one-line state entry
+LINE_BOUNDARY = re.compile("[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]")
+_FENCE_LINE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
 _BACKTICKED = re.compile(r"`[^`\n]+`")
 
@@ -86,12 +89,35 @@ def project_config(args):
 
 
 def find_project_root(cwd):
-    """The nearest folder at or above `cwd` that holds `.batuta/batuta.json`, else `cwd` itself."""
+    """The nearest folder at or above `cwd` that holds `.batuta/` (the user's own Batuta home does not count) or `.git`,
+    else `cwd` itself."""
     start = Path(cwd).resolve()
+    try:
+        home = config.home_dir().resolve()
+    except OSError:
+        home = None
     for folder in [start, *start.parents]:
-        if (folder / config.PROJECT_DIR / config.FILE_NAME).is_file():
+        marker = folder / config.PROJECT_DIR
+        if (marker / config.FILE_NAME).is_file():
+            return folder
+        if marker.is_dir() and (home is None or marker.resolve() != home):
+            return folder
+        if (folder / ".git").exists():
             return folder
     return start
+
+
+def unlisted_briefs(folder):
+    """Names of the `*.brief.md` files in a delegation folder that have no row in its ledger (empty without a ledger)."""
+    folder = Path(folder)
+    ledger = folder / "ledger.md"
+    if not ledger.is_file():
+        return []
+    try:
+        listed = {Path(r["Brief"].replace("\\", "/")).name for r in ledger_rows(read_text(ledger))[1]}
+    except OSError:
+        return []
+    return sorted(p.name for p in folder.glob("*.brief.md") if p.name not in listed)
 
 
 def delegation_dir(root, cfg):
@@ -140,14 +166,17 @@ def sections(text, keep_fences=False):
     `keep_fences` keeps them, for sections whose evidence is a quoted command and its output."""
     found = {}
     current = None
-    in_fence = False
-    for line in text.lstrip("﻿").splitlines():
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
+    fence = None   # (character, length) of the open fence: ``` or ~~~, three or more, closed by the same character
+    for line in text.lstrip("\ufeff").splitlines():
+        marker = _FENCE_LINE.match(line)
+        if fence is None and marker:
+            fence = (marker.group(1)[0], len(marker.group(1)))
             if keep_fences and current is not None:
                 current.append(line)
             continue
-        if in_fence:
+        if fence is not None:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= fence[1] and not marker.group(2).strip():
+                fence = None
             if keep_fences and current is not None:
                 current.append(line)
             continue
@@ -602,7 +631,7 @@ def new_brief(root, cfg, slug, topic, agent, title, model=None, kind=None, sizin
     except ValueError as exc:
         raise DelegationError(f"--date {date!r} is not an ISO date") from exc
     for label, value in (("--title", title), ("--slug", slug), ("--sizing", sizing or ""), ("--report", str(report or ""))):
-        if re.search(r"[\r\n]", value):
+        if LINE_BOUNDARY.search(value):
             raise DelegationError(f"{label} must be on one line")
     folder = delegation_dir(root, cfg)
     ledger = folder / "ledger.md"

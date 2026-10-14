@@ -72,6 +72,9 @@ def _lint(args):
         return emit(AREA, "lint", [item("FAIL", f"brief unreadable: {exc}", path.as_posix())], "brief lint failed", _wants_json(args))
     own = delegation.header_fields(text).get("id")
     errors, warnings = delegation.lint_brief(text, delegation.open_siblings(path.resolve().parent, own))
+    folder = path.resolve().parent
+    warnings = warnings + [f"{name} is in {folder.name}/ but has no row in its ledger (never deleted; add the row or remove the file)"
+                           for name in delegation.unlisted_briefs(folder)]
     items = [item("FAIL", e, path.as_posix()) for e in errors] + [item("WARN", w, path.as_posix()) for w in warnings]
     if not errors:
         items.insert(0, item("OK", "brief passes the lint", path.as_posix()))

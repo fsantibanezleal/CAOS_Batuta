@@ -18,9 +18,12 @@ was held once) the stop is allowed and, if the report would still have blocked, 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,7 +48,7 @@ _PLACEHOLDERS = (
     re.compile(r"\blorem ipsum\b", re.IGNORECASE),
     re.compile(r"<(?:what|fill|describe|insert|path|slug|topic|evidence)[^<>\n]{0,60}>", re.IGNORECASE),
 )
-_FENCE_BLOCK = re.compile(r"^\s*```.*?^\s*```[^\n]*$", re.MULTILINE | re.DOTALL)
+_FENCE_BLOCK = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[^\n]*$", re.MULTILINE | re.DOTALL)
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
 _EXIT_CODE = re.compile(r"\b(?:exit(?:ed)?(?:\s+(?:code|status))?|rc|returncode)\s*[:=]?\s*(-?\d+)", re.IGNORECASE)
 _NONE_BODY = re.compile(r"^\W*(?:none|n/a|not applicable)\b", re.IGNORECASE)
@@ -323,6 +326,8 @@ def _ledger_status(args):
             return emit(AREA, "ledger-status", items + [item("REFUSED", f"ledger not written: {exc}", ledger.as_posix())],
                         "report ledger-status refused", _wants_json(args))
         items.append(item("CHANGED", f"{len(changes)} status value(s) written", ledger.as_posix()))
+    for name in delegation.unlisted_briefs(ledger.parent):
+        items.append(item("WARN", f"{name} has no row in the ledger (never deleted; add the row or remove the file)", ledger.as_posix()))
     not_accepted = [r["ID"] for r in rows if delegation.accepted_value(r.get("Accepted", "")) != "yes"]
     if not_accepted:
         items.append(item("OK", "not yet accepted by the parent: " + ", ".join(not_accepted)))
@@ -427,22 +432,64 @@ def _state_path(root, cfg):
     return delegation.delegation_dir(root, cfg) / STATE_NAME
 
 
+MAX_KEY_CHARS = 512
+MAX_STATE_ENTRIES = 1000
+
+
+def _stored(key):
+    """A key as one state line: line boundaries become spaces, a key over MAX_KEY_CHARS is stored as its SHA-256."""
+    flat = delegation.LINE_BOUNDARY.sub(" ", key)
+    return hashlib.sha256(flat.encode("utf-8")).hexdigest() if len(flat) > MAX_KEY_CHARS else flat
+
+
 def _held_before(root, cfg, key):
     try:
-        return key in delegation.read_text(_state_path(root, cfg)).splitlines()
+        return _stored(key) in delegation.read_text(_state_path(root, cfg)).split("\n")
     except OSError:
         return False
 
 
 def _remember(root, cfg, key):
-    """Record that this agent was held once (the hook's own once-per-agent state, independent of `stop_hook_active`)."""
+    """Record that this agent was held once (the hook's own once-per-agent state, independent of `stop_hook_active`).
+
+    At most MAX_STATE_ENTRIES keys are kept (the oldest dropped first) and the file is replaced atomically."""
     try:
         path = _state_path(root, cfg)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8", newline="") as fh:
-            fh.write(key.replace("\n", " ") + "\n")
+        with delegation._Lock(path):
+            try:
+                lines = [x for x in delegation.read_text(path).split("\n") if x]
+            except OSError:
+                lines = []
+            entry = _stored(key)
+            if entry in lines:
+                return
+            lines = (lines + [entry])[-MAX_STATE_ENTRIES:]
+            fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".state-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+                    fh.write("\n".join(lines) + "\n")
+                delegation._replace(tmp, path)
+                tmp = None
+            finally:
+                if tmp is not None:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
     except OSError:
         pass   # the block still stands; only the extra loop guard is lost
+
+
+def _report_digest(payload, cwd):
+    """SHA-256 of the report file the final message names ("none" when it names none or the file cannot be read)."""
+    named = _paths(payload.get("last_assistant_message", "")).get("REPORT")
+    if not named:
+        return "none"
+    try:
+        return hashlib.sha256(_at(named, cwd).read_bytes()).hexdigest()
+    except OSError:
+        return "none"
 
 
 def _log_unverified(cwd, cfg, payload, brief, reason):
@@ -468,7 +515,8 @@ def _decide(payload):
     reason, message, brief = _verdict(payload, cwd)
     if reason is None:
         return _result(message=message)
-    key = _agent_key(payload)
+    agent = _agent_key(payload)
+    key = None if agent is None else f"{agent}|{_report_digest(payload, cwd)}"   # a new report is held once again
     if payload.get("stop_hook_active") or (key is not None and _held_before(root, cfg, key)):
         log = _log_unverified(root, cfg, payload, brief, reason)
         return _result(message=f"subagent-stop: the agent was already held once; the stop is allowed and UNVERIFIED is logged in {log.as_posix()}")
