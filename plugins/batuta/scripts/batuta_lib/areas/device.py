@@ -113,12 +113,18 @@ def _tree(folder):
     return out
 
 
-def _templates_dir():
-    """Templates next to the plugin (a device copy), else the repository's `templates/` above `plugins/<name>`."""
-    for candidate in (PLUGIN_ROOT / "templates", PLUGIN_ROOT.parents[1] / "templates"):
-        if candidate.is_dir():
-            return candidate
-    return None
+def _templates_dirs():
+    """The template folders a deploy mirrors, lowest precedence first: in a repository checkout (`plugins/<name>/`
+    below a folder holding `.git`) the repository's `templates/` (presets, user core, knowledge) and then the
+    plugin's own `templates/` (the areas' templates), which wins on a shared path; in a device copy, its
+    `templates/` alone (it already holds the union). A folder above a device copy is never read."""
+    found = []
+    repo = PLUGIN_ROOT.parents[1]
+    if PLUGIN_ROOT.parent.name == "plugins" and (repo / ".git").exists() and (repo / "templates").is_dir():
+        found.append(repo / "templates")
+    if (PLUGIN_ROOT / "templates").is_dir():
+        found.append(PLUGIN_ROOT / "templates")
+    return found
 
 
 def _load_config(args, items):
@@ -272,8 +278,7 @@ def _source_tree():
     manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
     if manifest.is_file():
         desired[".claude-plugin/plugin.json"] = manifest.read_bytes()
-    templates = _templates_dir()
-    if templates is not None:
+    for templates in _templates_dirs():
         for rel, data in _tree(templates).items():
             desired[f"templates/{rel}"] = data
         for rel, data in _tree(templates / "user" / "reference").items():
