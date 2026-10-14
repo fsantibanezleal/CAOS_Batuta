@@ -25,7 +25,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 from dataclasses import dataclass, field
+from xml.etree import ElementTree
 from pathlib import Path, PurePosixPath
 
 from batuta_lib import contract as core
@@ -340,15 +342,16 @@ def static_test_ids(path, text):
 
 
 def compare_listing(path, base, listing):
-    """Problems of a runtime listing against the tests a locked file defined: one for each test that is not listed and one for each
-    that is listed only as skipped. `listing` is [{"id", "skipped"}] with unittest ids (`pkg.module.Class.test`) or pytest node ids
-    (`path::Class::test`)."""
+    """Problems of the recorded run of the tests against the tests a locked file defined: one for each test that did not run at
+    all, one for each that only skipped and one for each that only reported an expected failure. `listing` is [{"id", "outcome"}]
+    (or {"id", "skipped"}) with unittest ids (`pkg.module.Class.test`) or pytest ids (`path::Class::test`, `module.Class.test`);
+    a parametrized id (`test_x[1]`) is compared by the part before `[`: one case that ran is enough."""
     stem = PurePosixPath(path).stem
     problems = []
     for cls, name in base:
         hits = []
         for entry in listing:
-            ident = entry["id"]
+            ident = re.sub(r"\[.*\]$", "", entry["id"])
             if "::" in ident:
                 parts = ident.split("::")
                 file_ok = PurePosixPath(parts[0]).stem == stem
@@ -360,10 +363,14 @@ def compare_listing(path, base, listing):
             if match:
                 hits.append(entry)
         label = f"{path}::{cls + '.' if cls else ''}{name}"
+        states = [h.get("outcome") or ("skipped" if h.get("skipped") else "passed") for h in hits]
         if not hits:
             problems.append(f"locked test {label} disappears from the runtime listing")
-        elif all(h["skipped"] for h in hits):
-            problems.append(f"locked test {label} is skipped at runtime")
+        elif not any(s in ("passed", "failed", "error", "unexpected success") for s in states):
+            if "expected failure" in states:
+                problems.append(f"locked test {label} is reported as an expected failure at runtime")
+            else:
+                problems.append(f"locked test {label} is skipped at runtime")
     return problems
 
 
@@ -379,42 +386,82 @@ def parse_unittest_listing(output):
     raise ValueError("no listing in the output")
 
 
-# Lists, as JSON, the tests unittest discovery finds with the arguments given, and whether each is skipped by a decorator.
-LISTING_SCRIPT = (
-    "import json, sys, unittest\n"
+def parse_junit(text):
+    """[{"id", "outcome"}] from a pytest JUnit XML report: passed, failed, error, skipped or expected failure."""
+    root = ElementTree.fromstring(text)
+    out = []
+    for case in root.iter("testcase"):
+        ident = f"{case.get('classname')}.{case.get('name')}" if case.get("classname") else case.get("name", "")
+        outcome = "passed"
+        for child in case:
+            if child.tag == "failure":
+                outcome = "failed"
+            elif child.tag == "error":
+                outcome = "error"
+            elif child.tag == "skipped":
+                outcome = "expected failure" if child.get("type") == "pytest.xfail" else "skipped"
+        out.append({"id": ident, "outcome": outcome})
+    return out
+
+
+# Runs the tests unittest discovery finds with the arguments given and prints, as the last line, a JSON list of the outcome of each
+# test id: passed, failed, error, skipped, expected failure or unexpected success. Whatever skipped a test, at run time, shows here.
+RUN_SCRIPT = (
+    "import io, json, os, sys, unittest\n"
     "start, pattern, top = sys.argv[1:4]\n"
-    "suite = unittest.TestLoader().discover(start, pattern=pattern, top_level_dir=top or None)\n"
+    "class Rec(unittest.TextTestResult):\n"
+    "    def __init__(self, *a, **k):\n"
+    "        super().__init__(*a, **k)\n"
+    "        self.rec = []\n"
+    "    def addSuccess(self, t):\n"
+    "        super().addSuccess(t); self.rec.append((t.id(), 'passed'))\n"
+    "    def addFailure(self, t, e):\n"
+    "        super().addFailure(t, e); self.rec.append((t.id(), 'failed'))\n"
+    "    def addError(self, t, e):\n"
+    "        super().addError(t, e); self.rec.append((t.id(), 'error'))\n"
+    "    def addSkip(self, t, r):\n"
+    "        super().addSkip(t, r); self.rec.append((t.id(), 'skipped'))\n"
+    "    def addExpectedFailure(self, t, e):\n"
+    "        super().addExpectedFailure(t, e); self.rec.append((t.id(), 'expected failure'))\n"
+    "    def addUnexpectedSuccess(self, t):\n"
+    "        super().addUnexpectedSuccess(t); self.rec.append((t.id(), 'unexpected success'))\n"
     "out = []\n"
-    "def walk(s):\n"
-    "    for t in s:\n"
-    "        if isinstance(t, unittest.TestSuite):\n"
-    "            walk(t)\n"
-    "        else:\n"
-    "            m = getattr(t, getattr(t, '_testMethodName', ''), None)\n"
-    "            skipped = bool(getattr(type(t), '__unittest_skip__', False) or getattr(m, '__unittest_skip__', False))\n"
-    "            out.append({'id': t.id(), 'skipped': skipped})\n"
-    "walk(suite)\n"
-    "print(json.dumps(out))\n"
+    "if os.path.isdir(start):\n"
+    "    suite = unittest.TestLoader().discover(start, pattern=pattern, top_level_dir=top or None)\n"
+    "    res = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0, resultclass=Rec).run(suite)\n"
+    "    out = [{'id': i, 'outcome': o} for i, o in res.rec]\n"
+    "sys.stdout.write('\\n' + json.dumps(out) + '\\n')\n"
 )
 
 
-def listing_command(command, tests_is_package):
-    """(argv, parser) that lists the tests the configured test command would run, or None when it is neither pytest nor unittest
-    discovery. The default command gets `-t .` when `tests` is a package, as the replay gives it."""
+def listing_command(command, tests_is_package, junit_dir=None):
+    """(argv, parser) that RUNS the tests the configured test command would run and reads each test's outcome, or None when the
+    command is neither pytest nor unittest discovery. unittest: a result class that records the outcome per test id; pytest: a
+    JUnit XML report in `junit_dir`. The default command gets `-t .` when `tests` is a package, as the replay gives it."""
     tokens = shlex.split(command)
     if not tokens:
         return None
     if "pytest" in tokens or Path(tokens[0]).stem.lower() in ("pytest", "py.test"):
-        argv = [t for t in tokens if t != "{tests}"] + ["--collect-only", "-q"]
+        report = Path(junit_dir or ".") / f"tdd-junit-{uuid.uuid4().hex}.xml"
+
+        def parse(_output):
+            try:
+                return parse_junit(report.read_text(encoding="utf-8"))
+            except (OSError, ElementTree.ParseError) as exc:
+                raise ValueError(f"no JUnit report ({exc})") from exc
+            finally:
+                report.unlink(missing_ok=True)
+
+        argv = [t for t in tokens if t != "{tests}"] + ["-q", "--junitxml", str(report)]
         argv[0] = _executable(argv[0])
-        return argv, parse_pytest_listing
+        return argv, parse
     if "unittest" in tokens and "discover" in tokens:
         def option(flag, default):
             return tokens[tokens.index(flag) + 1] if flag in tokens and tokens.index(flag) + 1 < len(tokens) else default
         top = option("-t", "")
         if command.strip() == DEFAULT_TEST_COMMAND and tests_is_package:
             top = "."
-        return [sys.executable, "-c", LISTING_SCRIPT, option("-s", "."), option("-p", "test*.py"), top], parse_unittest_listing
+        return [sys.executable, "-c", RUN_SCRIPT, option("-s", "."), option("-p", "test*.py"), top], parse_unittest_listing
     return None
 
 
@@ -459,6 +506,8 @@ class Checker:
         self.blobs = None
         self._base_signature = None
         self.task_commits = {}       # task id -> [(commit, kind)] of its tagged commits, oldest first
+        self.commit_pos = {}         # sha -> position in the walk
+        self.approved_moves = {}     # path -> (position of the commit, "deleted" or "renamed", new path): under an approved request
 
     # -- output
     def fail(self, message, path=None):
@@ -550,6 +599,7 @@ class Checker:
 
     def _commit(self, c, seen_red, reds, approved_removed, approved_renames):
         short = c.sha[:7]
+        self.commit_pos[c.sha] = len(self.commit_pos)
         merge = len(c.parents) > 1
         parent = c.parents[0] if c.parents else None
         subject = c.message.lstrip().split("\n", 1)[0]
@@ -600,9 +650,11 @@ class Checker:
             if ok:
                 if ch.status == "D":
                     approved_removed.add(ch.path)
+                    self.approved_moves[ch.path] = (self.commit_pos[c.sha], "deleted", None)
                 elif ch.status == "R":
                     approved_removed.add(ch.old)
                     approved_renames.append((ch.old, ch.path))
+                    self.approved_moves[ch.old] = (self.commit_pos[c.sha], "renamed", ch.path)
             else:
                 how = {"D": " (deleted)", "R": f" (renamed to {ch.path})"}.get(ch.status, "")
                 self.fail(f"{label} at {short} touches locked test {hit[0]}{how}: {why}", hit[0])
@@ -913,7 +965,7 @@ class Checker:
             self._cleanup(tree, work)
 
     def _list_tests(self, sha, listing):
-        """The tests the runner lists at a commit, [{"id", "skipped"}], or an error text."""
+        """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text."""
         argv, parse = listing
         try:
             with self._worktree(sha) as tree:
@@ -929,8 +981,10 @@ class Checker:
             return None, f"cannot read the listing of the tests ({exc})"
 
     def _runtime_compare(self, reds):
-        """The locked tests of a task must still be listed, and not skipped, at each later [green] and [refactor] commit of the
-        task, whatever configuration, hook or import did it. The ids come from the test file as the red commit has it."""
+        """The locked tests of a task are RUN at each later [green] and [refactor] commit of the task and each must run: not be
+        missing, skipped or reported as an expected failure, whatever configuration, hook, patch or import did it. The ids come
+        from the test file as the red commit has it; an approved rename maps them to the new file, an approved deletion removes
+        them."""
         warned = False
         for c, task, _changes in reds:
             seq = self.task_commits.get(task, [])
@@ -968,8 +1022,14 @@ class Checker:
                     self.fail(f"task {task} at {lc.sha[:7]}: {error}; the locked tests cannot be shown to run")
                     continue
                 for path, ids in same.items():
-                    for problem in compare_listing(path, ids, found):
-                        self.fail(f"task {task} at {lc.sha[:7]}: {problem}", path)
+                    target = path
+                    move = self.approved_moves.get(path)
+                    if move and self.commit_pos.get(lc.sha, -1) >= move[0]:
+                        if move[1] == "deleted":
+                            continue   # an approved deletion removes the ids
+                        target = move[2]   # an approved rename maps the old ids to the new file
+                    for problem in compare_listing(target, ids, found):
+                        self.fail(f"task {task} at {lc.sha[:7]}: {problem}", target)
 
     def blobs_for_replay(self, sha, path):
         """A file at a commit (the batch reader is closed by now, so one plain git read)."""
@@ -979,7 +1039,9 @@ class Checker:
         """(argv, parser) that lists the tests at a commit, from the configured test command; None when it is not pytest or
         unittest discovery. Whether `tests` is a package at that commit decides `-t .` for the default command."""
         has_init = show(self.repo, commit.sha, "tests/__init__.py") is not None
-        return listing_command(self.s.test_command, has_init)
+        temp_root = Path(self.s.temp_root)
+        temp_root.mkdir(parents=True, exist_ok=True)
+        return listing_command(self.s.test_command, has_init, temp_root)
 
     def _cleanup(self, tree, work):
         try:

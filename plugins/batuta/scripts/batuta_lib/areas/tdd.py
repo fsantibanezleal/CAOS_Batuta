@@ -7,7 +7,8 @@ or focus marker crept in and that assertions never decreased, with `--replay` to
 
 Optional `tdd` block of batuta.json (C01 1.1, closed): `test_command` (default unittest discovery),
 `replay_timeout_seconds` (integer, at least 1, default 300), `lock_file` (a `.json` that is not batuta.json, default
-`.batuta/test-locks.json`), `markers` (an array of names replacing the default marker list).
+`.batuta/test-locks.json`), `markers` (an array of names that adds to the default marker list; a 1.0 document may still use
+the legacy object per language, which adds too).
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
@@ -60,9 +61,19 @@ def _resolved_config(args, root, base_sha):
 def _settings(args, root, base_sha=None):
     resolved = _resolved_config(args, root, base_sha)
     block = resolved.config.get("tdd", {})
-    # the `tdd` block has the shape of C01 1.1 whatever the document's own version says (a 1.0 document may carry any value
-    # there, and then it is checked here): the keys are test_command, replay_timeout_seconds, lock_file and markers
-    problems = core.validate_def(block, core.load_schema(core.find_schema(config.contracts_dir(), "C01")), "tdd")
+    # the `tdd` block has the shape of C01 1.1 (a 1.0 document may carry any value there, and then it is checked here): the keys
+    # are test_command, replay_timeout_seconds, lock_file and markers. A 1.0 document may still carry the legacy form of
+    # `markers`, an object per language ({"python": [...], "javascript": [...]}).
+    legacy_markers, legacy_problems = None, []
+    if resolved.config.get("contract_version") != "1.1" and isinstance(block, dict) and isinstance(block.get("markers"), dict):
+        legacy_markers = block["markers"]
+        block = {k: v for k, v in block.items() if k != "markers"}
+        for lang, names in legacy_markers.items():
+            if lang not in ("python", "javascript"):
+                legacy_problems.append(f"/markers: unknown language {lang!r} (python or javascript)")
+            elif not (isinstance(names, list) and all(isinstance(n, str) and n for n in names)):
+                legacy_problems.append(f"/markers/{lang}: expected a list of non-empty names")
+    problems = legacy_problems + core.validate_def(block, core.load_schema(core.find_schema(config.contracts_dir(), "C01")), "tdd")
     lock = block.get("lock_file") if isinstance(block, dict) else None
     if isinstance(lock, str) and not problems and (not lock.endswith(".json") or lock.rsplit("/", 1)[-1] == config.FILE_NAME):
         problems.append("/lock_file: a JSON file that is not the configuration itself (ends in .json, never batuta.json)")
@@ -75,8 +86,10 @@ def _settings(args, root, base_sha=None):
         s.replay_timeout = float(block["replay_timeout_seconds"])
     if "lock_file" in block:
         s.lock_path = block["lock_file"]
-    if "markers" in block:   # an array of names that replaces the default list of every language
+    if "markers" in block:   # an array of names that adds to the default list of every language, never removes one
         s.markers = {"python": list(block["markers"]), "javascript": list(block["markers"])}
+    elif legacy_markers is not None:
+        s.markers = {lang: list(names) for lang, names in legacy_markers.items()}
     if getattr(args, "lock", None):
         why = lk.bad_relpath(args.lock)
         if why:
@@ -364,7 +377,7 @@ def _hook_result(message=None):
     return {"contract_version": "1.0", "exit_code": 0, "output": out}
 
 
-_TYPED = re.compile(r"\s*(approve|reject) ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) ([0-9a-f]{12})(?![0-9a-f])")
+_TYPED = re.compile(r"(approve|reject) ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) ([0-9a-f]{12})")
 
 
 def typed_decision(payload):
@@ -373,7 +386,8 @@ def typed_decision(payload):
     row hash. Never blocks and never raises: anything else gives an empty result."""
     try:
         prompt = payload.get("prompt") if isinstance(payload, dict) else None
-        match = _TYPED.match(prompt) if isinstance(prompt, str) else None
+        # the first line of the prompt, trimmed, is the phrase and nothing else: words after it on the line decide nothing
+        match = _TYPED.fullmatch(prompt.split("\n", 1)[0].strip()) if isinstance(prompt, str) else None
         if match is None:
             return _hook_result()
         decision, request_id, digest = match.groups()

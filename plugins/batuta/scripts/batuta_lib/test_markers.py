@@ -232,13 +232,21 @@ def _js_patterns(marker):
 # ------------------------------------------------------------------ Python
 
 
-def _import_target(call):
-    """The module a call to `importlib.import_module('m')` or `__import__('m')` imports, else None."""
-    if isinstance(call, ast.Call) and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
-        func = call.func
-        name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
-        if name in ("import_module", "__import__"):
-            return call.args[0].value
+def _is_import_call(call):
+    func = call.func if isinstance(call, ast.Call) else None
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+    return name in ("import_module", "__import__")
+
+
+def _import_target(node):
+    """The module named by `importlib.import_module('m')`, `__import__('m')` or `sys.modules['m']`, else None."""
+    if isinstance(node, ast.Call) and _is_import_call(node):
+        if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+            return node.args[0].value
+    elif isinstance(node, ast.Subscript) and _dotted(node.value) == "sys.modules":
+        key = node.slice
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            return key.value
     return None
 
 
@@ -280,10 +288,19 @@ def _aliases(tree):
     return out
 
 
+_CANONICAL_PREFIXES = (("unittest.case.", "unittest."), ("unittest.async_case.", "unittest."), ("_pytest.outcomes.", "pytest."),
+                       ("_pytest.mark.structures.", "pytest.mark."), ("_pytest.", "pytest."))
+
+
 def _canonical(dotted, aliases):
+    """The name with its alias resolved and the modules that define the public names mapped to them (`unittest.case.skip` is
+    `unittest.skip`, `_pytest.outcomes.skip` is `pytest.skip`)."""
     first, _, rest = dotted.partition(".")
     if first in aliases:
-        return aliases[first] + ("." + rest if rest else "")
+        dotted = aliases[first] + ("." + rest if rest else "")
+    for old, new in _CANONICAL_PREFIXES:
+        if dotted.startswith(old):
+            return new + dotted[len(old):]
     return dotted
 
 
@@ -327,6 +344,8 @@ def _python_markers(path, text, markers):
             module = _getattr_module(node, aliases)
             if module:
                 found[f"getattr({module}, ...)"] += 1
+            if _is_import_call(node) and _import_target(node) is None:
+                found["import of a module by a computed name"] += 1   # nothing static can follow where it leads
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             candidates.extend(d for d in node.decorator_list if not isinstance(d, ast.Call))
             if not isinstance(node, ast.ClassDef) and node.name in COLLECTION_FUNCTIONS:
@@ -513,7 +532,7 @@ def _python_assertions(path, text, extra_modules=()):
 
 def weakening_markers(path, text, markers=None):
     """Counter of the weakening markers in a file (keyed by the name as written, or resolved for Python). `markers` is
-    `{"python": [...], "javascript": [...]}` and replaces the default list of a language it names. A Python file that
+    `{"python": [...], "javascript": [...]}` and adds to the default list of a language it names. A Python file that
     does not parse raises UnparsableTestFile. The settings files of the test runner are read for options that deselect
     tests."""
     if _base(path) in INI_NAMES:
@@ -521,7 +540,8 @@ def weakening_markers(path, text, markers=None):
     lang = language_of(path)
     if lang is None:
         return Counter()
-    names = list((markers or {}).get(lang) or DEFAULT_MARKERS[lang])
+    # a configured name adds to the defaults: a project cannot remove a default marker by configuration
+    names = list(DEFAULT_MARKERS[lang]) + [m for m in (markers or {}).get(lang, []) if m not in DEFAULT_MARKERS[lang]]
     if lang == "python":
         return _python_markers(path, text, names)
     code, with_strings = strip_js(text), strip_js(text, keep_strings=True)

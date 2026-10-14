@@ -27,8 +27,8 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   the operating-system account, never an environment variable, as Decided by. Or `change-request show <id>` prints the
   phrase `approve CR-001 <12 hex>` (the first 12 hex digits of the SHA-256 of that row's normalized text): the person types it
   as a prompt, and the UserPromptSubmit handler `tdd-change-request` (`HOOKS` of this area) records the decision, Decided by
-  `typed prompt`, only when the prompt starts with the phrase and the row is still `open` with that hash; it never blocks and
-  never raises. Request ids are `CR-NNN`, unique across features because the id is the commit trailer. Waived: keystrokes
+  `typed prompt`, only when the first line of the prompt, trimmed, is exactly the phrase (words after it on that line decide
+  nothing) and the row is still `open` with that hash; it never blocks and never raises. Request ids are `CR-NNN`, unique across features because the id is the commit trailer. Waived: keystrokes
   injected into a console by another process attached to it (the same class as F-02 of the spec unit); the guards unit
   closes it by denying agents the command and every direct run of the hook launcher.
 - A request is opened, then decided in a commit of its own, then used: `check` fails a row that is born `approved` or
@@ -52,7 +52,8 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   TypeScript `it.only`, `describe.only`, `test.only`, `it.skip`, `describe.skip`, `test.skip`, `xit`, `xdescribe`,
   `test.todo`, `describe.todo`, `it.todo`, `fit`, `fdescribe`, `xtest`, also through a member prefix, brackets and
   destructuring and variable aliases (`const t = it; t.only(...)`). Python aliases are resolved through `import`,
-  `importlib.import_module('m')`, `__import__('m')` and name assignments (`u = unittest`, `s = unittest.skip`). `conftest.py`,
+  `importlib.import_module('m')`, `__import__('m')`, `sys.modules['m']`, the defining modules (`unittest.case.skip` is
+  `unittest.skip`, `_pytest.*` is `pytest.*`) and name assignments (`u = unittest`, `s = unittest.skip`). `conftest.py`,
   an `__init__.py` under a test folder and the runner settings (`pytest.ini`, `tox.ini`, `setup.cfg`, the pytest section of
   `pyproject.toml`) are read for the same markers and for what deselects tests (`--deselect`, `--ignore`, `-k`, `-m "not"`,
   `python_files`, `testpaths`, `norecursedirs`...), and a `load_tests` function, `pytest_collection_modifyitems` or
@@ -75,13 +76,20 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   own test command once: the configured `tdd.test_command` (the token `{tests}` stands for the red's test files), else
   `python -m unittest discover -s tests -p "test_*.py"` from the checkout root, with `-t .` when `tests` is a package. A red
   counts only when a test of its own failed or errored; exit 0, exit 5, `Ran 0 tests` and the failure of somebody else's
-  test do not. The worktree is removed on success, failure and timeout. `--replay` also compares, at runtime, the tests of each
-  locked file with the red commit's (read from the file as the red commit has it): at every later `[green]` and `[refactor]`
-  commit of the task, the unittest loader (or `pytest --collect-only -q` when the configured command is pytest) must still
-  list each locked test, not skipped by a decorator; a test that disappears or is skipped fails, whatever configuration, hook
-  or import did it. A test command that is neither pytest nor unittest discovery gets a `WARN` that the comparison was not run.
+  test do not. The worktree is removed on success, failure and timeout. `--replay` also RUNS, at every later `[green]` and
+  `[refactor]` commit of a task, the tests of the project (unittest discovery with a result class that records each test id's
+  outcome, or pytest with a JUnit XML report in the temp root) and compares the outcomes of the locked tests with the tests the
+  red commit's file defines: each locked test must have run, not be skipped and not be reported as an expected failure,
+  whatever configuration, hook, patch or import did it (`setattr` on `setUp`, a `SkipTest` raised from a fixture, a module-level
+  patch). An approved rename maps the ids to the new file, an approved deletion removes them; a parametrized pytest id is
+  compared by the part before `[` (one case that ran is enough). A test command that is neither pytest nor unittest discovery
+  gets a `WARN` that the comparison was not run.
+- Known limits of the static rules: a skip built from a name made at run time in a test that is not locked is not seen, except
+  `import_module` or `__import__` with a computed name, which is itself flagged; the runtime run above is the control for
+  locked tests. A skip raised inside a test body at run time is seen by the run only as `skipped`.
 - Optional `tdd` block of `batuta.json`, the closed block of C01 1.1 (also checked here in a 1.0 document): `test_command`,
   `replay_timeout_seconds` (an integer, at least 1, default 300), `lock_file` (a `.json` that is not `batuta.json`, default
-  `.batuta/test-locks.json`), `markers` (an array of names that replaces the default list of every language). Git 2.30 or newer
-  is required.
+  `.batuta/test-locks.json`), `markers` (an array of names that adds to the default list of every language, so a project cannot remove a default marker;
+  a 1.0 document may still carry the legacy object per language, `{"python": [...], "javascript": [...]}`, which adds too). Git
+  2.30 or newer is required.
 - Exit codes: 0 ok, 1 a failure or refusal, 2 warnings only.
