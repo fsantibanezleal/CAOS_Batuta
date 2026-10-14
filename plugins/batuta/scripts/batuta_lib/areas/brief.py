@@ -45,6 +45,9 @@ def _new(args):
     try:
         made = delegation.new_brief(root, cfg, args.slug, args.topic, args.agent, args.title, model=args.model, kind=args.kind,
                                     sizing=args.sizing, report=args.report, date=args.date)
+    except delegation.LedgerLockError as exc:
+        return emit(AREA, "new", [item("FAIL", f"the ledger is locked by another writer, nothing written: {exc}")],
+                    "brief new failed", _wants_json(args))
     except delegation.LedgerError as exc:
         return emit(AREA, "new", [item("REFUSED", f"the ledger would not satisfy C04, nothing written: {exc}")],
                     "brief new refused", _wants_json(args))

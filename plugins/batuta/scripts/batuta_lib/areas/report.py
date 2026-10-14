@@ -259,6 +259,8 @@ def row_status(root, row):
     try:
         brief_text = delegation.read_text(_resolve(root, row["Brief"]))
     except OSError:
+        if current in ("accepted", "lost"):   # the parent's decision is not undone because a file was archived
+            return current, f"brief missing: {row['Brief']} (status kept)", "WARN"
         return "defective", f"brief missing: {row['Brief']}", "FAIL"
     report = _resolve(root, row["Report"])
     if not report.is_file():
@@ -409,6 +411,40 @@ def _verdict(payload, cwd):
     return None, None, lines["BRIEF"]
 
 
+STATE_NAME = "subagent-stop.state"
+
+
+def _agent_key(payload):
+    """What identifies one agent run across its stop attempts: its transcript, else its agent id; None when neither is sent."""
+    for field_name in ("agent_transcript_path", "agent_id"):
+        value = payload.get(field_name)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _state_path(root, cfg):
+    return delegation.delegation_dir(root, cfg) / STATE_NAME
+
+
+def _held_before(root, cfg, key):
+    try:
+        return key in delegation.read_text(_state_path(root, cfg)).splitlines()
+    except OSError:
+        return False
+
+
+def _remember(root, cfg, key):
+    """Record that this agent was held once (the hook's own once-per-agent state, independent of `stop_hook_active`)."""
+    try:
+        path = _state_path(root, cfg)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8", newline="") as fh:
+            fh.write(key.replace("\n", " ") + "\n")
+    except OSError:
+        pass   # the block still stands; only the extra loop guard is lost
+
+
 def _log_unverified(cwd, cfg, payload, brief, reason):
     folder = delegation.delegation_dir(cwd, cfg)
     folder.mkdir(parents=True, exist_ok=True)
@@ -424,16 +460,20 @@ def _decide(payload):
     if not isinstance(payload, dict):
         return _result(message="subagent-stop: the payload is not a JSON object; the stop is allowed")
     cwd = Path(payload.get("cwd") or ".")
+    root = delegation.find_project_root(cwd)   # the project's configuration decides where the log goes, not the cwd alone
     try:
-        cfg = config.load(None, project_root=cwd).config
+        cfg = config.load(None, project_root=root).config
     except config.ConfigError as exc:
         return _result(message=f"subagent-stop: the configuration cannot be used ({exc}); the stop is allowed")
     reason, message, brief = _verdict(payload, cwd)
     if reason is None:
         return _result(message=message)
-    if payload.get("stop_hook_active"):
-        log = _log_unverified(cwd, cfg, payload, brief, reason)
+    key = _agent_key(payload)
+    if payload.get("stop_hook_active") or (key is not None and _held_before(root, cfg, key)):
+        log = _log_unverified(root, cfg, payload, brief, reason)
         return _result(message=f"subagent-stop: the agent was already held once; the stop is allowed and UNVERIFIED is logged in {log.as_posix()}")
+    if key is not None:
+        _remember(root, cfg, key)
     return _result(_block(reason))
 
 

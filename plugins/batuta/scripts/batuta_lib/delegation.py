@@ -11,6 +11,7 @@ that must not be used unless asked for, overlapping write scopes, a long deliver
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import os
 import re
@@ -34,6 +35,9 @@ AGENTS = {
 }
 KINDS = ("implement", "job", "skeleton", "docs", "review", "research", "lookup", "run")
 CPD_KINDS = ("implement", "job", "skeleton")   # the kinds whose briefs carry the contract-first sections
+SPEC_KINDS = ("implement", "job", "skeleton", "docs")   # the kinds whose briefs need Definitions and Spec
+CPD_SECTIONS = ("adr constraints", "sizing reference", "contracts", "invariants and edge cases", "missing-data behavior",
+                "environment and limits", "owner prerequisites", "shared files", "must refute", "production-path check")
 MAX_DELIVERABLES = 8
 LEDGER_COLUMNS = ("ID", "Agent", "Model", "Brief", "Report", "Status", "Accepted")
 OPTIONAL_COLUMNS = ("Provider", "Tokens in", "Tokens out", "Cost USD", "Superseded by", "Notes")
@@ -50,6 +54,8 @@ _DELIVERABLE = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*\**\s*(D\d+)\b")
 _HEADER_FIELD = re.compile(r"^\s*[-*]\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.+?)\s*$")
 _EOL = re.compile(r"(\r\n|\n)")
 _TOPIC = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
+_BACKTICKED = re.compile(r"`[^`\n]+`")
 
 
 class DelegationError(ValueError):
@@ -58,6 +64,10 @@ class DelegationError(ValueError):
 
 class LedgerError(DelegationError):
     """The ledger would not satisfy C04 after the change, or cannot be written."""
+
+
+class LedgerLockError(LedgerError):
+    """The ledger lock stayed taken by another writer (not a C04 problem)."""
 
 
 # ------------------------------------------------------------------ configuration and paths
@@ -73,6 +83,15 @@ def project_config(args):
     if resolved.source == "defaults":
         warnings.append("WARN no batuta.json found; using the built-in defaults of C01")
     return root, resolved, warnings
+
+
+def find_project_root(cwd):
+    """The nearest folder at or above `cwd` that holds `.batuta/batuta.json`, else `cwd` itself."""
+    start = Path(cwd).resolve()
+    for folder in [start, *start.parents]:
+        if (folder / config.PROJECT_DIR / config.FILE_NAME).is_file():
+            return folder
+    return start
 
 
 def delegation_dir(root, cfg):
@@ -216,6 +235,51 @@ def shared_scopes(text, siblings):
     return out
 
 
+def _check_items(lines):
+    """The items of a Checks list as (id or start of text, text), continuation lines joined to their item."""
+    items = []
+    for line in lines:
+        match = _ITEM.match(line)
+        if match:
+            items.append([match.group(1)])
+        elif items and line.strip():
+            items[-1].append(line.strip())
+    out = []
+    for parts in items:
+        body = " ".join(parts)
+        ident = re.match(r"\**(C\d+)\b", body)
+        out.append((ident.group(1) if ident else body[:30], body))
+    return out
+
+
+def structure_errors(text, kind, existing):
+    """Required sections, deliverables and check commands counted outside code fences only (a fenced example is not the
+    document's own structure). A problem the C02 messages in `existing` already name is not repeated."""
+    found = sections(text)
+    required = ["goal", "context and background", "out of scope", "checks", "deliverables"]
+    if kind in SPEC_KINDS:
+        required += ["definitions", "spec"]
+    if kind in CPD_KINDS:
+        required += list(CPD_SECTIONS)
+    known = " ".join(existing).lower()
+    out = []
+    for name in required:
+        body = find_section(found, name)
+        if (body is None or not "".join(body).strip()) and name not in known:
+            out.append(f"section '{name}' is missing or empty outside code fences")
+    if find_section(found, "deliverables") is not None or "deliverable" not in known:
+        try:
+            deliverable_ids(text)
+        except DelegationError as exc:
+            if "deliverable" not in known:
+                out.append(str(exc))
+    if kind in CPD_KINDS:
+        for ident, body in _check_items(find_section(found, "checks") or []):
+            if not _BACKTICKED.search(body) and body[:25] not in " ".join(existing):
+                out.append(f"check {ident} has no backticked command (each check is a command with its expected result)")
+    return out
+
+
 def lint_brief(text, siblings=None):
     """(errors, warnings) of a brief: the C02 contract, unfilled template slots and the rules a schema cannot hold."""
     errors, warnings = [], []
@@ -225,6 +289,7 @@ def lint_brief(text, siblings=None):
     schema_path = contract.find_schema(config.contracts_dir(), "C02")
     errors.extend(contract.validate_markdown(text, contract.load_schema(schema_path), contract.load_sections_spec(schema_path)))
     header = header_fields(text)
+    errors.extend(structure_errors(text, header.get("kind", ""), errors))
     agent = header.get("agent", "")
     model = header.get("model", "").split()[0].lower() if header.get("model") else ""
     if model == "fable":
@@ -442,7 +507,7 @@ class _Lock:
                 except OSError:
                     pass
                 if time.monotonic() > deadline:
-                    raise LedgerError(f"the ledger lock {self.path.name} stayed taken for {int(LOCK_TIMEOUT_SECONDS)} s")
+                    raise LedgerLockError(f"the ledger lock {self.path.name} stayed taken for {int(LOCK_TIMEOUT_SECONDS)} s")
                 time.sleep(0.01)
 
     def __exit__(self, *_exc):
@@ -475,7 +540,7 @@ def _replace(src, dst):
             time.sleep(0.05)
 
 
-def update_ledger(path, mutate, before_replace=None):
+def update_ledger(path, mutate, before_replace=None, _locked=False):
     """Apply `mutate(text) -> text` to the ledger file atomically and return the new text.
 
     The whole new file is written to a temp file in the same folder, the ledger is re-read just before the replace and,
@@ -483,7 +548,7 @@ def update_ledger(path, mutate, before_replace=None):
     kept). The result must satisfy C04 or `LedgerError` is raised and the file is untouched. `before_replace` is a test hook."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with _Lock(path):
+    with (contextlib.nullcontext() if _locked else _Lock(path)):
         for _attempt in range(10):
             base = _read_retry(path)
             new = mutate(base)
@@ -536,30 +601,41 @@ def new_brief(root, cfg, slug, topic, agent, title, model=None, kind=None, sizin
         dt.date.fromisoformat(date)
     except ValueError as exc:
         raise DelegationError(f"--date {date!r} is not an ISO date") from exc
+    for label, value in (("--title", title), ("--slug", slug), ("--sizing", sizing or ""), ("--report", str(report or ""))):
+        if re.search(r"[\r\n]", value):
+            raise DelegationError(f"{label} must be on one line")
     folder = delegation_dir(root, cfg)
     ledger = folder / "ledger.md"
-    taken = set()
-    if ledger.is_file():
-        taken = {r["ID"] for r in ledger_rows(read_text(ledger))[1]}
-    ident, n = f"{topic}-{date}", 2
-    while ident in taken or (folder / f"{ident}.brief.md").exists():
-        ident = f"{topic}-{date}-{n}"
-        n += 1
-    brief = folder / f"{ident}.brief.md"
-    report_path = Path(report).resolve() if report else folder / f"{ident}.report.md"
-    try:
-        rel_brief, rel_report = brief.relative_to(root).as_posix(), report_path.relative_to(root).as_posix()
-    except ValueError as exc:
-        raise DelegationError("the brief and the report must lie inside the project root: the ledger holds relative paths") from exc
-    temp_root = str((cfg.get("roots") or {}).get("temp", "")).replace("\\", "/") or "<temp root>"
-    text = render_template(kind, {"title": title, "id": ident, "agent": agent, "model": model, "report": report_path.as_posix(),
-                                  "brief": brief.as_posix(), "sizing": sizing or "", "temp_root": temp_root})
     folder.mkdir(parents=True, exist_ok=True)
-    brief.write_text(text, encoding="utf-8", newline="\n")
-    row = {"ID": ident, "Agent": agent, "Model": model, "Brief": rel_brief, "Report": rel_report, "Status": "drafted", "Accepted": "no"}
-    try:
-        update_ledger(ledger, lambda current: ledger_add_row(current, row, title=slug))
-    except (LedgerError, OSError):
-        brief.unlink()
-        raise
+    temp_root = str((cfg.get("roots") or {}).get("temp", "")).replace("\\", "/") or "<temp root>"
+    with _Lock(ledger):   # the id is chosen and its file created inside the ledger lock: two writers never pick one id
+        taken = set()
+        if ledger.is_file():
+            taken = {r["ID"] for r in ledger_rows(_read_retry(ledger))[1]}
+        ident, n = f"{topic}-{date}", 2
+        while True:
+            brief = folder / f"{ident}.brief.md"
+            if ident not in taken:
+                try:
+                    handle = open(brief, "x", encoding="utf-8", newline="\n")   # exclusive: never an existing file
+                    break
+                except FileExistsError:
+                    pass
+            ident = f"{topic}-{date}-{n}"
+            n += 1
+        try:
+            with handle:
+                report_path = Path(report).resolve() if report else folder / f"{ident}.report.md"
+                try:
+                    rel_brief, rel_report = brief.relative_to(root).as_posix(), report_path.relative_to(root).as_posix()
+                except ValueError as exc:
+                    raise DelegationError("the brief and the report must lie inside the project root: the ledger holds relative paths") from exc
+                handle.write(render_template(kind, {"title": title, "id": ident, "agent": agent, "model": model,
+                                                    "report": report_path.as_posix(), "brief": brief.as_posix(),
+                                                    "sizing": sizing or "", "temp_root": temp_root}))
+            row = {"ID": ident, "Agent": agent, "Model": model, "Brief": rel_brief, "Report": rel_report, "Status": "drafted", "Accepted": "no"}
+            update_ledger(ledger, lambda current: ledger_add_row(current, row, title=slug), _locked=True)
+        except BaseException:
+            brief.unlink()   # only the file this call created (the exclusive create above)
+            raise
     return {"id": ident, "brief": brief, "report": report_path, "ledger": ledger, "notes": notes}
