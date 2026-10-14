@@ -372,14 +372,21 @@ def _check_c12(inst, schema):
     return errs
 
 
+C16_UNIVERSAL_OUTPUT = ("continue", "stopReason", "suppressOutput", "systemMessage", "terminalSequence")
+
+
 def _check_c16(inst, schema):
     if "hookSpecificOutput" in inst:
         out = inst["hookSpecificOutput"]
         event = out.get("hookEventName") if isinstance(out, dict) else None
-        name = {"PreToolUse": "output_pretooluse", "SessionStart": "output_sessionstart"}.get(event)
+        name = {"PreToolUse": "output_pretooluse", "SessionStart": "output_sessionstart",
+                "UserPromptSubmit": "output_userpromptsubmit"}.get(event)
         if name is None:
             return [f"/hookSpecificOutput/hookEventName: unsupported output event {event!r}"]
-        return validate_def(inst, schema, name)
+        errs = validate_def(inst, schema, name)
+        if not errs and name == "output_userpromptsubmit" and "decision" in inst and "reason" not in inst:
+            errs.append("/reason: a block decision states why in reason (a non-empty text)")
+        return errs
     if "decision" in inst:
         return validate_def(inst, schema, "output_block")
     if "hook_event_name" in inst:
@@ -388,6 +395,8 @@ def _check_c16(inst, schema):
         if not isinstance(event, str) or name not in schema.get("$defs", {}):
             return [f"/hook_event_name: unsupported hook event {event!r}"]
         return validate_def(inst, schema, name)
+    if any(k in inst for k in C16_UNIVERSAL_OUTPUT):
+        return validate_def(inst, schema, "output_userpromptsubmit")   # the universal fields alone, as a UserPromptSubmit hook may print
     return ["/: not a hook input or output (no hook_event_name, decision or hookSpecificOutput)"]
 
 
@@ -524,6 +533,16 @@ def _check_c01(inst, schema):
             # the lane is quoted whole and never cut into pieces, so a caller that rewrites quoted values (the configuration
             # loader, which validates the expanded document) can print it as written
             errs.append(f"/dispatch/lanes: lane {lane!r} needs a key of dispatch.providers named after it")
+    return errs
+
+
+def _check_c34(inst, schema):
+    errs = []
+    for key in inst["results"]:
+        path, sep, name = key.partition("::")
+        if _bad_relpath(path) or (sep and not name.strip()):
+            errs.append(f"/results/{key}: a key is a relative test path (no leading '/', '..', backslash or drive letter) "
+                        "optionally followed by '::' and a non-empty test name")
     return errs
 
 
@@ -872,7 +891,7 @@ def check_commit_message(text, schema=None):
 
 
 SEMANTIC = {"C01": _check_c01, "C06": _check_c06, "C07": _check_c07, "C12": _check_c12, "C25": _check_c25, "C26": _check_c26,
-            "C27": _check_c27, "C28": _check_c28, "C30": _check_c30, "C31": _check_c31}
+            "C27": _check_c27, "C28": _check_c28, "C30": _check_c30, "C31": _check_c31, "C34": _check_c34}
 SEMANTIC_TEXT = {"C32": check_commit_message}   # contract id -> check(text, schema) for a plain-text artifact
 
 
@@ -1151,31 +1170,61 @@ def _glob_prefix(path):
     return path[: path.rfind("/", 0, cut) + 1]
 
 
+def _bare(path):
+    return not path.endswith("/") and not _is_glob(path)
+
+
 def scopes_overlap(a, b):
+    """Two write scopes overlap when they are the same path, one contains the other (a bare name is a prefix of every path
+    under it, so `pipeline` meets `pipeline/x.py`), or globs meet. Compared case-folded: one folder on Windows and macOS."""
+    a, b = a.casefold(), b.casefold()
     if a == b:
         return True
     for left, right in ((a, b), (b, a)):
-        if left.endswith("/") and right.startswith(left):
+        folder = left if left.endswith("/") else None if _is_glob(left) else left + "/"
+        if folder is not None and right.startswith(folder):
             return True
         if _is_glob(left):
             if not _is_glob(right) and not right.endswith("/") and fnmatch.fnmatchcase(right, left):
                 return True
-            if _is_glob(right) or right.endswith("/"):
-                base = _glob_prefix(right) if _is_glob(right) else right
-                pre = _glob_prefix(left)
-                if base.startswith(pre) or pre.startswith(base):
-                    return True
+            pre = _glob_prefix(left)
+            if _is_glob(right):
+                base = _glob_prefix(right)
+            elif right.endswith("/"):
+                base = right
+            else:
+                base = right + "/"
+            if (not _bare(right) or pre) and (base.startswith(pre) or pre.startswith(base)):
+                return True
     return False
 
 
-_FENCED = re.compile(r"^[ \t]*```.*?^[ \t]*```[^\n]*$", re.MULTILINE | re.DOTALL)
+_FENCE_OPEN = re.compile(r"( {0,3})(`{3,}|~{3,})(.*)\Z")
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
 _EXIT = re.compile(r"\b(?:exit(?:ed)?(?:\s+(?:code|status))?|rc|returncode)\s*[:=]?\s*(-?\d+)", re.IGNORECASE | re.ASCII)
 
 
+def strip_fences(text):
+    """The text without fenced code blocks, as CommonMark defines them: a fence opens with three or more backticks or tildes
+    (up to three spaces of indent, an info string after it, none containing a backtick for a backtick fence) and closes
+    with the same character at least as many times and nothing but spaces after; an unclosed fence runs to the end."""
+    out, fence = [], None
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        if fence is None:
+            m = _FENCE_OPEN.match(body)
+            if m and not (m.group(2)[0] == "`" and "`" in m.group(3)):
+                fence = m.group(2)
+                continue
+            out.append(line)
+        elif re.match(r" {0,3}%s{%d,}[ \t]*\Z" % (re.escape(fence[0]), len(fence)), body):
+            fence = None
+    return "".join(out)
+
+
 def prose(text):
     """The text without fenced code blocks and inline code spans (a report may quote what it must not contain)."""
-    return _INLINE_CODE.sub("", _FENCED.sub("", text))
+    return _INLINE_CODE.sub("", strip_fences(text))
 
 
 def cell_path(token):
@@ -1404,7 +1453,7 @@ def validate_markdown(text, schema, spec):
             if any(_matches(r, rule["match"]) for r in named[rule["table"]]) and not compile_pattern(rule["pattern"]).search(body):
                 errs.append(rule.get("message", f"text matching {rule['pattern']!r} required"))
         elif rt == "lines_per_row":
-            unfenced = _FENCED.sub("", body).splitlines()   # a line quoted inside a code block does not count
+            unfenced = strip_fences(body).splitlines()   # a line quoted inside a code block does not count
             matching = [r for r in named[rule["table"]] if _matches(r, rule["match"])]
             if "id_column" in rule:
                 # each matching row needs its own line: `{id}` in the pattern stands for the row's id

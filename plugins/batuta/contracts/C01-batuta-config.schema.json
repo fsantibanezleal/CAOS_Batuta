@@ -1,14 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "contract_id": "C01",
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "title": "Batuta configuration",
   "description": "batuta.json: roots, roles (model and effort per role), caps, gates, context budgets.",
   "type": "object",
   "properties": {
     "contract_version": {
       "type": "string",
-      "const": "1.0"
+      "enum": [
+        "1.0",
+        "1.1"
+      ],
+      "description": "1.0 documents stay valid; 1.1 adds the optional tdd block."
     },
     "version": {
       "type": "integer",
@@ -195,6 +199,36 @@
         "memory_index_lines"
       ],
       "additionalProperties": true
+    },
+    "tdd": {
+      "type": "object",
+      "properties": {
+        "test_command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The command `tdd` replays to run the project's tests, as one string (for example `python -m unittest`)."
+        },
+        "replay_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Seconds the replay of the test command may run before it is stopped. The tool's default applies when absent."
+        },
+        "lock_file": {
+          "type": "string",
+          "pattern": "^(?![\\s\\S]*(^|/)\\.\\.?(/|$))(?![\\s\\S]*//)[^/\\\\:\\x00-\\x1f][^\\\\:\\x00-\\x1f]*$",
+          "description": "Relative path of the test lock file (C07) inside the repository. Default `.batuta/test-locks.json`."
+        },
+        "markers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Weakening markers `tdd check` looks for in a changed locked test (for example `skip`). Replaces the tool's default list when present."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Optional (1.1) settings of the tdd area; every key is optional and an absent key means the tool's default."
     },
     "dispatch": {
       "type": "object",
