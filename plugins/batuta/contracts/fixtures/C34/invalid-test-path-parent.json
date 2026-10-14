@@ -1,0 +1,10 @@
+{
+  "_why": "a test path never leaves the repository",
+  "_expect": "outside",
+  "contract_version": "1.0",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "generated": "2026-10-13",
+  "results": {
+    "../outside/test_a.py::test_x": "pass"
+  }
+}
