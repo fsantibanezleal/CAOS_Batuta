@@ -27,8 +27,6 @@ _SHELL_WORD = re.compile(r"\b(?:powershell|pwsh)(?:\.exe)?\b", re.IGNORECASE)
 _EMPTY_QUOTES = re.compile(r"\"\"|''")
 _QUOTE_IN_WORD = re.compile(r"(?<=\w)[\"'](?=\w)")
 _NESTED = (
-    re.compile(r"'([^']*)'"),
-    re.compile(r"\"((?:[^\"\\]|\\.)*)\""),
     re.compile(r"\$\(([^()]*)\)"),
     re.compile(r"`([^`]*)`"),
 )
@@ -61,6 +59,27 @@ def decoded_commands(command: str) -> list:
     return found
 
 
+def quoted_bodies(text: str) -> list[str]:
+    """The bodies of the '...' and "..." strings of `text` (a backslash escapes the next character inside double quotes);
+    one linear pass, with no pattern that can backtrack."""
+    out: list[str] = []
+    i, n = 0, len(text)
+    dead: set[str] = set()          # a quote character with no closing one: later ones are not scanned again
+    while i < n:
+        ch = text[i]
+        if ch in "'\"" and ch not in dead:
+            j = i + 1
+            while j < n and text[j] != ch:
+                j += 2 if (ch == '"' and text[j] == "\\") else 1
+            if j < n:
+                out.append(text[i + 1:j])
+                i = j
+            else:
+                dead.add(ch)
+        i += 1
+    return out
+
+
 def nested_texts(command: str, depth: int = 3) -> list[str]:
     """Quoted strings, `$(...)` and backtick bodies found in `command`, recursively (a nested command is matched too)."""
     out: list[str] = []
@@ -68,12 +87,11 @@ def nested_texts(command: str, depth: int = 3) -> list[str]:
     pending = [(command, depth)]
     while pending:
         text, left = pending.pop()
-        for pattern in _NESTED:
-            for match in pattern.finditer(text):
-                body = match.group(1)
-                if body and body not in seen:
-                    seen.add(body)
-                    out.append(body)
-                    if left > 1:
-                        pending.append((body, left - 1))
+        bodies = quoted_bodies(text) + [m.group(1) for pattern in _NESTED for m in pattern.finditer(text)]
+        for body in bodies:
+            if body and body not in seen:
+                seen.add(body)
+                out.append(body)
+                if left > 1:
+                    pending.append((body, left - 1))
     return out

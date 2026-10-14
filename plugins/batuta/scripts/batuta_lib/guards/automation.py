@@ -21,47 +21,58 @@ from . import text as textlib
 NAME = "automation"
 I = re.IGNORECASE
 
+def _gap(stop: str, cls: str = r"[^\n]") -> str:
+    """A run of `cls` characters that never crosses another occurrence of `stop`: a keyword repeated many times is then
+    matched once per keyword, in linear time (a plain `[^\n]*` re-scanned the same tail from every keyword)."""
+    return rf"(?:(?!{stop}){cls})*"
+
+
+_RUN_KEY = r"(?:reg(?:\.exe)?\s+add|New-ItemProperty|Set-ItemProperty|\bsp\b|\bnp\b|New-Item|Registry\]::SetValue)"
+_STARTUP = r"(?:Copy-Item|Move-Item|New-Item|Out-File|Set-Content|CreateShortcut|\bcp\b|\bmv\b|\bln\b)"
+_WSLCONFIG = (r"(?:Set-Content|Add-Content|Out-File|WriteAll\w+|AppendAll\w+|Copy-Item|Move-Item|New-Item|Tee-Object"
+              r"|\bac\b|\bni\b|\bsc\b|\btee\b|\bcp\b|\bmv\b)")
+_WSLCONF = r"(?:\btee\b|sed\s+-i|\bcp\b|\bmv\b)"
+_CLAUDE = r"claude(?:\.exe|\.cmd)?"
+_IEX = r"(?:iex|Invoke-Expression)\b"
+
 RULES = [
     ("scheduled-task", re.compile(r"(?<!Un)Register-ScheduledTask|Register-ScheduledJob|New-ScheduledTask(Trigger|Action|Settings|Principal)?\b"
                                   r"|New-JobTrigger|Set-ScheduledTask|Enable-ScheduledTask|Schedule\.Service", I),
      "creates or changes a Windows scheduled task"),
-    ("scheduled-task", re.compile(r"schtasks(\.exe)?\b[^\n|;&]*[/-](create|change)\b", I),
+    ("scheduled-task", re.compile(r"schtasks(\.exe)?\b" + _gap("schtasks", r"[^\n|;&]") + r"[/-](create|change)\b", I),
      "creates or changes a Windows scheduled task (schtasks)"),
-    ("run-key", re.compile(r"(reg(\.exe)?\s+add|New-ItemProperty|Set-ItemProperty|\bsp\b|\bnp\b|New-Item|Registry\]::SetValue)[^\n]*"
-                           r"[\\/]CurrentVersion[\\/]Run|\breg(\.exe)?\s+import\b", I),
+    ("run-key", re.compile(_RUN_KEY + _gap(_RUN_KEY) + r"[\\/]CurrentVersion[\\/]Run|\breg(\.exe)?\s+import\b", I),
      "adds a logon autostart (Run / RunOnce registry key)"),
-    ("startup-folder", re.compile(r"(Copy-Item|Move-Item|New-Item|Out-File|Set-Content|CreateShortcut|\bcp\b|\bmv\b|\bln\b)[^\n]*"
-                                  r"(Start Menu[\\/]Programs[\\/]Startup|shell:startup)"
+    ("startup-folder", re.compile(_STARTUP + _gap(_STARTUP) + r"(Start Menu[\\/]Programs[\\/]Startup|shell:startup)"
                                   r"|GetFolderPath\(\s*[\"']?(Common)?Startup", I),
      "adds a logon autostart (Startup folder)"),
     ("service", re.compile(r"New-Service\b|\bsc(\.exe)?\s+(create|config)\b|\bnssm(\.exe)?\s+(install|set)\b"
-                           r"|Set-Service\b[^\n]*-StartupType\s+Automatic", I),
+                           r"|Set-Service\b" + _gap("Set-Service") + r"-StartupType\s+Automatic", I),
      "creates or reconfigures a Windows service"),
     ("wmi", re.compile(r"__EventFilter|CommandLineEventConsumer|ActiveScriptEventConsumer|__FilterToConsumerBinding", I),
      "creates a permanent WMI event subscription"),
-    ("wslconfig", re.compile(r"(>>?\s*[\"']?[^\s\"'|;&]*\.wslconfig)|((Set-Content|Add-Content|Out-File|WriteAll\w+|AppendAll\w+|Copy-Item"
-                             r"|Move-Item|New-Item|Tee-Object|\bac\b|\bni\b|\bsc\b|\btee\b|\bcp\b|\bmv\b)[^\n;|]*\.wslconfig)", I),
+    ("wslconfig", re.compile(r">>?\s*[\"']?[^\s\"'|;&>]*\.wslconfig|" + _WSLCONFIG + _gap(_WSLCONFIG, r"[^\n;|]") + r"\.wslconfig", I),
      "writes ~/.wslconfig (vmIdleTimeout=-1 keeps the WSL VM alive forever)"),
-    ("wsl-conf", re.compile(r"(>>?\s*/etc/wsl\.conf)|((\btee\b|sed\s+-i|\bcp\b|\bmv\b)[^\n;|]*/etc/wsl\.conf)", I),
+    ("wsl-conf", re.compile(r">>?\s*/etc/wsl\.conf|" + _WSLCONF + _gap(_WSLCONF, r"[^\n;|]") + r"/etc/wsl\.conf", I),
      "writes /etc/wsl.conf (boot commands)"),
-    ("linux-autostart", re.compile(r"systemctl\s+(-\S+\s+)*(enable|add-wants|add-requires|link|preset)\b|loginctl\s+enable-linger"
-                                   r"|crontab\s+(?!-l\b)\S|>>?\s*/etc/cron|systemd-run\b[^\n]*--on-\w+"
-                                   r"|(?:^|[;&|(\n])\s*at(?:\.exe)?\s+(?:now|\d{1,2}:\d{2}|noon|midnight|tomorrow)\b", I),
+    ("linux-autostart", re.compile(r"systemctl\s+(?:-\S+\s+){0,20}(enable|add-wants|add-requires|link|preset)\b|loginctl\s+enable-linger"
+                                   r"|crontab\s+(?!-l\b)\S|>>?\s*/etc/cron|systemd-run\b" + _gap("systemd-run") + r"--on-\w+"
+                                   r"|(?:^|[;&|(\n])[ \t]*at(?:\.exe)?\s+(?:now|\d{1,2}:\d{2}|noon|midnight|tomorrow)\b", I),
      "installs a Linux autostart (systemd enable, linger, cron or at)"),
-    ("headless-claude", re.compile(r"\bclaude(\.exe|\.cmd)?[\"']?\s+(?:[^\n|;&]*\s)?(-p|--print)\b|claude-code\b[^\n|;&]*\s(-p|--print)\b"
-                                   r"|dangerously-skip-permissions|bypassPermissions", I),
+    ("headless-claude", re.compile(_CLAUDE + r"[\"']?\s+(?:" + _gap(_CLAUDE, r"[^\n|;&]") + r"\s)?(-p|--print)\b|claude-code\b"
+                                   + _gap("claude-code", r"[^\n|;&]") + r"\s(-p|--print)\b|dangerously-skip-permissions|bypassPermissions", I),
      "launches a headless Claude session (spends the subscription with nobody watching)"),
     ("detach", re.compile(r"\bnohup\b|\bsetsid\b|\bdisown\b|\s-w(?:i\w*)?\s+hidden\b|\s-wi\w*\s+1\b|\bpythonw(\.exe)?\b"
-                          r"|schtasks(\.exe)?\b[^\n|;&]*[/-]run\b|Start-ScheduledTask"
-                          r"|\bstart\s+(?:\"[^\"]*\"\s+)?/(b|min)\b|Win32_Process[^\n]*Create|wmic[^\n]*process\s+call\s+create"
-                          r"|(?<![&>|])\s&\s*(?:[);\n]|$)", I),
+                          r"|schtasks(\.exe)?\b" + _gap("schtasks", r"[^\n|;&]") + r"[/-]run\b|Start-ScheduledTask"
+                          r"|\bstart\s+(?:\"[^\"]*\"\s+)?/(b|min)\b|Win32_Process" + _gap("Win32_Process") + r"Create"
+                          r"|wmic" + _gap("wmic") + r"process\s+call\s+create|(?<![&>|])\s&\s*(?:[);\n]|$)", I),
      "detaches or hides a process so it outlives the session (orphans, hidden relaunchers)"),
-    ("decoded-payload", re.compile(r"\b(iex|Invoke-Expression)\b[^\n]*(FromBase64String|DownloadString|-enc\b)", I),
+    ("decoded-payload", re.compile(_IEX + _gap(_IEX) + r"(FromBase64String|DownloadString|-enc\b)", I),
      "runs decoded or downloaded text (the payload cannot be inspected)"),
 ]
 LOOP = re.compile(r"\b(until|while)\b|\bfor\s*\(\s*;\s*;\s*\)", I)
 SLEEP = re.compile(r"\bsleep\b|Start-Sleep", I)
-BOUND = re.compile(r"\btimeout\s+(-\S+\s+)*\d|\bseq\s+\d|\$SECONDS|\bSECONDS\b|\s-(lt|le|gt|ge)\s|\bfor\s+\w+\s+in\b"
+BOUND = re.compile(r"\btimeout\s+(?:-\S+\s+){0,20}\d|\bseq\s+\d|\$SECONDS|\bSECONDS\b|\s-(lt|le|gt|ge)\s|\bfor\s+\w+\s+in\b"
                    r"|deadline|max_?(tries|iter|wait|attempts)|\b\w+\s*<\s*\d", I)
 FUNC_DEF = re.compile(r"(?:\bfunction\s+(?P<a>[A-Za-z_][\w-]*)|(?<![\w-])(?P<b>[A-Za-z_][\w-]*)\s*\(\s*\))\s*\{")
 LOOP_ID, LOOP_WHY = "polling-loop", "polling loop with no bound (wrap it in `timeout <secs>` or add an iteration cap / deadline)"
@@ -88,13 +99,18 @@ EXPLAIN = ["Blocks commands that leave unattended automation behind. Rules (id: 
 
 def self_calling_function(text: str) -> bool:
     """Does a function definition (`f(){ ...; f; }`, `function f { ...; f }`) call itself in its body?"""
-    for m in FUNC_DEF.finditer(text):
+    closing: dict[int, int] = {}          # the position of every `{` mapped to its `}`, found in one pass
+    stack: list[int] = []
+    for i, ch in enumerate(text):
+        if ch == "{":
+            stack.append(i)
+        elif ch == "}" and stack:
+            closing[stack.pop()] = i
+    for count, m in enumerate(FUNC_DEF.finditer(text)):
+        if count >= 200:                  # a hostile input cannot make this quadratic
+            break
         name = m.group("a") or m.group("b")
-        depth, i = 1, m.end()
-        while i < len(text) and depth:
-            depth += (text[i] == "{") - (text[i] == "}")
-            i += 1
-        body = text[m.end():i - 1 if depth == 0 else len(text)]
+        body = text[m.end():closing.get(m.end() - 1, len(text))][:20000]
         if re.search(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", body):
             return True
     return False

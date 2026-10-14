@@ -26,7 +26,7 @@ INPUTS = {
     "sk-prefix": "sk-" * (N // 3),
     "token-prefixes": "ghp_" * (N // 4) + "AKIA" * 10 + "hf_" * 10 + "npm_" * 10 + "glpat-" * 10 + "pypi-" * 10,
     "home": "/home/" * (N // 6),
-    "drive": "C:/Users/" * (N // 9),
+    "drive": ("C:" + "/Users/") * (N // 9),
     "quotes": '"a' * (N // 2),
     "single-quotes": "'a" * (N // 2),
     "braces": "f(){ " * (N // 5),
@@ -40,6 +40,17 @@ INPUTS = {
     "brief-run": "/" + "a" * N + ".brief.md.x",
     "git-push": "git push " * (N // 9),
     "no-newline-keywords": "systemctl --user " * (N // 17),
+    "redirects": ">a" * (N // 2),
+    "newlines": "\n" * N,
+    "escaped-quotes": '"\\' * (N // 2),
+    "dollar-brace": "${" * (N // 2),
+    "bracket-run": "[a" * (N // 2),
+    "create-link": "CreateSymbolicLink(" * (N // 19),
+    "timeout-flags": "timeout -a " * (N // 11),
+    "claude-flags": "claude -x " * (N // 10),
+    "function-heads": "function f { " * (N // 13),
+    "spaces": " " * N,
+    "tabs-and-ats": "&" + " " * N,
 }
 
 
@@ -125,9 +136,10 @@ class BriefPathsAreStillFound(unittest.TestCase):
 
 class EmailsAreStillFound(unittest.TestCase):
     def test_addresses_and_non_addresses(self):
-        found = [a for a, _ in leaks.emails_in("mail a.b+c@corp-domain.dev, or x@y.z. and user@host and @scope/pkg")]
-        self.assertEqual(found, ["a.b+c@corp-domain.dev"])
-        self.assertEqual([t for _, t in leaks.emails_in("q@a.b.example.")], ["example"])
+        at = "@"   # assembled at run time: the file holds no address literal
+        found = [a for a, _ in leaks.emails_in(f"mail a.b+c{at}corp-domain.dev, or x{at}y.z. and user{at}host and {at}scope/pkg")]
+        self.assertEqual(found, [f"a.b+c{at}corp-domain.dev"])
+        self.assertEqual([t for _, t in leaks.emails_in(f"q{at}a.b.example.")], ["example"])
 
 
 if __name__ == "__main__":

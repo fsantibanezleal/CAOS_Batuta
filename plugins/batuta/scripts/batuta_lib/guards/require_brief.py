@@ -17,7 +17,9 @@ NAME = "require-brief"
 LAUNCH_TOOLS = ("Agent", "Task")
 QUICK_AGENTS = ("searcher", "runner")
 MODES = ("deny", "ask", "off")
-BRIEF_PATH = re.compile(r"(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?[^\s\"'`<>|*?]*?\.brief\.md(?!\w)")
+BRIEF_SUFFIX = ".brief.md"
+BRIEF_SPLIT = re.compile(r"[\s\"'`<>|*?]+")     # a path never holds whitespace, a quote or a shell metacharacter
+BRACKETS = re.compile(r"[(\[{=,;]")              # what can sit in front of a path inside a sentence or a link
 BRIEF_NONE = re.compile(r"^\s*BRIEF:\s*none\s*$", re.IGNORECASE)
 EXPLAIN = [
     "Every Agent or Task launch must name a path ending in .brief.md whose file satisfies the brief contract (C02).",
@@ -42,10 +44,19 @@ def last_line(prompt: str) -> bool:
 
 
 def brief_paths(prompt: str) -> list[str]:
+    """Every path in the prompt that ends with `.brief.md`: the prompt is split on whitespace and quotes first, so the work is
+    linear in its length (a lazy pattern over a long run without spaces backtracked quadratically)."""
     seen: list[str] = []
-    for match in BRIEF_PATH.finditer(prompt):
-        if match.group(0) not in seen:
-            seen.append(match.group(0))
+    for token in BRIEF_SPLIT.split(prompt):
+        pos = token.find(BRIEF_SUFFIX)
+        while pos >= 0:
+            end = pos + len(BRIEF_SUFFIX)
+            if end == len(token) or not (token[end].isalnum() or token[end] == "_"):
+                candidate = BRACKETS.split(token[:end])[-1]
+                if candidate not in seen:
+                    seen.append(candidate)
+                break
+            pos = token.find(BRIEF_SUFFIX, pos + 1)
     return seen
 
 

@@ -44,24 +44,23 @@ USER_PATH = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+(?P<n1>[A-Za-z0-9_.-]+)|/home
                        re.IGNORECASE)
 PLACEHOLDER_NAME = re.compile(r"[A-Za-z](\.[A-Za-z])?")      # a, a.b: an example name, not a person
 LOCAL_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._%+-")
-DOMAIN = re.compile(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.([A-Za-z]{2,})")
-EMAIL_SCAN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.([A-Za-z]{2,})")  # declared contacts (small files)
+DOMAIN_RUN = re.compile(r"[A-Za-z0-9.-]{1,255}")   # one bounded run, then split on dots: no nested quantifier
 NOT_TLD = {"png", "jpg", "jpeg", "gif", "svg", "webp", "css", "js", "ts", "json", "md", "py", "html", "txt", "yml", "yaml"}
 DEFAULT_ALLOW_EMAILS = ["*@example.com", "*@example.org", "*@example.net", "*@users.noreply.github.com",
-                        "noreply@anthropic.com", "noreply@github.com", "*.example", "*.invalid"]
+                        "noreply@anthropic.com", "noreply@github.com", "*@github.com", "*.example", "*.invalid"]
 TOKENS = [
-    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
-    ("OpenAI key", re.compile(r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}")),
-    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}")),
-    ("GitHub fine-grained token", re.compile(r"github_pat_[A-Za-z0-9_]{50,}")),
+    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,256}")),
+    ("OpenAI key", re.compile(r"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,256}")),
+    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,255}")),
+    ("GitHub fine-grained token", re.compile(r"github_pat_[A-Za-z0-9_]{50,255}")),
     ("AWS access key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Z])")),
     ("private key block", re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----")),
-    ("Slack token", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,}")),
+    ("Slack token", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,100}")),
     ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{35}")),
-    ("PyPI token", re.compile(r"pypi-[A-Za-z0-9_-]{50,}")),
+    ("PyPI token", re.compile(r"pypi-[A-Za-z0-9_-]{50,512}")),
     ("npm token", re.compile(r"npm_[A-Za-z0-9]{36}")),
-    ("Hugging Face token", re.compile(r"hf_[A-Za-z0-9]{34,}")),
-    ("GitLab token", re.compile(r"glpat-[A-Za-z0-9_-]{20,}")),
+    ("Hugging Face token", re.compile(r"hf_[A-Za-z0-9]{34,256}")),
+    ("GitLab token", re.compile(r"glpat-[A-Za-z0-9_-]{20,100}")),
 ]
 
 
@@ -125,7 +124,8 @@ def declared_emails(root: Path) -> list[str]:
     for name in DECLARING_FILES:
         text = read_text(root / name)
         if text:
-            found += [m.group(0).lower() for m in EMAIL_SCAN.finditer(text) if m.group(1).lower() not in NOT_TLD]
+            for line in text.splitlines():
+                found += [a.lower() for a, tld in emails_in(line) if tld.lower() not in NOT_TLD]
     return found
 
 
@@ -153,6 +153,20 @@ def deny_list_problem(path: Path, root: Path) -> tuple[str, str] | None:
     return None
 
 
+def domain_end(run: str):
+    """(length of the domain at the start of `run`, its top-level label) or None: at least two dot-separated labels, the
+    last one two or more letters; a trailing dot (end of a sentence) is not part of the domain."""
+    labels, length = [], 0
+    for label in run.split("."):
+        if not label:
+            break
+        labels.append(label)
+        length += len(label) + 1
+    if len(labels) < 2 or not (labels[-1].isascii() and labels[-1].isalpha() and len(labels[-1]) >= 2):
+        return None
+    return length - 1, labels[-1]
+
+
 def emails_in(line: str):
     """Yield (address, tld) for the e-mail addresses in a line, found around each `@` (linear in the line length)."""
     start = 0
@@ -166,9 +180,10 @@ def emails_in(line: str):
             i -= 1
         if i == at:
             continue
-        m = DOMAIN.match(line, at + 1, min(len(line), at + 1 + 255))
-        if m:
-            yield line[i:m.end()], m.group(1)
+        run = DOMAIN_RUN.match(line, at + 1)
+        parsed = domain_end(run.group()) if run else None
+        if parsed:
+            yield line[i:at + 1 + parsed[0]], parsed[1]
 
 
 def token_hit(line: str) -> str | None:

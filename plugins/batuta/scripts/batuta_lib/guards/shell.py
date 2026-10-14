@@ -43,7 +43,7 @@ READ_COPY = {"cp", "copy", "copy-item", "scp", "rsync", "mv", "move", "move-item
 PIPE_FED = {"remove-item", "ri", "rm", "del", "erase", "rd", "rmdir"}
 FIND_EXEC = ("-exec", "-execdir", "-ok", "-okdir")
 LINK_TYPES = re.compile(r"symboliclink|junction|hardlink", re.IGNORECASE)
-DOTNET_LINK = re.compile(r"Create(?:Symbolic|Hard)Link\w*\s*\(([^)]*)\)|CreateJunction\w*\s*\(([^)]*)\)", re.IGNORECASE)
+DOTNET_LINK = re.compile(r"Create(?:Symbolic|Hard)Link\w*\s*\(([^)]{0,500})\)|CreateJunction\w*\s*\(([^)]{0,500})\)", re.IGNORECASE)
 QUOTED = re.compile(r"['\"]([^'\"]+)['\"]")
 EXCLUDE_FLAGS = {"--exclude", "--exclude-dir", "--include", "--glob", "-g", "--exclude-from", "--ignore-file"}
 
@@ -57,7 +57,7 @@ class Segment:
     piped: bool = False     # the segment follows a single `|`: it may take its operands from the previous command
 
 
-_VAR = r"(?:\[[\w.\[\]]+\])*\$(?:\w+|\{[^}]+\}|env:\w+)"
+_VAR = r"(?:\[[\w.\[\]]{1,64}\]){0,4}\$(?:\w+|\{[^}]{1,100}\}|env:\w+)"
 _BARE_VAR = re.compile(_VAR)
 _ASSIGN_OP = re.compile(r"[+\-*/%]?=")
 _ASSIGN_WORD = re.compile(_VAR + r"[+\-*/%]?=(.*)", re.DOTALL)
@@ -250,6 +250,11 @@ def _basename(token: str) -> str:
 
 
 def _join_dest(dest: str, source: str) -> str:
+    """Where `source` lands when `dest` is a folder; a destination that looks like a file (its name has an extension and
+    no trailing slash) is not joined, so `cp a.md /tmp/copy.md` is not read as `/tmp/copy.md/a.md`."""
+    name = _basename(dest)
+    if not dest.endswith(("/", "\\")) and "." in name[1:]:
+        return dest
     return dest.rstrip("\\/") + "/" + _basename(source)
 
 
