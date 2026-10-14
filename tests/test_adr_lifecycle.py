@@ -30,6 +30,8 @@ class AdrLifecycle(unittest.TestCase):
                 text = re.sub(rf"^{key}:.*$", f"{key}: {value}", text, flags=re.M)
             else:
                 text = text.replace("\n---\n\n## Context", f"\n{key}: {value}\n---\n\n## Context", 1)
+        for old in (self.root / "docs/decisions").glob(f"ADR-{number:04d}-*.md"):
+            old.unlink()
         write(self.root, f"docs/decisions/ADR-{number:04d}-x.md", text)
 
     def test_new_without_apply_writes_nothing_and_with_apply_takes_the_next_number(self):

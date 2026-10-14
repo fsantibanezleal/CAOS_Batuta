@@ -22,6 +22,11 @@ class Base(unittest.TestCase):
     def lint(self, *extra):
         return run_json("spec", "lint", "--root", self.root, *extra)
 
+    def clear_specs(self):
+        for d in (self.root / "specs").iterdir():
+            if d.name != "000-foundation":
+                shutil.rmtree(d)
+
     def spec_text(self):
         return (self.root / f"specs/{SPEC_ID}/spec.md").read_text(encoding="utf-8")
 
@@ -246,7 +251,7 @@ class SpecLint(Base):
         for fx in sorted((CONTRACTS / "fixtures" / "C05").glob("invalid-*.md")):
             with self.subTest(fixture=fx.name):
                 text = fx.read_text(encoding="utf-8")
-                shutil.rmtree(self.root / "specs" / SPEC_ID)
+                self.clear_specs()
                 m_id = re.search(r"^id:\s*(\S+)", text, re.M)
                 folder = m_id.group(1) if m_id and re.fullmatch(r"\d{3}-[a-z0-9-]+", m_id.group(1)) else "001-validator"
                 write(self.root, f"specs/{folder}/spec.md", text)
@@ -260,7 +265,7 @@ class SpecLint(Base):
         for fx in sorted((CONTRACTS / "fixtures" / "C05").glob("valid-*.md")):
             with self.subTest(fixture=fx.name):
                 text = fx.read_text(encoding="utf-8")
-                shutil.rmtree(self.root / "specs" / SPEC_ID)
+                self.clear_specs()
                 write(self.root, "specs/001-validator/spec.md", text)
                 code, doc, _ = self.lint()
                 self.assertNotIn("front matter", self.fails(doc))

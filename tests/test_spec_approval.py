@@ -306,11 +306,13 @@ class Freeze(Base):
             with self.subTest(fixture=fx.name):
                 for f in self.approvals():
                     f.unlink()
-                write(self.root, f"specs/{SPEC_ID}/approvals/20261013T000000000000Z.json", fx.read_text(encoding="utf-8"))
+                meta = json.loads(fx.read_text(encoding="utf-8"))
+                expect = meta.pop("_expect", "")
+                meta.pop("_why", None)
+                write(self.root, f"specs/{SPEC_ID}/approvals/20261013T000000000000Z.json", json.dumps(meta))
                 code, doc, _ = self.check()
                 self.assertEqual(code, 1)
                 warns = " ".join(messages(doc, "WARN")).lower()
-                expect = json.loads(fx.read_text(encoding="utf-8")).get("_expect", "")
                 self.assertIn(expect.lower(), warns)
                 self.assertNotIn("VALID", " ".join(m for m in messages(doc) if m.startswith("VALID")))
 
