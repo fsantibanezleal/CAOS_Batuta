@@ -279,5 +279,77 @@ class Hygiene(LauncherCase):
         self.assertLess(sorted(samples)[len(samples) // 2], 0.2, samples)
 
 
+REVIEW_FIXTURE = textwrap.dedent("""
+    def t_exit2(payload):
+        raise SystemExit(2)
+
+
+    def t_exit0(payload):
+        raise SystemExit(0)
+
+
+    def t_kbd(payload):
+        raise KeyboardInterrupt()
+
+
+    def t_print(payload):
+        print("stray text on stdout")
+        return {"contract_version": "1.0", "exit_code": 0, "output": None}
+
+
+    def t_print_deny(payload):
+        print("stray text on stdout")
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no"}}}
+
+
+    def t_ctx(payload):
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "SessionStart", "additionalContext": "c" * 9990}}}
+
+
+    def t_ctx_over(payload):
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "SessionStart", "additionalContext": "c" * 10001}}}
+
+
+    HOOKS = {"t-exit2": t_exit2, "t-exit0": t_exit0, "t-kbd": t_kbd, "t-print": t_print, "t-print-deny": t_print_deny,
+             "t-ctx": t_ctx, "t-ctx-over": t_ctx_over}
+""")
+
+
+class ReviewFindings(LauncherCase):
+    """F-12, F-19 and F-20 of the Opus review."""
+
+    def setUp(self):
+        super().setUp()
+        (self.areas / "review_fixture.py").write_text(REVIEW_FIXTURE, encoding="utf-8")
+
+    def test_a_handler_that_raises_system_exit_is_a_non_blocking_error(self):  # F-12
+        for hid in ("t-exit2", "t-exit0", "t-kbd"):
+            with self.subTest(hid=hid):
+                proc = self.run_hook(hid)
+                self.assertEqual(proc.returncode, 1, (proc.stdout, proc.stderr))
+                self.assertIn(hid, proc.stderr)
+                self.assertTrue(proc.stderr.strip())
+                self.assertEqual(proc.stdout.strip(), "")
+
+    def test_the_cap_is_on_the_fields_not_on_the_wrapper(self):  # F-19
+        proc = self.run_hook("t-ctx")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]), 9990)
+        proc = self.run_hook("t-ctx-over")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("10000", proc.stderr)
+
+    def test_stray_stdout_of_a_handler_never_reaches_the_decision_stream(self):  # F-20
+        proc = self.run_hook("t-print")
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertIn("stray text on stdout", proc.stderr)
+        proc = self.run_hook("t-print-deny")
+        self.assertEqual(json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+
 if __name__ == "__main__":
     unittest.main()
