@@ -303,6 +303,19 @@ REVIEW_FIXTURE = textwrap.dedent("""
             "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no"}}}
 
 
+    def t_fd(payload):
+        import os
+        os.write(1, b"stray fd output\\n")
+        return {"contract_version": "1.0", "exit_code": 0, "output": None}
+
+
+    def t_fd_deny(payload):
+        import os
+        os.write(1, b"stray fd output\\n")
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no"}}}
+
+
     def t_ctx(payload):
         return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
             "hookEventName": "SessionStart", "additionalContext": "c" * 9990}}}
@@ -313,7 +326,7 @@ REVIEW_FIXTURE = textwrap.dedent("""
             "hookEventName": "SessionStart", "additionalContext": "c" * 10001}}}
 
 
-    HOOKS = {"t-exit2": t_exit2, "t-exit0": t_exit0, "t-kbd": t_kbd, "t-print": t_print, "t-print-deny": t_print_deny,
+    HOOKS = {"t-exit2": t_exit2, "t-exit0": t_exit0, "t-kbd": t_kbd, "t-print": t_print, "t-print-deny": t_print_deny, "t-fd": t_fd, "t-fd-deny": t_fd_deny,
              "t-ctx": t_ctx, "t-ctx-over": t_ctx_over}
 """)
 
@@ -341,6 +354,15 @@ class ReviewFindings(LauncherCase):
         proc = self.run_hook("t-ctx-over")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("10000", proc.stderr)
+
+    def test_a_handler_writing_to_file_descriptor_one_never_reaches_the_decision_stream(self):  # F-30
+        proc = self.run_hook("t-fd")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertIn("stray fd output", proc.stderr)
+        proc = self.run_hook("t-fd-deny")
+        self.assertEqual(json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertNotIn("stray", proc.stdout)
 
     def test_stray_stdout_of_a_handler_never_reaches_the_decision_stream(self):  # F-20
         proc = self.run_hook("t-print")
