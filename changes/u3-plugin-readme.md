@@ -14,7 +14,7 @@ python scripts/batuta.py spec freeze --check ID
 
 - `size lint` reads `sizing.md` (C23) from the coordination root and the catalog from `docs/contracts/catalog.md` (C22). A
   component has a unit when its line says `(unit: <id>)` for a Parallel units row, or its name appears in a Modules or
-  Parallel units row. Totals are the counts in the Size estimate cells, per owner unit and per repository.
+  Parallel units row; a component without a unit is a warning, never a failure. Totals are the counts in the Size estimate cells, per owner unit and per repository.
 - `tech lint` fails a range, a missing source or a date that does not exist; a date older than `--max-age-days` is a warning.
 - `adr new` and `spec new` are dry runs until `--apply`. A change to a decision is a new ADR that supersedes the old one;
   `adr lint` flags overdue `review-by` dates and broken supersession links.

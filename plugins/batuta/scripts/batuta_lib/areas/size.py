@@ -6,8 +6,9 @@ dependency names a row of the catalog (an absent catalog leaves them unresolved,
 component has a unit, and it prints the estimate totals per unit and per repository.
 
 A component has a unit when its Components line carries `(unit: <id>)` naming a row of the Parallel units table, or when the
-component's name appears in a Modules row (module, responsibility or owner unit) or in a Parallel units row. Exit codes: 0 ok,
-1 failure, 2 warnings.
+component's name appears in a Modules row (module, responsibility or owner unit) or in a Parallel units row. A component
+without a unit is a WARN (decision 29: the check never rejects a document C23 accepts); a marker naming a unit that does
+not exist is a FAIL. Exit codes: 0 ok, 1 failure, 2 warnings.
 """
 import argparse
 import re
@@ -121,7 +122,7 @@ def lint(root=".", sizing=None, catalog=None, config_arg=None):
             items.append(item("FAIL", f"component {name}: unit '{marked.group(1)}' is not a row of the Parallel units table", label))
             unlinked += 1
         elif not any(name.lower() in h for h in haystack):
-            items.append(item("FAIL", f"component {name} has no unit: mark it `(unit: <id>)` or name it in a Modules or Parallel units row", label))
+            items.append(item("WARN", f"component {name} has no unit: mark it `(unit: <id>)` or name it in a Modules or Parallel units row", label))
             unlinked += 1
     if not unlinked:
         items.append(item("OK", "every component has a unit", label))
