@@ -95,6 +95,20 @@ human to type the approval phrase in the prompt or to run `spec approve` in thei
 `spec freeze --check` stay allowed. The waiver of a forged record in the spec area's review rests on this guard
 (requirement SDD-3).
 
+## Change requests belong to the human too
+
+`guard-approvals` also denies every invocation of `batuta.py tdd change-request decide` (the same spellings as for
+`spec approve`) and every write to any `test-change-requests.md` through Edit, Write, MultiEdit, NotebookEdit, a shell
+writer or a link. `tdd change-request new` stays allowed: it appends only `open` rows. The reason of `guard-locked-tests`
+points an agent to `tdd change-request new`, never to a hand edit of the table.
+
+## Validation and timing
+
+The launcher validates every handler result through the contract (`validate_instance("C31", ...)`: the C16 output of
+any event the contract knows), with no event list of its own. Every pattern of the guards and of the leaks scan is
+bounded: keyword gaps never cross another occurrence of the keyword, repetitions are bounded, quoted strings are found
+by a linear scan, and `tests/test_guard_review_timing.py` runs every pattern on 50,000-character hostile inputs.
+
 ## `guard scan` exemptions
 
 Nothing is exempt silently. The scan settings (`guards.scan_ignore`, `protected_branches`, `destructive_disable`) come

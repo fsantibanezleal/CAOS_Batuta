@@ -31,7 +31,6 @@ class ApprovalsGuard(GuardCase):
     ]
     ALLOWED_PATHS = [
         "specs/001-guards/spec.md",
-        "specs/001-guards/test-change-requests.md",
         "docs/approvals/process.md",
         "src/approvals/handler.py",
         "specs/001-guards/approvals-notes.md",

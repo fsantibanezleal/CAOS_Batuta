@@ -10,6 +10,7 @@ spec-approval`): an agent never creates an approval, in any spelling the guards 
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from pathlib import Path
 
@@ -22,13 +23,18 @@ from .locked_tests import INLINE_WRITE, INTERPRETERS
 NAME = "approvals"
 APPROVALS = re.compile(r"(^|/)specs/[^/]+/approvals(/|$)")
 APPROVALS_TEXT = re.compile(r"specs/[^/\s'\"]+/approvals(?:/|\b)")
+TABLE_PATH = re.compile(r"(^|/)test-change-requests\.md$")
+TABLE_TEXT = re.compile(r"test-change-requests\.md")
+DECIDE_CMD = re.compile(r"\btdd\s+change-request\s+decide\b", re.IGNORECASE)
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv"}
 APPROVE_CMD = re.compile(r"\bspec\s+(approve|hook-approval)\b", re.IGNORECASE)
 HOOK_CMD = re.compile(r"\bspec-approval\b", re.IGNORECASE)
 BATUTA_WORD = re.compile(r"^batuta(\.py|\.exe|\.cmd)?$", re.IGNORECASE)
 HOOK_WORD = re.compile(r"^hook(\.py)?$", re.IGNORECASE)
 CONTINUATION = re.compile(r"\\\r?\n|`\r?\n")
 EXPLAIN = [
-    "Denies Edit, Write and shell writes under specs/<spec id>/approvals/ (the C06 approval records).",
+    "Denies Edit, Write and shell writes under specs/<spec id>/approvals/ (the C06 approval records) and to any",
+    "  test-change-requests.md; denies `tdd change-request decide` (`tdd change-request new` stays allowed).",
     "The approval is typed by the human: `approve <spec id> <first 12 hex of the spec sha256>`; an agent never writes it.",
     "Denies every invocation of `batuta.py spec approve`, `batuta.py spec hook-approval` and `hook.py spec-approval`.",
 ]
@@ -55,6 +61,28 @@ def _deny(path: str) -> dict:
                 "Ask the human to type the approval phrase.")
 
 
+def _deny_table(path: str) -> dict:
+    return deny(f"BLOCKED by guard-approvals: {path} is a test change request table (C33). A request is filed with "
+                "`tdd change-request new` (it appends only `open` rows); it is decided by the human, who runs "
+                "`tdd change-request decide` in their own terminal. An agent never edits the table by hand.")
+
+
+def _table_files(root: Path) -> list[str]:
+    """Normalized paths (relative to `root`) of the existing change request tables; the walk is bounded."""
+    found, count = [], 0
+    try:
+        for current, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            count += len(files) + len(dirs)
+            if count > 20000:
+                break
+            if "test-change-requests.md" in (f.lower() for f in files):
+                found.append(norm_path(str(Path(current) / "test-change-requests.md"), root))
+    except OSError:
+        pass
+    return found
+
+
 def _glob_hits(spelling: str, root: Path) -> bool:
     """Does a glob target match an existing file or folder of an approvals folder?"""
     for folder in _approval_dirs(root):
@@ -72,8 +100,11 @@ def decide(payload) -> dict:
     cwd = payload.get("cwd") if isinstance(payload, dict) and isinstance(payload.get("cwd"), str) else None
     if path:
         for root in candidate_roots(payload, [path]):
-            if any(APPROVALS.search(sp) for sp in spellings(path, root, cwd)):
-                return _deny(path)
+            for sp in spellings(path, root, cwd):
+                if APPROVALS.search(sp):
+                    return _deny(path)
+                if TABLE_PATH.search(sp):
+                    return _deny_table(path)
         return allow()
     if not command:
         return allow()
@@ -84,17 +115,39 @@ def decide(payload) -> dict:
             for sp in spellings(token, root, cwd):
                 if APPROVALS.search(sp) or (has_glob(sp) and _glob_hits(sp, root)):
                     return _deny(token)
+                if TABLE_PATH.search(sp) or (has_glob(sp) and any(fnmatch.fnmatchcase(t, sp) for t in _table_files(root))):
+                    return _deny_table(token)
     segs = shell.all_segments(normal)
     flat = normal.replace("\\", "/").lower()
     if any(shell.command_name(s) in INTERPRETERS for s in segs) or "io.file]" in flat:
         texts = [flat] + [t.replace("\\", "/").lower() for t in textlib.nested_texts(normal)]
         if any(APPROVALS_TEXT.search(t) and INLINE_WRITE.search(t) for t in texts):
             return _deny("a path under specs/<id>/approvals/")
+        if any(TABLE_TEXT.search(t) and INLINE_WRITE.search(t) for t in texts):
+            return _deny_table("test-change-requests.md")
+    if _runs_command(normal, ((DECIDE_CMD, BATUTA_WORD),)):
+        return deny("BLOCKED by guard-approvals: a test change request is decided by the human, never by the agent. Ask the "
+                    "human to run `tdd change-request decide` in their own terminal. You may file a request with "
+                    "`tdd change-request new` (it appends only `open` rows).")
     if _runs_approval_command(normal):
         return deny("BLOCKED by guard-approvals: an approval is the human's act, never the agent's. Ask the human to type "
                     f"`{PHRASE}` in the prompt (the hook records it), or to run `spec approve` in their own terminal. "
                     "`spec show` and `spec freeze --check` are fine to run.")
     return allow()
+
+
+def _runs_command(normal: str, rules) -> bool:
+    """Does any segment (after line continuations and obfuscation are removed, nested commands included) hold the words of
+    a rule (a phrase pattern) together with a word named like the tool (`batuta`, `batuta.py`)?"""
+    text = CONTINUATION.sub(" ", normal)
+    for variant in (text, textlib.deobfuscate(text)):
+        for seg in shell.all_segments(variant):
+            words = [w.replace("\\", "/").rsplit("/", 1)[-1] for w in seg.words]
+            joined = " ".join(w.lower() for w in seg.words)
+            for phrase, tool in rules:
+                if phrase.search(joined) and any(tool.match(w) for w in words):
+                    return True
+    return False
 
 
 def _runs_approval_command(normal: str) -> bool:

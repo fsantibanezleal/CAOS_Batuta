@@ -89,10 +89,10 @@ def _reason(path: str, task: str, kind: str) -> str:
         return (f"BLOCKED by guard-locked-tests: {path} is the test lock file (C07), or a folder that holds it; it is "
                 "written only by the tdd area, never edited, moved or deleted by hand or by an agent.")
     return (f"BLOCKED by guard-locked-tests: {path} is a locked test" + (f" (task {task})" if task else "")
-            + ". A locked test changes only through an approved change request: add a row to "
-              "specs/<feature>/test-change-requests.md (C33) with the columns Id, Date, Test path, Requirement, "
-              "Reason, Proposed change, Status (open), Decided by; change the test only after the request is "
-              "approved, then the tdd area re-locks it.")
+            + ". A locked test changes only through an approved change request: file one with `tdd change-request new` "
+              "(it appends an `open` row, columns Id, Date, Test path, Requirement, Reason, Proposed change, Status, Decided by, "
+              "to specs/<feature>/test-change-requests.md (C33)); never edit that table by hand. The human decides the "
+              "request with `tdd change-request decide`; after approval the tdd area re-locks the test.")
 
 
 def _config_ask(token: str) -> dict:
