@@ -71,11 +71,25 @@ class SizeLint(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(any("overlap" in m.lower() or "scope" in m.lower() for m in messages(doc, "FAIL")), messages(doc))
 
-    def test_component_without_a_unit_fails(self):
+    def test_component_without_a_unit_warns_and_never_fails(self):
         self.edit(" (unit: u-api)", "")
         code, doc, _ = self.lint()
-        self.assertEqual(code, 1)
-        self.assertTrue(any("alerts-api" in m and "unit" in m for m in messages(doc, "FAIL")), messages(doc))
+        self.assertEqual(code, 2)
+        self.assertEqual(messages(doc, "FAIL"), [])
+        self.assertTrue(any("alerts-api" in m and "unit" in m for m in messages(doc, "WARN")), messages(doc))
+
+    def test_every_valid_c23_fixture_passes_with_no_fail_line(self):
+        from batuta_lib import spec_model as sm
+        for fx in sorted((CONTRACTS / "fixtures" / "C23").glob("valid-*.md")):
+            with self.subTest(fixture=fx.name):
+                text = fx.read_text(encoding="utf-8")
+                ids = {r["Contract ID"] for r in sm.read_rows("C23", "Boundaries", text, True)}
+                for u in sm.read_rows("C23", "Parallel units", text, True):
+                    ids.update(u["Depends on contract ids"])
+                write(self.root, "docs/contracts/catalog.md", CATALOG_HEAD + "".join(catalog_row(i) for i in sorted(ids)))
+                code, doc, _ = run_json("size", "lint", "--sizing", fx, "--root", self.root)
+                self.assertIn(code, (0, 2))
+                self.assertEqual(messages(doc, "FAIL"), [])
 
     def test_component_naming_a_unit_that_does_not_exist_fails(self):
         self.edit("(unit: u-api)", "(unit: u-nowhere)")
