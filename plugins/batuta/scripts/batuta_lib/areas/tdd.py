@@ -5,9 +5,9 @@ Verbs: `lock` writes the append-only test lock (C07); `change-request new` appen
 commit; `check` proves from git history that every green came after a red, that no locked test changed, that no skip
 or focus marker crept in and that assertions never decreased, with `--replay` to prove each red test fails at its commit.
 
-Optional `tdd` block of batuta.json (C01 allows extra keys): `test_command` (default unittest discovery),
-`replay_timeout_seconds` (default 300), `lock_file` (default `.batuta/test-locks.json`), `markers`
-(`{"python": [...], "javascript": [...]}` replacing the default marker list of a language).
+Optional `tdd` block of batuta.json (C01 1.1, closed): `test_command` (default unittest discovery),
+`replay_timeout_seconds` (integer, at least 1, default 300), `lock_file` (a `.json` that is not batuta.json, default
+`.batuta/test-locks.json`), `markers` (an array of names replacing the default marker list).
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
@@ -60,28 +60,23 @@ def _resolved_config(args, root, base_sha):
 def _settings(args, root, base_sha=None):
     resolved = _resolved_config(args, root, base_sha)
     block = resolved.config.get("tdd", {})
-    if not isinstance(block, dict):
-        raise config.ConfigError("the 'tdd' block of the configuration must be an object")
+    # the `tdd` block has the shape of C01 1.1 whatever the document's own version says (a 1.0 document may carry any value
+    # there, and then it is checked here): the keys are test_command, replay_timeout_seconds, lock_file and markers
+    problems = core.validate_def(block, core.load_schema(core.find_schema(config.contracts_dir(), "C01")), "tdd")
+    lock = block.get("lock_file") if isinstance(block, dict) else None
+    if isinstance(lock, str) and not problems and (not lock.endswith(".json") or lock.rsplit("/", 1)[-1] == config.FILE_NAME):
+        problems.append("/lock_file: a JSON file that is not the configuration itself (ends in .json, never batuta.json)")
+    if problems:
+        raise config.ConfigError("the tdd block does not satisfy C01: " + "; ".join(f"tdd{p}" if p.startswith("/") else p for p in problems))
     s = hist.Settings(temp_root=Path(resolved.config["roots"]["temp"]))
     if "test_command" in block:
-        if not isinstance(block["test_command"], str) or not block["test_command"].strip():
-            raise config.ConfigError("tdd.test_command must be a non-empty string")
         s.test_command = block["test_command"]
     if "replay_timeout_seconds" in block:
-        t = block["replay_timeout_seconds"]
-        if isinstance(t, bool) or not isinstance(t, (int, float)) or t <= 0:
-            raise config.ConfigError("tdd.replay_timeout_seconds must be a positive number")
-        s.replay_timeout = float(t)
+        s.replay_timeout = float(block["replay_timeout_seconds"])
     if "lock_file" in block:
-        why = lk.bad_relpath(block["lock_file"])
-        if why:
-            raise config.ConfigError(f"tdd.lock_file: {why}")
         s.lock_path = block["lock_file"]
-    if "markers" in block:
-        m = block["markers"]
-        if not (isinstance(m, dict) and all(isinstance(v, list) and all(isinstance(x, str) for x in v) for v in m.values())):
-            raise config.ConfigError("tdd.markers must map a language to a list of marker names")
-        s.markers = m
+    if "markers" in block:   # an array of names that replaces the default list of every language
+        s.markers = {"python": list(block["markers"]), "javascript": list(block["markers"])}
     if getattr(args, "lock", None):
         why = lk.bad_relpath(args.lock)
         if why:

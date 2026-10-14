@@ -80,6 +80,8 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   commit of the task, the unittest loader (or `pytest --collect-only -q` when the configured command is pytest) must still
   list each locked test, not skipped by a decorator; a test that disappears or is skipped fails, whatever configuration, hook
   or import did it. A test command that is neither pytest nor unittest discovery gets a `WARN` that the comparison was not run.
-- Optional `tdd` block of `batuta.json`: `test_command`, `replay_timeout_seconds` (default 300), `lock_file`, `markers`
-  (`{"python": [...], "javascript": [...]}` replaces a language's default list). Git 2.30 or newer is required.
+- Optional `tdd` block of `batuta.json`, the closed block of C01 1.1 (also checked here in a 1.0 document): `test_command`,
+  `replay_timeout_seconds` (an integer, at least 1, default 300), `lock_file` (a `.json` that is not `batuta.json`, default
+  `.batuta/test-locks.json`), `markers` (an array of names that replaces the default list of every language). Git 2.30 or newer
+  is required.
 - Exit codes: 0 ok, 1 a failure or refusal, 2 warnings only.
