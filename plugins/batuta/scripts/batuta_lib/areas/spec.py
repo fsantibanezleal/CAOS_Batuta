@@ -314,11 +314,14 @@ def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None, wri
     """The one function that writes an approval. `typed` is the human's text; `spec_id` pins the spec when the caller knows it.
     Returns (items, record path or None). Refusals write nothing; with `write=False` (a dry run) nothing is ever written."""
     root = Path(root)
-    parsed = approval.parse_phrase(typed)
+    parsed = approval.parse_attempt(typed)
     if parsed is None:
         hint = f" for {spec_id}" if spec_id else ""
         return [item("REFUSED", f"the typed text must start with `approve <spec id> <first 12 hex of the spec sha256>`{hint}")], None
-    typed_id, typed_prefix = parsed
+    typed_id, typed_prefix, extra = parsed
+    if extra:
+        return [item("REFUSED", f"the first line must be exactly `approve <spec id> <first 12 hex of the spec sha256>` and nothing "
+                                f"else; remove the other text ({_clip(extra, 60)}) and type it again")], None
     if len(typed_id) > 80:
         return [item("REFUSED", f"the typed spec id {_clip(typed_id, 80)} is not a spec id")], None
     if spec_id and typed_id != spec_id:
@@ -446,7 +449,7 @@ def approval_hook(payload):
     quiet = {"contract_version": "1.0", "exit_code": 0, "output": None}
     try:
         prompt = payload.get("prompt") if isinstance(payload, dict) else None
-        if not isinstance(prompt, str) or approval.parse_phrase(prompt) is None:
+        if not isinstance(prompt, str) or approval.parse_attempt(prompt) is None:
             return quiet
         root = payload.get("cwd") or os.getcwd()
         items, _ = approve_typed(root, prompt)
@@ -469,7 +472,7 @@ def _cmd_hook(args):
         print(f"spec hook-approval: the stdin payload is not JSON ({exc})", file=sys.stderr)
         return 1
     prompt = payload.get("prompt") if isinstance(payload, dict) else None
-    if not isinstance(prompt, str) or approval.parse_phrase(prompt) is None:
+    if not isinstance(prompt, str) or approval.parse_attempt(prompt) is None:
         items = [item("SKIP", "dry run: the prompt does not start with the approval phrase; the handler would ignore it")]
     else:
         items, _ = approve_typed(payload.get("cwd") or os.getcwd(), prompt, write=False)

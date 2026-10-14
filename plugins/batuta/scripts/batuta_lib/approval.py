@@ -21,7 +21,7 @@ from batuta_lib import config
 from batuta_lib import spec_model as sm
 
 PREFIX_LEN = 12
-_PHRASE = re.compile(r"(?i:approve)[ \t]+(\d{3}-[a-z0-9-]+)(?:[ \t]+(\S+))?")
+_PHRASE = re.compile(r"(?i:approve)[ \t]+(\d{3}-[a-z0-9-]+)(?:[ \t]+([A-Za-z0-9]+))?")
 _HEX12 = re.compile(r"[0-9a-f]{12}\Z")
 
 
@@ -29,16 +29,27 @@ def phrase(spec_id, spec_sha):
     return f"approve {spec_id} {spec_sha[:PREFIX_LEN]}"
 
 
-def parse_phrase(text):
-    """(spec id, prefix as typed in lower case) when the prompt STARTS with the phrase, after leading whitespace; else None.
-    The prefix is `''` when the id is not followed by one. A sentence that merely contains the phrase never matches."""
+def parse_attempt(text):
+    """(spec id, prefix in lower case, extra) when the first line of the text, after leading whitespace, STARTS with the phrase
+    shape `approve <spec id> [<prefix>]`; `extra` is any other text left on that line (empty when the line is the phrase
+    alone). None when the line does not start that way: a sentence that merely contains the phrase is no attempt."""
     if not text or not text.strip():
         return None
     first = text.lstrip().splitlines()[0]
     m = _PHRASE.match(first)
     if not m:
         return None
-    return m.group(1), (m.group(2) or "").lower()
+    return m.group(1), (m.group(2) or "").lower(), first[m.end():].strip()
+
+
+def parse_phrase(text):
+    """(spec id, prefix in lower case) only when the first line of the text, trimmed, is exactly `approve <spec id> <prefix>`
+    (the keyword and the hex in any case); other text on that line, even after a correct phrase, is no approval. Further lines
+    are ignored. The prefix is `''` when the id is not followed by one."""
+    attempt = parse_attempt(text)
+    if attempt is None or attempt[2]:
+        return None
+    return attempt[:2]
 
 
 def valid_prefix(token):

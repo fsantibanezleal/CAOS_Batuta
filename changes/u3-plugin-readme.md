@@ -61,3 +61,6 @@ python scripts/batuta.py spec freeze --check ID
   rules. Quoting follows POSIX (no escape inside single quotes). Under a test folder only test-named files count as the test
   (`test_*.py`, `*_test.py`, `*.test.*`, `*.spec.*`, `*_test.go`, Rust `tests/*.rs`, Jest `__tests__/*`); helpers and fixtures
   are hashed when named.
+- The approval phrase is the whole first line: after trimming, the first line of the typed prompt must equal
+  `approve <spec id> <first 12 hex>` (keyword and hex in any case). Other text on that line, even after a correct phrase
+  (`approve 001-x abc123def456 -- no wait, do not`), is refused with a message and nothing is written; later lines are ignored.
