@@ -63,6 +63,7 @@ LOOP = re.compile(r"\b(until|while)\b|\bfor\s*\(\s*;\s*;\s*\)", I)
 SLEEP = re.compile(r"\bsleep\b|Start-Sleep", I)
 BOUND = re.compile(r"\btimeout\s+(-\S+\s+)*\d|\bseq\s+\d|\$SECONDS|\bSECONDS\b|\s-(lt|le|gt|ge)\s|\bfor\s+\w+\s+in\b"
                    r"|deadline|max_?(tries|iter|wait|attempts)|\b\w+\s*<\s*\d", I)
+FUNC_DEF = re.compile(r"(?:\bfunction\s+(?P<a>[A-Za-z_][\w-]*)|(?<![\w-])(?P<b>[A-Za-z_][\w-]*)\s*\(\s*\))\s*\{")
 LOOP_ID, LOOP_WHY = "polling-loop", "polling loop with no bound (wrap it in `timeout <secs>` or add an iteration cap / deadline)"
 UNREADABLE_ID, UNREADABLE_WHY = "encoded-command", "an encoded PowerShell command that cannot be inspected (it does not decode to text)"
 PATH_RULES = [
@@ -83,6 +84,20 @@ EXPLAIN = ["Blocks commands that leave unattended automation behind. Rules (id: 
     [f"  - {rid}: {why}" for rid, _, why in RULES] + [f"  - {LOOP_ID}: {LOOP_WHY}", f"  - {UNREADABLE_ID}: {UNREADABLE_WHY}"] + \
     [f"  - {rid} (write targets of Edit, Write and shell commands): {why}" for rid, _, why in PATH_RULES] + \
     ["Tool scope: every tool call that carries a string `command` (the hooks.json matcher is Bash|PowerShell|Monitor)."]
+
+
+def self_calling_function(text: str) -> bool:
+    """Does a function definition (`f(){ ...; f; }`, `function f { ...; f }`) call itself in its body?"""
+    for m in FUNC_DEF.finditer(text):
+        name = m.group("a") or m.group("b")
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += (text[i] == "{") - (text[i] == "}")
+            i += 1
+        body = text[m.end():i - 1 if depth == 0 else len(text)]
+        if re.search(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", body):
+            return True
+    return False
 
 
 def _variants(command: str) -> tuple[list[str], list[tuple[str, str]]]:
@@ -122,7 +137,7 @@ def scan_hits(command: str) -> list[tuple[str, str]]:
         for rid, pattern, why in PATH_RULES:
             if pattern.search(spelled) and (rid, why) not in hits:
                 hits.append((rid, why))
-    if LOOP.search(normal) and SLEEP.search(normal) and not BOUND.search(normal):
+    if ((LOOP.search(normal) and SLEEP.search(normal)) or self_calling_function(normal)) and not BOUND.search(normal):
         hits.append((LOOP_ID, LOOP_WHY))
     return hits
 

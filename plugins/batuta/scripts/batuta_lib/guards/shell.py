@@ -42,6 +42,9 @@ READERS = {"cat", "type", "head", "tail", "less", "more", "most", "bat", "nl", "
 READ_COPY = {"cp", "copy", "copy-item", "scp", "rsync", "mv", "move", "move-item", "cpi", "xcopy", "robocopy"}
 PIPE_FED = {"remove-item", "ri", "rm", "del", "erase", "rd", "rmdir"}
 FIND_EXEC = ("-exec", "-execdir", "-ok", "-okdir")
+LINK_TYPES = re.compile(r"symboliclink|junction|hardlink", re.IGNORECASE)
+DOTNET_LINK = re.compile(r"Create(?:Symbolic|Hard)Link\w*\s*\(([^)]*)\)|CreateJunction\w*\s*\(([^)]*)\)", re.IGNORECASE)
+QUOTED = re.compile(r"['\"]([^'\"]+)['\"]")
 EXCLUDE_FLAGS = {"--exclude", "--exclude-dir", "--include", "--glob", "-g", "--exclude-from", "--ignore-file"}
 
 
@@ -483,6 +486,37 @@ def _fed_targets(segs: list[Segment], skip: Segment) -> list[str]:
     return fed + (["*"] if (not fed or unknown) else [])
 
 
+def is_link_command(seg: Segment) -> bool:
+    """ln, mklink, or New-Item with a link item type: every operand names a path that gets linked."""
+    name = command_name(seg)
+    if name in ("ln", "mklink"):
+        return True
+    return name in ("new-item", "ni") and any(LINK_TYPES.search(a) for a in args_of(seg))
+
+
+def link_operands(seg: Segment) -> list[str]:
+    return _positional(args_of(seg)) if is_link_command(seg) else []
+
+
+def dotnet_link_operands(text: str) -> list[str]:
+    """The quoted path arguments of `[IO.File]::CreateSymbolicLink(...)`-style .NET calls."""
+    out: list[str] = []
+    for m in DOTNET_LINK.finditer(text):
+        out += QUOTED.findall(m.group(1) or m.group(2) or "")
+    return out
+
+
+def link_targets_of(command: str) -> list[str]:
+    """Every path operand of every link creation in the command (nested commands included)."""
+    out: list[str] = []
+    texts = [command] + textlib.nested_texts(command)
+    for seg in all_segments(command):
+        out += link_operands(seg)
+    for text in texts:
+        out += dotnet_link_operands(text)
+    return out
+
+
 def write_pairs(command: str) -> list[tuple[str, str]]:
     """(command name, target) over all segments, each target also spelled relative to the folder a `cd` moved into.
     A pipe-fed writer takes the operands of the rest of the command, or `*` (every protected path) when it has none."""
@@ -497,6 +531,8 @@ def write_pairs(command: str) -> list[tuple[str, str]]:
                 prefix = _join(prefix, target) if target != ".." else posixpath.normpath((prefix or ".") + "/..")
             continue
         picked = [(name if tag == "" else name + "-dest", t) for t, tag in write_items(seg)]
+        if is_link_command(seg):
+            picked = [("mklink", t) for t in link_operands(seg)] + picked
         if name == "xargs":
             payload = _shell_payloads(seg)
             inner_words = args_of(seg)[_flag_value_skip("xargs", args_of(seg)):]
@@ -511,6 +547,9 @@ def write_pairs(command: str) -> list[tuple[str, str]]:
             joined = _join(prefix, t) if prefix else t
             if joined != t:
                 out.append((nm, joined))
+    for text in [command] + textlib.nested_texts(command):
+        for token in dotnet_link_operands(text):
+            out.append(("mklink", token))
     return out
 
 

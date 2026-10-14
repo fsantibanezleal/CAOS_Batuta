@@ -19,6 +19,7 @@ import ast
 import contextlib
 import importlib.util
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -124,6 +125,32 @@ def _load(module_name: str, areas_dir: Path):
     return module
 
 
+@contextlib.contextmanager
+def _handler_output_to_stderr(stderr):
+    """While a handler runs, anything it prints (Python level) or writes to file descriptor 1 goes to stderr: only the
+    launcher writes the decision on stdout."""
+    saved = None
+    try:
+        sys.stdout.flush()
+        saved = os.dup(1)
+        os.dup2(2, 1)
+    except (OSError, ValueError, AttributeError):
+        if saved is not None:
+            os.close(saved)
+        saved = None
+    try:
+        with contextlib.redirect_stdout(stderr):
+            yield
+    finally:
+        if saved is not None:
+            try:
+                sys.stdout.flush()
+            except (OSError, ValueError):
+                pass
+            os.dup2(saved, 1)
+            os.close(saved)
+
+
 def _write(stream, text: str) -> None:
     stream.write(text)
     stream.flush()
@@ -151,7 +178,7 @@ def run(hook_id: str, stdin_text: str, stdout, stderr, areas_dir: Path | None = 
         if len(modules) > 1:
             return fail(f"handler id '{hook_id}' is defined twice (in {', '.join(modules)})")
         # a handler's stray prints go to stderr: stdout carries exactly one JSON decision (or nothing)
-        with contextlib.redirect_stdout(stderr):
+        with _handler_output_to_stderr(stderr):
             module = _load(modules[0], areas_dir)
             handler = getattr(module, "HOOKS", {}).get(hook_id)
             if not callable(handler):

@@ -155,7 +155,7 @@ def decide(payload) -> dict:
     searches = []
     if command:
         normal = textlib.normalize(command)
-        candidates = shell.read_targets_of(normal)
+        candidates = shell.read_targets_of(normal) + shell.link_targets_of(normal)   # a link to a secret needs no later read
         flat = normal.lower()
         segs = shell.all_segments(normal)
         if (any(shell.command_name(s) in INTERPRETERS for s in segs) or "io.file]" in flat) and READ_WORDS.search(flat):

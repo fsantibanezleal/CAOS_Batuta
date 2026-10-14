@@ -28,7 +28,7 @@ DEFAULT_LOCK = ".batuta/test-locks.json"
 CONFIG_FILE = ".batuta/batuta.json"
 SECURITY_KEYS = "guards.* (require_brief, destructive_disable, secret_globs, protected_branches, scan_ignore), tdd.lock_file"
 RECURSIVE = {"rm", "rmdir", "del", "erase", "rd", "remove-item", "ri", "mv", "move", "move-item", "mi", "git", "find",
-             "rsync", "robocopy", "xcopy", "xargs"}
+             "rsync", "robocopy", "xcopy", "xargs", "ln", "mklink"}
 INTERPRETERS = {"python", "python3", "py", "node", "nodejs", "deno", "bun", "ruby", "perl", "php", "lua", "powershell",
                 "pwsh", "pythonw"}
 INLINE_WRITE = re.compile(
@@ -144,6 +144,8 @@ def _check_root(root: Path, cwd: str, pairs, inline: bool, command: str):
     for cmd_name, token in pairs:
         for sp in spellings(token, root, cwd or None):
             if sp == config_norm or (cmd_name in RECURSIVE and sp and not has_glob(sp) and config_norm.startswith(sp.rstrip("/") + "/")):
+                if cmd_name == "mklink":      # a link to the harness data is a way round every later check: denied outright
+                    return deny(_reason(token, "", "lock")), asked
                 asked = asked or _config_ask(token)
     needs_lock = bool(pairs) or inline
     if not needs_lock:

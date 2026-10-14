@@ -78,6 +78,14 @@ spelling the guards parse. A write to `.batuta/batuta.json`, which holds the sec
 `tdd.lock_file`), is an `ask`: only the human approves it. `guard scan --diff` reports a change to those keys in the
 reviewed diff as a WARN line (exit 2). The keys keep their C01 location.
 
+Creating a link (`ln`, `ln -s`, `mklink`, `mklink /J` and `/H`, `New-Item -ItemType SymbolicLink|Junction|HardLink`,
+`[IO.File]::CreateSymbolicLink`-style calls) with a protected path as an operand (a secret file or glob, a locked test
+or the lock, a folder that holds them, `approvals/`, `.batuta/`) is denied outright by every guard that protects that
+path; the check needs no later read or write.
+
+An unbounded loop written as a self-calling function (`f(){ ...; f; }`, `function f { ...; f }`) is the
+`polling-loop` rule of `guard-automation`; a bound word (`timeout`, `deadline`, `max_tries`) exempts it as for any loop.
+
 ## Approvals belong to the human
 
 `guard-approvals` denies every invocation of `batuta.py spec approve`, `batuta.py spec hook-approval` and
