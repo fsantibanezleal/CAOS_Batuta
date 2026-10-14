@@ -22,7 +22,7 @@ The launcher behaviour is requirement GUARD-2. A deny or an ask is a C16 PreTool
 | No unattended automation: scheduled tasks, Run keys, Startup folder, services, WMI, `.wslconfig` and `wsl.conf`, cron and systemd enablement, linger, headless `claude -p`, `--dangerously-skip-permissions`, detached or hidden processes, unbounded polling loops | `guard-automation` | `batuta.py guard automation --payload FILE`; CI: `batuta.py guard scan --diff RANGE` | GUARD-1 | block |
 | A locked test file is changed only through an approved change request (C33); the lock file (C07) is protected too | `guard-locked-tests` | `batuta.py guard locked-tests --payload FILE`; CI: the tdd area's lock check against the lock file | TDD-2 | block |
 | An agent never writes under `specs/<id>/approvals/`; `spec approve --apply` asks first | `guard-approvals` | `batuta.py guard approvals --payload FILE`; CI: the spec area's approval hash check | SDD-3 | block |
-| Files that match the secret globs are never read by an agent | `guard-secrets` | `batuta.py guard secrets --payload FILE`; CI: `batuta.py leaks scan` | GUARD-3 | block |
+| Files that match the secret globs are never read by an agent | `guard-secrets` | `batuta.py guard secrets --payload FILE` (no read twin beyond it: a scan of committed content does not see reads) | GUARD-3 | block |
 | Destructive command packs: force-push to protected branches, hard reset, git clean, rm -rf of roots, disk formatting | `guard-destructive` | `batuta.py guard destructive --payload FILE`; CI: `batuta.py guard scan --diff RANGE` | GUARD-3 | block |
 | An Agent launch names a brief that satisfies C02 (ask or deny per configuration) | `guard-require-brief` | `batuta.py guard require-brief --payload FILE`; CI: `batuta.py contract validate C02 FILE` | GUARD-3 | continue |
 
@@ -54,8 +54,36 @@ guard except `guard-locked-tests`, which raises (so that a guard never silently 
 | `guards.protected_branches` | `guard-destructive` | `main`, `master`, `develop`, `release/*` plus these |
 | `guards.destructive_disable` | `guard-destructive` | none; names of packs to switch off |
 | `guards.require_brief` | `guard-require-brief` | `deny` (`ask` and `off` accepted) |
-| `guards.scan_ignore` | `guard scan` | `tests/**`, the guard pattern tables, this document |
+| `guards.scan_ignore` | `guard scan` | `**/*.md`; read from the BASE revision of the scanned range, never from the change under review |
 | `leaks.allow_emails` | `leaks scan` | the built-in non-personal addresses |
+
+## hooks.json matchers (what unit U9 wires)
+
+A command guard reads `tool_input.command` of any tool that carries one, so its entry matches every such tool (the matcher string for the shell part is `Bash|PowerShell|Monitor`):
+
+| Guards | Event | Matcher |
+|---|---|---|
+| `guard-automation`, `guard-locked-tests`, `guard-approvals`, `guard-secrets`, `guard-destructive` (shell part) | PreToolUse | `Bash\|PowerShell\|Monitor` |
+| `guard-automation`, `guard-locked-tests`, `guard-approvals` (file part) | PreToolUse | `Edit\|Write\|MultiEdit\|NotebookEdit` |
+| `guard-secrets` (file part) | PreToolUse | `Read\|Grep\|Glob\|NotebookRead` |
+| `guard-require-brief` | PreToolUse | `Agent\|Task` |
+
+Omitting `Monitor` lets a command through the Monitor tool that the shell tools would stop.
+
+## Protected harness data
+
+`guard-locked-tests` denies any write, delete, move or recursive operation that reaches the lock file (the default
+`.batuta/test-locks.json` and the configured `tdd.lock_file`) or removes the `.batuta/` folder, through every tool and
+spelling the guards parse. A write to `.batuta/batuta.json`, which holds the security keys (`guards.*`,
+`tdd.lock_file`), is an `ask`: only the human approves it. `guard scan --diff` reports a change to those keys in the
+reviewed diff as a WARN line (exit 2). The keys keep their C01 location.
+
+## `guard scan` exemptions
+
+Nothing is exempt silently. The scan settings (`guards.scan_ignore`, `protected_branches`, `destructive_disable`) come
+from the base revision of the range. A hit in an ignored file and a hit excused by an inline marker are WARN lines with
+a count; the inline marker `batuta-guard: ignore <rule-id>` excuses only the rule id it names (the ids are printed by
+`guard automation --explain` and are the pack names of the destructive guard).
 
 ## Missing data
 
@@ -63,6 +91,9 @@ No lock file, no approvals folder, no deny-list, no configuration: the guard all
 check) and says so in `--explain`. The CI equivalents still run.
 
 ## Known limits
+
+Variables and string concatenation (`$n = 'Register-Sched' + 'uledTask'; & $n`, `f=tests/a.py; echo x > $f`) hide
+a command or a path from every guard: a documented limit, with the CI equivalents as the backstop.
 
 A hook is a speed bump on a text command, not a sandbox. A path built at run time inside a script, a variable that
 holds a path, or a program that writes a locked file from its own code is not visible to a PreToolUse guard; the CI

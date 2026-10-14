@@ -5,7 +5,7 @@ equivalent (see `docs/reference/enforcement-matrix.md`).
 
 ```
 python scripts/batuta.py guard automation|locked-tests|approvals|secrets|destructive|require-brief --payload FILE [--explain]
-python scripts/batuta.py guard scan --diff origin/develop..HEAD [--root DIR] [--ignore GLOB]
+python scripts/batuta.py guard scan --diff origin/develop..HEAD [--root DIR]
 python scripts/batuta.py leaks scan [--root DIR] [--deny-list FILE] [--allow-email PATTERN]
 ```
 

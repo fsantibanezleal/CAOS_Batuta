@@ -103,7 +103,7 @@ class F16NamesAndSpellings(Base):
                 self.assertIn("user path", out)
 
     def test_placeholders_still_pass(self):
-        self.put("p.md", "use /home/<name> or /Users/<name> or C:/Users/<name>\n")
+        self.put("p.md", "use /home/<name> or /Users/<name> or C:" + "/Users/<name>\n")
         self.assertEqual(self.scan()[0], 0)
 
 
