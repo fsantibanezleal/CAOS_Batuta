@@ -69,13 +69,13 @@ class Replay(ReplayBase):
         self.assertEqual(code, 2, out)
         self.assert_clean(repo)
 
-    def test_a_red_that_adds_no_test_file_warns(self):
+    def test_a_red_that_adds_no_test_file_fails(self):
         repo = self.clone()
         repo.write("README.md", "changed\n")
         repo.commit("[red] T-003 no tests here\n", "README.md")
         code, out = self.check(repo, "--replay")
-        self.assertEqual(code, 2, out)
-        self.assertIn("no test files", out)
+        self.assertEqual(code, 1, out)
+        self.assertIn("no test file", out)
 
     def test_a_custom_test_command_with_the_tests_placeholder(self):
         folder = self.tmp / "custom-cmd"

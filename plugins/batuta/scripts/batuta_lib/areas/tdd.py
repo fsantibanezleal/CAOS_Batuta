@@ -11,7 +11,9 @@ Optional `tdd` block of batuta.json (C01 allows extra keys): `test_command` (def
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
+import getpass
 import os
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -25,7 +27,6 @@ from batuta_lib.output import emit, item
 AREA = "tdd"
 HELP = "Test-first on artifacts and history: test lock, red and green commits, history check and replay."
 SUBJECT_MAX = 72
-SUPPORT_DIRS = {"tests", "test", "__tests__", "fixtures"}
 
 
 class Refusal(Exception):
@@ -39,8 +40,24 @@ def _setup(args):
     return root, *_settings(args, root)
 
 
-def _settings(args, root):
-    resolved = config.load(getattr(args, "config", None), project_root=root)
+def _resolved_config(args, root, base_sha):
+    """The configuration a verb works with. `check` passes the base commit of its range: the project file is then read from
+    that commit and never from the checked-out tree, which a commit in the range can change. `--config` or BATUTA_CONFIG (CI may
+    pass one from outside the repository) wins, as everywhere."""
+    explicit = getattr(args, "config", None) or os.environ.get(config.ENV_CONFIG)
+    if base_sha is None or explicit:
+        return config.load(getattr(args, "config", None), project_root=root)
+    data = hist.show(root, base_sha, hist.CONFIG_PATH)
+    if data is None:   # no project file at the base commit: the user file or the defaults
+        return config.load(None, project_root=None)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / config.FILE_NAME
+        path.write_bytes(data)
+        return config.load(str(path))
+
+
+def _settings(args, root, base_sha=None):
+    resolved = _resolved_config(args, root, base_sha)
     block = resolved.config.get("tdd", {})
     if not isinstance(block, dict):
         raise config.ConfigError("the 'tdd' block of the configuration must be an object")
@@ -233,11 +250,89 @@ def _change_request_new(args):
     return emit(AREA, "change-request new", items, summary, as_json)
 
 
+# ------------------------------------------------------------------ change-request decide
+
+
+class ConsoleUnavailable(Exception):
+    """There is no console device to ask a person on."""
+
+
+def read_console(prompt):
+    """Ask a person on the console device itself (CONIN$ on Windows, /dev/tty elsewhere), never on standard input, which an
+    agent can feed. Raises ConsoleUnavailable when the process has no console."""
+    names = ("CONIN$", "CONOUT$") if os.name == "nt" else ("/dev/tty", "/dev/tty")
+    try:
+        with open(names[1], "w", encoding="utf-8") as out, open(names[0], "r", encoding="utf-8") as source:
+            out.write(prompt)
+            out.flush()
+            return source.readline().strip()
+    except OSError as exc:
+        raise ConsoleUnavailable(f"no console device to ask on ({exc})") from exc
+
+
+def _change_request_decide(args):
+    as_json, items = getattr(args, "json", False), []
+    try:
+        hist.ensure_supported()
+        try:
+            root = hist.toplevel(getattr(args, "repo", None) or ".")
+        except hist.GitError:
+            root = Path(getattr(args, "repo", None) or ".").resolve()
+    except hist.GitError as exc:
+        return _fail("change-request decide", items, as_json, str(exc))
+
+    def refused(message):
+        items.append(item("REFUSED", message))
+        return emit(AREA, "change-request decide", items, "tdd change-request decide: refused, nothing written", as_json)
+
+    status = "approved" if args.decision == "approve" else "rejected"
+    found = None
+    for rel in lk.request_paths(root):
+        text = (root / rel).read_text(encoding="utf-8-sig")
+        rows, errors = lk.parse_requests(text)
+        if errors:
+            continue
+        for row in rows:
+            if row["Id"] == args.request_id:
+                found = (rel, text, row)
+    if found is None:
+        return refused(f"no request {args.request_id} in specs/**/{lk.REQUEST_FILE}")
+    rel, text, row = found
+    if row["Status"] != "open":
+        return refused(f"request {args.request_id} is already {row['Status']}; a decision is final")
+    phrase = f"{args.decision} {args.request_id}"
+    if not args.apply:
+        items.append(item("CHANGED", f"would set request {args.request_id} to {status} in {rel} after the person types '{phrase}' "
+                                     f"on the console", rel))
+        return emit(AREA, "change-request decide", items, "tdd change-request decide: dry run, nothing asked or written (use --apply)",
+                    as_json)
+    try:
+        typed = read_console(f"{row['Test path']}: {row['Reason']}\nType '{phrase}' to {args.decision} request {args.request_id}: ")
+    except ConsoleUnavailable as exc:
+        return refused(f"{exc}: a request is decided by a person at a console, never by a script or an agent")
+    if typed != phrase:
+        return refused(f"the console answer is not '{phrase}': the request stays open")
+    try:
+        by = getpass.getuser()
+    except (OSError, KeyError):
+        by = "console"
+    try:
+        new_text = lk.decide_text(text, args.request_id, status, by)
+    except ValueError as exc:
+        return _fail("change-request decide", items, as_json, f"{rel}: {exc}")
+    _rows, errors = lk.parse_requests(new_text)   # the contract test on the producing side
+    if errors:
+        return _fail("change-request decide", items, as_json, f"{rel} would not satisfy C33: {'; '.join(errors[:3])}")
+    lk.atomic_write(root / rel, new_text)
+    items.append(item("CHANGED", f"request {args.request_id} is {status} (decided by {by}) in {rel}", rel))
+    return emit(AREA, "change-request decide", items, "tdd change-request decide: done", as_json)
+
+
 # ------------------------------------------------------------------ commit
 
 
 def _is_test_support(rel):
-    return tm.is_test_path(rel) or bool(set(rel.split("/")[:-1]) & SUPPORT_DIRS)
+    return tm.is_test_support(rel)
 
 
 def _commit(args):
@@ -356,8 +451,12 @@ def _commit(args):
 def _check(args):
     as_json, items = getattr(args, "json", False), []
     try:
-        root, settings, _ = _setup(args)
-        items = hist.Checker(root, settings, args.range or "HEAD").run(replay=args.replay)
+        hist.ensure_supported()
+        root = hist.toplevel(getattr(args, "repo", None) or ".")
+        rng = args.range or "HEAD"
+        base = hist.range_base(root, rng)   # also refuses a range that git would read as an option
+        settings, _ = _settings(args, root, base)
+        items = hist.Checker(root, settings, rng, base).run(replay=args.replay)
     except (hist.GitError, config.ConfigError) as exc:
         return _fail("check", items, as_json, str(exc))
     failed = any(i["tag"] in ("FAIL", "REFUSED") for i in items)
@@ -398,6 +497,12 @@ def register(subparsers):
                                                                      "specs/<NAME>/test-change-requests.md")
     n.add_argument("--apply", action="store_true", help="write the file (default: dry run)")
     n.set_defaults(func=_change_request_new)
+    d = crs.add_parser("decide", help="Approve or reject an open request: the person confirms on the console, never an agent.")
+    d.add_argument("--repo", metavar="DIR", default=None, help="the repository (default: the current directory)")
+    d.add_argument("request_id", metavar="CR-ID", help="the request to decide")
+    d.add_argument("decision", choices=("approve", "reject"), help="the decision; the person types '<decision> <CR-ID>' on the console")
+    d.add_argument("--apply", action="store_true", help="ask on the console and write the decision (default: dry run)")
+    d.set_defaults(func=_change_request_decide)
 
     c = subparsers.add_parser("commit", help="Stage and commit a [red], [green] or [refactor] step with a C32 message.")
     _common(c)

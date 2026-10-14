@@ -177,6 +177,26 @@ def request_row(rid, test_path, requirement, reason, proposed, date):
     return "| " + " | ".join(_cell(c) for c in cells) + " |"
 
 
+def decide_text(text, request_id, status, decided_by):
+    """The request file text with the Status and Decided by cells of one row set. Raises ValueError when no row has the id."""
+    lines, done = text.replace("\r\n", "\n").split("\n"), False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        body = stripped[1:-1] if stripped.endswith("|") and not stripped.endswith("\\|") else stripped[1:]
+        cells = re.split(r"(?<!\\)\|", body)
+        if len(cells) >= len(HEADERS) and cells[0].strip() == request_id:
+            cells[HEADERS.index("Status")] = f" {status} "
+            cells[HEADERS.index("Decided by")] = f" {_cell(decided_by)} "
+            lines[i] = "|" + "|".join(cells) + "|"
+            done = True
+            break
+    if not done:
+        raise ValueError(f"no row {request_id} in the request file")
+    return "\n".join(lines)
+
+
 def append_request(existing, row, feature):
     """The request file text with `row` added. `existing` is None for a new file."""
     if existing is None:

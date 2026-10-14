@@ -14,6 +14,7 @@ The only exemption is a commit whose message carries `Test-Change-Approved: <id>
 `replay=True` each `[red]` commit is checked out in a temporary worktree (created and removed here) and the tests it
 adds must fail there.
 """
+import json
 import os
 import re
 import shlex
@@ -90,8 +91,36 @@ def head(cwd):
 
 
 def resolve(cwd, rev):
-    proc = run(cwd, "rev-parse", "--verify", "-q", rev + "^{commit}", ok=(0, 1))
+    proc = run(cwd, "rev-parse", "--verify", "-q", "--end-of-options", rev + "^{commit}", ok=(0, 1))
     return proc.stdout.decode().strip() if proc.returncode == 0 else None
+
+
+def split_range(rng):
+    """(start, end) of a git range: `A..B` or `A...B` gives (A, B), a single revision gives ('', rev). A part that starts with a
+    dash would be read by git as an option, so it is refused."""
+    parts = re.split(r"\.\.\.?", rng)
+    if len(parts) > 2:
+        raise GitError(f"the range {rng!r} has more than one '..'")
+    start, end = (parts[0], parts[-1] or "HEAD") if len(parts) == 2 else ("", parts[0] or "HEAD")
+    for part in (start, end):
+        if part.startswith("-"):
+            raise GitError(f"the range {rng!r} names {part!r}, which starts with a dash and would be read by git as an option")
+    return start, end
+
+
+def range_base(cwd, rng):
+    """The commit whose tree holds the settings of a check: the start of `A..B`, or the first root commit of the history of the
+    end revision. None when the repository has no commit."""
+    start, end = split_range(rng)
+    if start:
+        sha = resolve(cwd, start)
+        if sha is None:
+            raise GitError(f"unknown revision {start!r} in the range {rng!r}")
+        return sha
+    if resolve(cwd, end) is None:
+        return None
+    roots = run(cwd, "rev-list", "--max-parents=0", "--end-of-options", end).stdout.decode().split()
+    return roots[0] if roots else None
 
 
 def show(cwd, rev, path):
@@ -135,8 +164,9 @@ def _parse_changes(tokens):
 
 def log(cwd, rng):
     """Commits of `rng` oldest first (topological order) with parents, full message and changes, in one git call."""
+    split_range(rng)
     out = run(cwd, "log", "--reverse", "--topo-order", "-M", "--root", "--name-status", "-z",
-              "--format=%x1e%H%x1f%P%x1f%B%x1f", rng, "--").stdout.decode("utf-8", "replace")
+              "--format=%x1e%H%x1f%P%x1f%B%x1f", "--end-of-options", rng, "--").stdout.decode("utf-8", "replace")
     commits = []
     for record in out.split("\x1e"):
         if not record.strip("\0\n"):
@@ -147,8 +177,15 @@ def log(cwd, rng):
 
 
 def subjects(cwd, rev):
-    out = run(cwd, "log", "--format=%s", rev, "--").stdout.decode("utf-8", "replace")
+    split_range(rev)
+    out = run(cwd, "log", "--format=%s", "--end-of-options", rev, "--").stdout.decode("utf-8", "replace")
     return out.splitlines()
+
+
+def diff_between(cwd, old, new):
+    """The changes from one commit to another, with rename detection."""
+    out = run(cwd, "diff-tree", "-r", "-M", "--name-status", "-z", "--no-commit-id", old, new).stdout.decode("utf-8", "replace")
+    return _parse_changes([t for t in out.split("\0") if t != ""])
 
 
 class BatchReader:
@@ -239,26 +276,49 @@ def _executable(token):
     return sys.executable if token in ("python", "python3") else token
 
 
-def replay_commands(command, paths):
-    """The argv lists that run `paths`. The default command runs each test file through its own unittest discovery;
-    a command with the token `{tests}` runs all the paths in place of it; any other command gets the paths appended."""
-    if command.strip() == DEFAULT_TEST_COMMAND:
-        return [(path, [sys.executable, "-m", "unittest", "discover", "-s", str(PurePosixPath(path).parent), "-p",
-                        PurePosixPath(path).name]) for path in paths]
+def replay_command(command, paths, tree):
+    """(argv, passes_paths) of the one run of a replay, from the checkout root `tree`. The configured command runs as
+    written (the token `{tests}` stands for the test files of the red commit); the default command is the project's own
+    unittest discovery, with the top-level folder at the checkout root (`-t .`) when `tests` is a package, so that
+    package-relative imports resolve as they do in the project. `passes_paths` says the command was given the files; when
+    it was not, the whole suite runs and only a failure of the red's own files counts."""
     tokens = shlex.split(command)
     if not tokens:
         raise ValueError("the test command is empty")
-    if any("{tests}" in t for t in tokens):
-        argv = []
-        for t in tokens:
-            if t == "{tests}":
-                argv.extend(paths)
-            else:
-                argv.append(t.replace("{tests}", " ".join(paths)))
-    else:
-        argv = tokens + list(paths)
+    if command.strip() == DEFAULT_TEST_COMMAND and (Path(tree) / "tests" / "__init__.py").is_file():
+        tokens += ["-t", "."]
+    passes = any("{tests}" in t for t in tokens)
+    argv = []
+    for t in tokens:
+        if t == "{tests}":
+            argv.extend(paths)
+        else:
+            argv.append(t.replace("{tests}", " ".join(paths)))
     argv[0] = _executable(argv[0])
-    return [(", ".join(paths), argv)]
+    return argv, passes
+
+
+_NO_TESTS = re.compile(r"no tests ran|collected 0 items|NO TESTS RAN", re.IGNORECASE)
+_FAILED_LINE = re.compile(r"^(?:FAIL|ERROR|FAILED)\b.*$", re.MULTILINE)
+
+
+def judge_red(rc, output, paths, passes_paths):
+    """[(path, ok, reason)] for the test files of a red commit, from one run's exit code and output. A red counts only when
+    a test of its own failed or errored: exit 0, exit 5, `Ran 0 tests` and a failure of somebody else's test do not."""
+    ran = re.search(r"^Ran (\d+) tests?\b", output, re.MULTILINE)
+    if rc == 0:
+        return [(p, False, f"tests pass at the red commit (exit 0); a red test must fail before the code exists") for p in paths]
+    if rc == 5 or (ran and int(ran.group(1)) == 0) or _NO_TESTS.search(output):
+        return [(p, False, f"no test ran (exit {rc}); a red reports a failing test of its own, not an empty run") for p in paths]
+    failing = "\n".join(_FAILED_LINE.findall(output))
+    out = []
+    for p in paths:
+        stem = PurePosixPath(p).stem
+        if passes_paths or re.search(r"(?<![\w])" + re.escape(stem) + r"(?![\w])", failing):
+            out.append((p, True, f"fails at the red commit (exit {rc})"))
+        else:
+            out.append((p, False, f"tests pass at the red commit: the run failed (exit {rc}) but no failure or error names {stem}"))
+    return out
 
 
 def _force_remove(func, path, _exc):
@@ -269,11 +329,29 @@ def _force_remove(func, path, _exc):
 # ------------------------------------------------------------------ the history check
 
 
+CONFIG_PATH = ".batuta/batuta.json"
+
+
+def tdd_signature(data):
+    """The part of a project configuration that steers a check (the tdd block and roots.temp), or None when unreadable."""
+    if data is None:
+        return None
+    try:
+        doc = core.loads_strict(data.decode("utf-8-sig", "replace") if isinstance(data, bytes) else data)
+    except ValueError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    roots = doc.get("roots") if isinstance(doc.get("roots"), dict) else {}
+    return json.dumps({"tdd": doc.get("tdd"), "temp": roots.get("temp")}, sort_keys=True)
+
+
 class Checker:
-    def __init__(self, repo, settings, rng="HEAD"):
+    def __init__(self, repo, settings, rng="HEAD", base_sha=None):
         self.repo = Path(repo)
         self.s = settings
         self.rng = rng
+        self.base_sha = base_sha
         self.items = []
         self._locks = {}
         self._requests = {}
@@ -302,6 +380,8 @@ class Checker:
         return self._locks[sha]
 
     def requests_at(self, sha):
+        if sha is None:
+            return {}, {}
         if sha not in self._requests:
             texts = {}
             for path in tree_paths(self.repo, sha, "specs"):
@@ -322,20 +402,19 @@ class Checker:
         problems = core.check_commit_message(commit.message, self._c32)
         if problems:
             return False, f"the {OVERRIDE_TRAILER} trailer is in a message that breaks C32 ({'; '.join(problems)})"
-        rows_by_id, problem_files = self.requests_at(commit.sha)
+        # the request must have been decided in an earlier commit: the tree of the parent, never the tree that uses it
+        rows_by_id, problem_files = self.requests_at(commit.parents[0] if commit.parents else None)
         paths = {p for p in (change.path, change.old) if p}
         row, request_file, why = tdd_lock.lookup(rows_by_id, problem_files, ids[0], paths)
         if why:
-            return False, f"{OVERRIDE_TRAILER}: {ids[0]} does not authorise it ({why})"
+            return False, f"{OVERRIDE_TRAILER}: {ids[0]} does not authorise it ({why}; the request is read at the parent commit)"
         self.pending_specs.append((commit.sha, request_file, ids[0]))
         return True, ""
 
     # -- the walk
     def run(self, replay=False):
         ensure_supported()
-        parts = re.split(r"\.\.\.?", self.rng)
-        end_rev = parts[-1] or "HEAD"
-        start_rev = parts[0] if len(parts) > 1 else ""
+        start_rev, end_rev = split_range(self.rng)
         end_sha = resolve(self.repo, end_rev)
         if end_sha is None:
             if end_rev == "HEAD":
@@ -343,6 +422,9 @@ class Checker:
                 return self.items
             raise GitError(f"unknown revision {end_rev!r} in the range {self.rng!r}")
         commits = log(self.repo, self.rng)
+        if not commits:
+            self.fail(f"the range {self.rng!r} has no commits although {end_rev} has history: nothing was checked")
+            return self.items
         seen_red = set()
         if start_rev:
             for subject in subjects(self.repo, start_rev):
@@ -366,9 +448,7 @@ class Checker:
 
     def _commit(self, c, seen_red, reds, approved_removed, approved_renames):
         short = c.sha[:7]
-        if len(c.parents) > 1:
-            self.warn(f"merge commit {short} skipped; the commits it merges are checked on their own")
-            return
+        merge = len(c.parents) > 1
         parent = c.parents[0] if c.parents else None
         subject = c.message.lstrip().split("\n", 1)[0]
         kind = task = None
@@ -380,27 +460,38 @@ class Checker:
             if m:
                 kind, task = m.group(1), m.group(2)
         label = f"[{kind}] {task}" if kind else "commit"
-        changes = c.changes
+        # a merge is judged on what it changes against every parent: a path that differs from all of them is the merge's own edit
+        changes = self._merge_changes(c) if merge else c.changes
         self.changes_seen.append((c.sha, changes))
         if kind == "green" and task not in seen_red:
             self.fail(f"[green] {task} at {short} has no earlier [red] commit for {task}")
+        self._settings_rule(c, parent, changes)
 
         lock_path = self.s.lock_path
-        lock_p = self.lock_at(parent)
-        if any(lock_path in (ch.path, ch.old) for ch in changes):
-            lock_c = self.lock_at(c.sha)
+        if merge:
+            lock_ps = [self.lock_at(p) for p in c.parents]
+            entries_p = lock_ps[0][0] or []
+            entries_c = self._merge_lock_rules(c, lock_ps)
+            locked_paths = {e["path"] for lp in lock_ps for e in (lp[0] or [])}
         else:
-            lock_c = lock_p
-            self._locks[c.sha] = lock_p
-        entries_p = lock_p[0] or []
-        entries_c = self._lock_rules(c, lock_p, lock_c, entries_p)
-        locked_paths = {e["path"] for e in entries_p}
+            lock_p = self.lock_at(parent)
+            if any(lock_path in (ch.path, ch.old) for ch in changes):
+                lock_c = self.lock_at(c.sha)
+            else:
+                lock_c = lock_p
+                self._locks[c.sha] = lock_p
+            entries_p = lock_p[0] or []
+            entries_c = self._lock_rules(c, lock_p, lock_c, entries_p, kind)
+            locked_paths = {e["path"] for e in entries_p}
+            self._decision_rules(c, parent, changes)
 
         for ch in changes:
             involved = {p for p in (ch.path, ch.old) if p}
             hit = sorted(involved & locked_paths)
             if not hit:
                 continue
+            if ch.status == "M" and parent is not None and self._same_content(c, parent, ch.path):
+                continue   # only the line endings differ: the normalized hash is the same, so the test is the same
             ok, why = self.exemption(c, ch)
             if ok:
                 if ch.status == "D":
@@ -417,10 +508,111 @@ class Checker:
             self._test_file_rules(c, parent, ch, ever_locked, label)
 
         if kind == "red":
+            self._red_rules(c, task, changes, entries_c)
             seen_red.add(task)
             reds.append((c, task, changes))
 
-    def _lock_rules(self, c, lock_p, lock_c, entries_p):
+    def _same_content(self, c, parent, path):
+        old, new = self.blobs.show(parent, path), self.blobs.show(c.sha, path)
+        return old is not None and new is not None and tm.normalized_sha256(old) == tm.normalized_sha256(new)
+
+    def _merge_changes(self, c):
+        """The changes a merge commit makes of its own: paths that differ from every parent (the first parent's view)."""
+        diffs = [diff_between(self.repo, p, c.sha) for p in c.parents]
+        common = set.intersection(*({ch.path for ch in d} for d in diffs))
+        return [ch for ch in diffs[0] if ch.path in common]
+
+    def _settings_rule(self, c, parent, changes):
+        """A commit that changes the tdd settings of the project configuration is reported: the check keeps using the
+        settings of the base commit, so a commit in the range cannot steer its own check."""
+        if not any(CONFIG_PATH in (ch.path, ch.old) for ch in changes):
+            return
+        before = tdd_signature(self.blobs.show(parent, CONFIG_PATH)) if parent else None
+        after = tdd_signature(self.blobs.show(c.sha, CONFIG_PATH))
+        if before != after:
+            base = f"the base commit {self.base_sha[:7]}" if self.base_sha else "the base commit of the range"
+            self.warn(f"commit {c.sha[:7]} changes the tdd settings in {CONFIG_PATH}; the check keeps the settings of {base} "
+                      f"(CI may pass --config from outside the repository to set them)", CONFIG_PATH)
+
+    def _red_rules(self, c, task, changes, entries_c):
+        """A [red] commit holds failing tests and the lock: at least one test file, each locked with its content here, and
+        nothing else but test support files."""
+        short = c.sha[:7]
+        lock_path = self.s.lock_path
+        tests = [ch for ch in changes if ch.status in ("A", "M", "R") and tm.is_test_path(ch.path)]
+        if not tests:
+            self.fail(f"[red] {task} at {short} adds or changes no test file: a red commit holds the failing tests")
+        live = tdd_lock.live_entries(entries_c)
+        for ch in tests:
+            data = self.blobs.show(c.sha, ch.path)
+            entry = live.get(ch.path)
+            if data is None or entry is None or entry["sha256"] != tm.normalized_sha256(data):
+                self.fail(f"[red] {task} at {short}: {ch.path} is not locked with its content at this commit; lock the tests "
+                          f"(tdd lock) in the red commit", ch.path)
+        for ch in changes:
+            if ch.status != "D" and ch.path != lock_path and not tm.is_test_support(ch.path):
+                self.fail(f"[red] {task} at {short} holds {ch.path}: a red commit holds tests and the lock only", ch.path)
+
+    def _decision_rules(self, c, parent, changes):
+        """A request is decided (approved or rejected) in a commit of its own, so the commit that uses an approval is never the
+        commit that gave it."""
+        if not any(p.rsplit("/", 1)[-1] == tdd_lock.REQUEST_FILE for ch in changes for p in (ch.path, ch.old) if p):
+            return
+        rows_c, _ = self.requests_at(c.sha)
+        rows_p, _ = self.requests_at(parent)
+        decided = []
+        for rid, found in rows_c.items():
+            status = found[0][0].get("Status")
+            before = rows_p.get(rid)
+            if status in ("approved", "rejected") and status != (before[0][0].get("Status") if before else None):
+                decided.append(rid)
+        if not decided:
+            return
+        others = sorted({p for ch in changes for p in (ch.path, ch.old) if p and p.rsplit("/", 1)[-1] != tdd_lock.REQUEST_FILE})
+        if others:
+            self.fail(f"commit {c.sha[:7]} decides request {', '.join(decided)} together with other paths "
+                      f"({', '.join(others[:5])}): a decision is a commit of its own, so whoever uses an approval is not the one "
+                      f"who gave it")
+
+    def _merge_lock_rules(self, c, lock_ps):
+        """The lock of a merge keeps every entry of every parent, unchanged and in order; returns the merge's entries."""
+        short = c.sha[:7]
+        path = self.s.lock_path
+        entries_c, error = self.lock_at(c.sha)
+        first = lock_ps[0][0] or []
+        if error:
+            self.failed_locks.add(c.sha)
+            self.fail(f"lock file {path} at merge {short} is unusable: {error}", path)
+            return first
+        if entries_c is None:
+            if any(lp[0] is not None for lp in lock_ps):
+                self.failed_locks.add(c.sha)
+                self.fail(f"lock file {path} was deleted in merge {short}: the lock is append-only", path)
+            return first
+        known = []
+        for parent_sha, (entries_p, _err) in zip(c.parents, lock_ps):
+            index = 0
+            for e in entries_p or []:
+                try:
+                    index = entries_c.index(e, index) + 1
+                except ValueError:
+                    self.fail(f"the lock file is append-only: the entry of {e['path']} from parent {parent_sha[:7]} is missing or "
+                              f"edited in merge {short}", path)
+                    break
+                known.append(e)
+        rows_by_id, problem_files = self.requests_at(c.parents[0])
+        for e in entries_c:
+            if e not in known and "supersedes" in e:
+                row, _file, why = tdd_lock.lookup(rows_by_id, problem_files, e["change_request"], {e["path"]})
+                if why:
+                    self.fail(f"the lock entry that supersedes {e['path']} in merge {short} names {e['change_request']}: {why}", path)
+        return entries_c
+
+    def _approved_rename_targets(self, c):
+        """New paths of locked tests renamed in this commit under an approved request: they take a plain new lock entry."""
+        return {ch.path for ch in c.changes if ch.status == "R" and self.exemption(c, ch)[0]}
+
+    def _lock_rules(self, c, lock_p, lock_c, entries_p, kind=None):
         """Append-only and approval checks of the lock file in one commit; returns the entries to carry forward."""
         short = c.sha[:7]
         path = self.s.lock_path
@@ -441,37 +633,47 @@ class Checker:
             bad = next((i for i in range(n) if i >= len(entries_c) or entries_c[i] != entries_p[i]), n)
             self.fail(f"the lock file is append-only: entry {bad} ({entries_p[bad]['path']}) was edited or removed in {short}", path)
             return entries_p
-        rows_by_id, problem_files = self.requests_at(c.sha)
+        # an approval counts when it was decided in an earlier commit: read the requests at the parent
+        rows_by_id, problem_files = self.requests_at(c.parents[0] if c.parents else None)
         for e in entries_c[n:]:
             if "supersedes" in e:
                 row, _file, why = tdd_lock.lookup(rows_by_id, problem_files, e["change_request"], {e["path"]})
                 if why:
                     self.fail(f"the lock entry that supersedes {e['path']} in {short} names {e['change_request']}: {why}", path)
+            elif kind in ("green", "refactor") and e["path"] not in self._approved_rename_targets(c):
+                self.fail(f"a [{kind}] commit never adds entries to the lock file {path}: {e['path']} was locked in {short} without "
+                          f"a red commit of its own", path)
         return entries_c
 
     def _test_file_rules(self, c, parent, ch, ever_locked, label):
         short = c.sha[:7]
         new_path = ch.path
         old_path = ch.old or ch.path
-        probe = old_path if ch.status == "D" else new_path
-        if tm.language_of(probe) is None or not (tm.is_test_path(probe) or probe in ever_locked or old_path in ever_locked):
+        test_new = ch.status != "D" and (tm.is_test_path(new_path) or new_path in ever_locked)
+        test_old = ch.status != "A" and (tm.is_test_path(old_path) or old_path in ever_locked)
+        support_new = ch.status != "D" and tm.is_marker_file(new_path)
+        support_old = ch.status != "A" and tm.is_marker_file(old_path)
+        if not (test_new or test_old or support_new or support_old):
             return
         before = None if ch.status == "A" or parent is None else self.blobs.show(parent, old_path)
         after = None if ch.status == "D" else self.blobs.show(c.sha, new_path)
         before_text = None if before is None else before.decode("utf-8-sig", "replace")
         after_text = None if after is None else after.decode("utf-8-sig", "replace")
+        # the assertions of a file count where the file is a test: renaming one to a name no runner discovers drops them
         try:
-            count_before = tm.assertion_count(old_path, before_text) or 0 if before_text is not None else 0
+            count_before = (tm.assertion_count(old_path, before_text) or 0) if (test_old and before_text is not None) else 0
         except tm.UnparsableTestFile:
             count_before = 0
         try:
-            count_after = tm.assertion_count(new_path, after_text) or 0 if after_text is not None else 0
-            markers_after = tm.weakening_markers(new_path, after_text, self.s.markers) if after_text is not None else {}
+            count_after = (tm.assertion_count(new_path, after_text) or 0) if (test_new and after_text is not None) else 0
+            markers_after = (tm.weakening_markers(new_path, after_text, self.s.markers)
+                             if (after_text is not None and (test_new or support_new)) else {})
         except tm.UnparsableTestFile as exc:
             self.fail(f"{label} at {short}: cannot parse {new_path} to count its assertions and markers ({exc})", new_path)
             return
         try:
-            markers_before = tm.weakening_markers(old_path, before_text, self.s.markers) if before_text is not None else {}
+            markers_before = (tm.weakening_markers(old_path, before_text, self.s.markers)
+                              if (before_text is not None and (test_old or support_old)) else {})
         except tm.UnparsableTestFile:
             markers_before = {}
         problems = []
@@ -538,10 +740,8 @@ class Checker:
     def _replay(self, reds):
         for c, task, changes in reds:
             tests = [ch.path for ch in changes if ch.status in ("A", "M", "R") and tm.is_test_path(ch.path)]
-            if not tests:
-                self.warn(f"red commit {c.sha[:7]} ({task}) adds or changes no test files; nothing to replay")
-                continue
-            self._replay_one(c, task, tests)
+            if tests:   # a red without a test file is already a failure of the static rules
+                self._replay_one(c, task, tests)
 
     def _replay_one(self, c, task, tests):
         short = c.sha[:7]
@@ -552,26 +752,27 @@ class Checker:
         try:
             worktree_add(self.repo, tree, c.sha)
             try:
-                commands = replay_commands(self.s.test_command, tests)
+                argv, passes = replay_command(self.s.test_command, tests, tree)
             except ValueError as exc:
                 self.fail(f"red commit {short} ({task}): {exc}")
                 return
+            label = ", ".join(tests)
             env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-            for label, argv in commands:
-                try:
-                    proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout, env=env, check=False)
-                except subprocess.TimeoutExpired:
-                    self.fail(f"red commit {short} ({task}): {label} timed out after {self.s.replay_timeout:g} s; "
-                              f"a red test fails fast", label)
-                    continue
-                except OSError as exc:
-                    self.fail(f"red commit {short} ({task}): cannot run the test command {argv[0]!r}: {exc}", label)
-                    continue
-                if proc.returncode == 0:
-                    self.fail(f"red commit {short} ({task}): {label} tests pass at the red commit (exit 0); "
-                              f"a red test must fail before the code exists", label)
+            try:
+                proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout, env=env, check=False)
+            except subprocess.TimeoutExpired:
+                self.fail(f"red commit {short} ({task}): {label} timed out after {self.s.replay_timeout:g} s; "
+                          f"a red test fails fast", label)
+                return
+            except OSError as exc:
+                self.fail(f"red commit {short} ({task}): cannot run the test command {argv[0]!r}: {exc}", label)
+                return
+            output = proc.stdout.decode("utf-8", "replace") + "\n" + proc.stderr.decode("utf-8", "replace")
+            for path, ok, why in judge_red(proc.returncode, output, tests, passes):
+                if ok:
+                    self.ok(f"red commit {short} ({task}): {path} {why}", path)
                 else:
-                    self.ok(f"red commit {short} ({task}): {label} fails at the red commit (exit {proc.returncode})", label)
+                    self.fail(f"red commit {short} ({task}): {path} {why}", path)
         except GitError as exc:
             self.fail(f"red commit {short} ({task}): cannot replay in a temporary worktree: {exc}")
         finally:

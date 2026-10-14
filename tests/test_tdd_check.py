@@ -49,16 +49,18 @@ class CheckBase(TddCase):
             self.assertIn(needle.lower(), low, out)
         return out
 
+    def commit_request_then_spec(self, repo):
+        repo.commit("docs: change request", REQUESTS)
+        repo.commit("docs: spec", "specs/calc/spec.md")
+
     def supersede_flow(self, repo, request_text=None, spec=True, trailer="CR-001", path="tests/test_calc.py"):
         """Commit the request (and spec change) and then the edit of the locked test with a superseding lock entry."""
         if request_text is not None:
             repo.write(REQUESTS, request_text)
-        paths = [REQUESTS] if request_text is not None else []
+            repo.commit("docs: change request", REQUESTS)   # a decision is a commit of its own
         if spec:
             repo.write("specs/calc/spec.md", SPEC)
-            paths.append("specs/calc/spec.md")
-        if paths:
-            repo.commit("docs: spec and change request", *paths)
+            repo.commit("docs: spec", "specs/calc/spec.md")
         repo.write(path, EDITED)
         code, out = run_cli("--config", self.cfg, "tdd", "lock", "--repo", repo.root, "--task", "T-001", path, "--apply",
                             "--supersedes", "--change-request", "CR-001")
@@ -126,7 +128,7 @@ class GrammarRules(CheckBase):
         self.assertIn("nothing to verify", out)
         self.assertNotIn("FAIL", out)
 
-    def test_a_merge_commit_is_skipped_with_a_warning_and_its_parents_are_checked(self):
+    def test_a_clean_merge_commit_passes_and_its_parents_are_checked(self):
         repo = self.clone()
         repo.git("checkout", "-q", "-b", "side")
         repo.write("notes.txt", "side\n")
@@ -136,8 +138,7 @@ class GrammarRules(CheckBase):
         repo.commit("docs: main", "README.md")
         repo.git("merge", "-q", "--no-ff", "-m", "Merge side", "side")
         code, out = self.check(repo)
-        self.assertEqual(code, 2, out)
-        self.assertIn("merge commit", out.lower())
+        self.assertEqual(code, 0, out)
         self.assertNotIn("FAIL", out)
 
     def test_a_merge_does_not_hide_a_violation_on_a_branch(self):
@@ -231,7 +232,7 @@ class LockedTestRules(CheckBase):
     def test_without_a_lock_file_nothing_is_locked_but_markers_are_still_checked(self):
         repo = self.fresh("nolock")
         repo.write("tests/test_calc.py", TEST_CALC)
-        repo.commit(message("red", "T-001", "calc"), "tests/test_calc.py")
+        repo.commit("add the tests", "tests/test_calc.py")
         code, out = self.check(repo)
         self.assertEqual(code, 2, out)
         self.assertIn("nothing is locked", out)
@@ -336,7 +337,7 @@ class OverrideRules(CheckBase):
                 repo = self.base.clone_to(self.tmp / f"{self.id().rsplit('.', 1)[-1]}-{status}")
                 repo.write(REQUESTS, requests(status=status, by=by))
                 repo.write("specs/calc/spec.md", SPEC)
-                repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+                self.commit_request_then_spec(repo)
                 repo.write("tests/test_calc.py", EDITED)
                 repo.commit(message("green", "T-001", "fix the oracle", "CR-001"), "tests/test_calc.py")
                 self.failing(repo, "Test-Change-Approved", status)
@@ -345,7 +346,7 @@ class OverrideRules(CheckBase):
         repo = self.clone()
         repo.write(REQUESTS, requests(path="tests/test_other.py"))
         repo.write("specs/calc/spec.md", SPEC)
-        repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+        self.commit_request_then_spec(repo)
         repo.write("tests/test_calc.py", EDITED)
         repo.commit(message("green", "T-001", "fix the oracle", "CR-001"), "tests/test_calc.py")
         self.failing(repo, "Test-Change-Approved", "tests/test_calc.py")
@@ -362,7 +363,7 @@ class OverrideRules(CheckBase):
         repo = self.clone()
         repo.write(REQUESTS, requests(by="-"))
         repo.write("specs/calc/spec.md", SPEC)
-        repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+        self.commit_request_then_spec(repo)
         repo.write("tests/test_calc.py", EDITED)
         repo.commit(message("green", "T-001", "fix the oracle", "CR-001"), "tests/test_calc.py")
         self.failing(repo, "C33")
@@ -371,7 +372,7 @@ class OverrideRules(CheckBase):
         repo = self.clone()
         repo.write(REQUESTS, requests())
         repo.write("specs/calc/spec.md", SPEC)
-        repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+        self.commit_request_then_spec(repo)
         repo.git("rm", "-q", "tests/test_calc.py")
         repo.commit(message("refactor", "T-001", "drop the test", "CR-001"), "tests/test_calc.py")
         code, out = self.check(repo)
@@ -381,7 +382,7 @@ class OverrideRules(CheckBase):
         repo = self.clone()
         repo.write(REQUESTS, requests())
         repo.write("specs/calc/spec.md", SPEC)
-        repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+        self.commit_request_then_spec(repo)
         repo.git("mv", "tests/test_calc.py", "tests/test_calc_renamed.py")
         code, out = self.lock(repo, "T-001", "tests/test_calc_renamed.py")
         self.assertEqual(code, 0, out)
@@ -393,7 +394,7 @@ class OverrideRules(CheckBase):
         repo = self.clone()
         repo.write(REQUESTS, requests())
         repo.write("specs/calc/spec.md", SPEC)
-        repo.commit("docs: spec and request", REQUESTS, "specs/calc/spec.md")
+        self.commit_request_then_spec(repo)
         repo.git("mv", "tests/test_calc.py", "tests/test_calc_renamed.py")
         repo.commit(message("refactor", "T-001", "rename the test", "CR-001"), "tests/test_calc.py", "tests/test_calc_renamed.py")
         self.failing(repo, "tests/test_calc_renamed.py", "not locked")
