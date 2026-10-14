@@ -234,7 +234,8 @@ class Hook(Base):
             opened.append(path)
             return mock.MagicMock(__enter__=lambda s: mock.Mock(readline=lambda: "typed\n"), __exit__=lambda *x: False)
 
-        with mock.patch.object(sys, "stdin", mock.Mock(isatty=lambda: True)), mock.patch("builtins.open", fake_open):
+        with mock.patch.object(sys, "stdin", mock.Mock(isatty=lambda: True)), \
+                mock.patch.object(spec_area, "_console_mode_ok", return_value=True), mock.patch("builtins.open", fake_open):
             self.assertEqual(spec_area._read_console(), "typed\n")
         self.assertEqual(opened, ["CONIN$" if sys.platform == "win32" else "/dev/tty"])
 

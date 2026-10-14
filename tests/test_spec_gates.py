@@ -97,10 +97,10 @@ class Hashable(Base):
     def test_gates_that_run_tests_name_what_they_hash(self):
         for gate, hashed in (("`python -m pytest tests`", "tests/test_alerts.py"),
                              ("`python -m unittest discover -s tests`", "tests/api.test.js"),
-                             ("`python checks/verify_alerts.py`", "checks/verify_alerts.py"),
+                             ("`python checks/test_verify.py`", "checks/test_verify.py"),
                              ("`pytest tests\\test_alerts.py`", "tests/test_alerts.py")):
             with self.subTest(gate=gate):
-                write(self.root, "checks/verify_alerts.py", "print('ok')\n")
+                write(self.root, "checks/test_verify.py", "print('ok')\n")
                 self.gate(gate)
                 code, doc, _ = self.lint()
                 self.assertEqual(code, 0, messages(doc))
