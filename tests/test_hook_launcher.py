@@ -117,6 +117,11 @@ class LauncherCase(unittest.TestCase):
         # a module that has no HOOKS must never be imported to find a handler (this one would crash on import)
         (areas / "crashes_on_import.py").write_text("raise SystemExit('imported by mistake')\n", encoding="utf-8")
         shutil.copy(REAL_SCRIPTS / "hook.py", self.scripts / "hook.py")
+        # the launcher validates a handler result through the contract: the fixture copy carries the validator and the schemas
+        for name in ("contract.py", "frontmatter.py"):
+            shutil.copy(REAL_SCRIPTS / "batuta_lib" / name, self.scripts / "batuta_lib" / name)
+        shutil.copytree(REAL_SCRIPTS.parent / "contracts", self.scripts.parent / "contracts",
+                        ignore=shutil.ignore_patterns("fixtures", "__pycache__"))
         self.areas = areas
 
     def run_hook(self, *argv, stdin=None, raw=False):
@@ -371,6 +376,55 @@ class ReviewFindings(LauncherCase):
         self.assertIn("stray text on stdout", proc.stderr)
         proc = self.run_hook("t-print-deny")
         self.assertEqual(json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+
+UPS_FIXTURE = textwrap.dedent("""
+    def t_ups(payload):
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit", "additionalContext": "context for the model"},
+            "systemMessage": "shown to the user"}}
+
+
+    def t_bad_event(payload):
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "NoSuchEvent", "additionalContext": "x"}}}
+
+
+    HOOKS = {"t-ups": t_ups, "t-bad-event": t_bad_event}
+""")
+
+
+class ContractValidation(LauncherCase):
+    """F-06 of the U3 re-check: the output is validated through the contract, not through a list of events in the launcher."""
+
+    def setUp(self):
+        super().setUp()
+        (self.areas / "ups_fixture.py").write_text(UPS_FIXTURE, encoding="utf-8")
+        (self.areas / "review_fixture.py").write_text(REVIEW_FIXTURE, encoding="utf-8")
+
+    def test_the_launcher_has_no_hard_coded_event_list(self):
+        source = (REAL_SCRIPTS / "hook.py").read_text(encoding="utf-8")
+        for word in ("PreToolUse", "SessionStart", "UserPromptSubmit", "permissionDecision", "DECISIONS", "hookEventName"):
+            self.assertNotIn(word, source, f"hook.py must not name {word}: the contract decides")
+        self.assertIn("validate_instance", source)
+
+    def test_a_session_start_and_a_pre_tool_use_output_still_pass(self):
+        self.assertEqual(self.run_hook("t-ctx").returncode, 0)
+        self.assertEqual(self.run_hook("fx-deny").returncode, 0)
+
+    def test_an_event_the_contract_does_not_know_is_refused_with_the_contract_message(self):
+        proc = self.run_hook("t-bad-event")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("invalid handler result", proc.stderr)
+
+    @unittest.expectedFailure
+    def test_a_user_prompt_submit_output_passes_once_c16_1_1_is_merged(self):
+        """Fails until the additive C16 1.1 (task/u0r5-additive-contracts, U0r5) is merged: hookEventName
+        UserPromptSubmit with additionalContext and a top-level systemMessage. Remove the decorator then."""
+        proc = self.run_hook("t-ups")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertEqual(out["systemMessage"], "shown to the user")
 
 
 if __name__ == "__main__":
