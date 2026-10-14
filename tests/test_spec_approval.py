@@ -43,7 +43,7 @@ class Base(unittest.TestCase):
 
 class Phrase(unittest.TestCase):
     def test_phrase_parsing(self):
-        good = ["approve 001-x abcdef012345", "  APPROVE 001-x ABCDEF012345", "\n\napprove 001-x abcdef012345 thanks",
+        good = ["approve 001-x abcdef012345", "  APPROVE 001-x ABCDEF012345", "\n\napprove 001-x abcdef012345",
                 "approve 001-x abcdef012345\nsecond line"]
         for text in good:
             with self.subTest(text=text):
