@@ -202,8 +202,6 @@ class Hook(Base):
         self.assertEqual(code, 1)
         self.assertEqual(self.approvals(), [])
 
-    # F-06: C16 1.1 (contracts unit U0r5) adds the UserPromptSubmit output; until it merges the full C31 check cannot pass.
-    @unittest.expectedFailure
     def test_handler_result_satisfies_c31_through_the_full_check(self):
         res = self.hook(self.phrase())
         schema = core.load_schema(core.find_schema(CONTRACTS, "C31"))

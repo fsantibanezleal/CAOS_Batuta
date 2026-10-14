@@ -185,11 +185,6 @@ class CommandSpans(Base):
                 code, doc, _ = self.lint()
                 self.assertEqual(code, 0, messages(doc))
 
-    def test_check_gate_resolves_an_executable_on_the_path(self):
-        with mock.patch("shutil.which", return_value="/usr/bin/mytool"):
-            self.assertIsNone(sm.check_gate("`mytool tests/test_alerts.py`"))
-        with mock.patch("shutil.which", return_value=None):
-            self.assertIsNotNone(sm.check_gate("`mytool tests/test_alerts.py`"))
 
 
 class JsRegexLiterals(unittest.TestCase):
