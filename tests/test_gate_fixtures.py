@@ -146,15 +146,28 @@ class FakeGit:
                 return sha
         return None
 
-    def count_since(self, root, since, head, exclude_prefix):
+    def count_since(self, root, since, head, excludes):
+        excludes = [excludes] if isinstance(excludes, str) else list(excludes)
         skip = set(self._ancestors(since))
         n = 0
         for sha in self._ancestors(head):
             if sha in skip:
                 continue
-            if any(not f.startswith(exclude_prefix + "/") for f in self.commits[sha]["files"]):
+            if any(not any(f == e or f.startswith(e + "/") for e in excludes) for f in self.commits[sha]["files"]):
                 n += 1
         return n
+
+    def merge_base(self, root, ref):
+        """The newest commit that is an ancestor of both `ref` and HEAD, or None."""
+        sha = self._full(ref)
+        if sha is None:
+            return None
+        theirs = set(self._ancestors(sha))
+        return next((c for c in self._ancestors(self.head_sha()) if c in theirs), None)
+
+    def log_files(self, root, head, limit):
+        """[(sha, [paths])] newest first, at most `limit` commits."""
+        return [(c, sorted(self.commits[c]["files"])) for c in self._ancestors(head)[:limit]]
 
     def show(self, root, ref, relpath):
         sha = self._full(ref)
@@ -300,6 +313,13 @@ class Project:
                "catalog_sha256": sha or self.catalog_sha(), "contracts": entries}
         return self.write(path, json.dumps(doc, indent=2) + "\n")
 
+    def tests_record(self, commit, results=None, path="docs/design/contract-tests.json"):
+        """A C34 contract-tests record: every test the default catalog names passed at `commit`."""
+        results = results if results is not None else {"tests/test_widget_producer.py": "pass",
+                                                       "tests/test_widget_consumer.py": "pass"}
+        doc = {"contract_version": "1.0", "commit": commit, "generated": TODAY, "results": results}
+        return self.write(path, json.dumps(doc, indent=2) + "\n")
+
     def full(self, gates=GATES, *, states=None, readiness_entries=None):
         """A compliant project: spec, contract, approval, catalog, readiness and tests committed once; evidence for each
         gate in `gates` (all naming that commit) and the status committed second."""
@@ -309,6 +329,7 @@ class Project:
         self.catalog()
         self.readiness(readiness_entries)
         base = self.commit("spec, contracts, catalog, readiness")
+        self.tests_record(base)
         passed = {}
         for g in gates:
             self.evidence(g, commit=base)

@@ -15,7 +15,7 @@ def record(proj, results=None):
     results = results or {t: "pass" for t in TESTS}
     p = proj.root / "docs" / "design" / "contract-tests.json"
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"commit": proj.head(), "results": results}), encoding="utf-8")
+    p.write_text(json.dumps({"contract_version": "1.0", "commit": proj.head(), "generated": "2026-10-12", "results": results}), encoding="utf-8")
     return p
 
 

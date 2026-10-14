@@ -363,7 +363,9 @@ class GateCheck(Case):
     def test_release_flag_applies_the_release_rules_before_l9_is_passed(self):
         proj = self.full_project()
         proj.readiness([readiness_entry("widget-event", state="provider", status="stub", provenance="stub", reason="stub")])
-        proj.commit("readiness on a stub")
+        new = proj.commit("readiness on a stub")
+        for g in ("L6-skeleton", "L7-build", "L8-integrate"):    # L6 and L8 judge the readiness document; later evidence never goes back
+            proj.evidence(g, commit=new)
         states = {g: "passed" for g in GATES[:9]}
         proj.status(states)
         proj.commit("l9 pending")

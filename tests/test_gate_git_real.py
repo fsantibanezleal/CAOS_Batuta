@@ -54,6 +54,11 @@ class RealGit(unittest.TestCase):
             self.assertEqual(["new.txt", "specs/m.md", "specs/n.md"], sorted(git.changed(root, first, three)))
             self.assertEqual(two, git.last_commit(root, "new.txt"))
             self.assertEqual(0, git.count_since(root, two, three, "specs"))
+            self.assertEqual(0, git.count_since(root, first, three, ["specs", "new.txt"]))
+            log = git.log_files(root, three, 10)
+            self.assertEqual([three, two, first], [c for c, _ in log])
+            self.assertEqual(["specs/m.md"], log[0][1])
+            self.assertEqual(["new.txt", "specs/n.md"], sorted(log[1][1]))
             self.assertEqual(2, git.count_since(root, first, three, "code"))
             self.assertEqual("x = 1\n", git.show(root, first, "code.py"))
             self.assertIsNone(git.show(root, first, "absent.py"))
@@ -66,9 +71,10 @@ class RealGit(unittest.TestCase):
             sh(root, "add", "-A")
             sh(root, "commit", "-q", "-m", "work")
             tip = sh(root, "rev-parse", "HEAD")
+            self.assertEqual(three, git.merge_base(root, "develop"))
             sh(root, "checkout", "-q", "develop")
             ev = Path(tmp) / "evidence.txt"
-            ev.write_text(f"head {tip}\nOK\n", encoding="utf-8")
+            ev.write_text(f"head {tip}\nRan 2 tests in 0.1s\n\nOK\n", encoding="utf-8")
             gate_model.GIT = git
             code, out = run("gate", "promote", "--root", str(root), "--branch", "task/x", "--into", "develop",
                             "--local-evidence", str(ev), "--apply")
