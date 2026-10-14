@@ -89,7 +89,18 @@ def baseline_problems(doc, old):
     return problems
 
 
-def check(root, path, cfg, *, against=None):
+def check_range(root, cfg, base, path=DEFAULT_PATH):
+    """The ratchet inside a checked range: the file as it is now against the file at the base revision `base`. Nothing is
+    reported when the project has no thresholds file, now or at the base; a file that is new in the range has no baseline."""
+    root, rel = Path(root), Path(path).as_posix()
+    present = (root / path).is_file()
+    at_base = gate_model.GIT.show(root, base, rel) if base else None
+    if not present:
+        return [item("FAIL", f"{rel} existed at the base revision {base[:12]} and was removed: thresholds are never dropped", rel)] if at_base else []
+    return check(root, path, cfg, against=base, missing_ok=True)
+
+
+def check(root, path, cfg, *, against=None, missing_ok=False):
     root = Path(root)
     full = root / path
     rel = Path(path).as_posix()
@@ -102,7 +113,8 @@ def check(root, path, cfg, *, against=None):
     if against:
         text = gate_model.GIT.show(root, against, rel)
         if text is None:
-            problems.append(f"cannot read {rel} at {against}")
+            if not missing_ok:
+                problems.append(f"cannot read {rel} at {against}")
         else:
             try:
                 old = core.loads_strict(text)

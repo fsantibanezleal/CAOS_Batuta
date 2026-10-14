@@ -26,8 +26,10 @@ FIELDS = "headRefOid,statusCheckRollup,mergeable"
 PENDING_STATUSES = {"PENDING", "IN_PROGRESS", "QUEUED", "WAITING", "REQUESTED"}
 PENDING_STATES = {"PENDING", "EXPECTED"}
 NOT_EVIDENCE = {"SKIPPED": "a skipped check is not evidence", "NEUTRAL": "a neutral check is not evidence"}
-_FAILURE_TEXT = re.compile(r"\bFAILED\b|\bERROR\b|\b[1-9]\d* (?:failed|errors?|failures?)\b|(?:failures|errors)=[1-9]", re.I)
-_SUCCESS_TEXT = re.compile(r"^OK(\s|$)|\b\d+ passed\b", re.M)
+_FAILURE_TEXT = re.compile(r"\bFAILED\b|\bERROR\b|\b[1-9]\d* (?:failed|failing|errors?|failures?)\b|(?:failures|errors)=[1-9]", re.I)
+_RAN = re.compile(r"^Ran (\d+) tests?\b", re.M)
+_PASSED = re.compile(r"\b(\d+) passed\b")
+_SKIPPED = re.compile(r"skipped=(\d+)")
 
 
 def run_gh(args):
@@ -57,11 +59,17 @@ def classify(check):
 
 
 def evidence_ok(text, head):
-    """Local test output proves a green run on this head: it names the full head SHA, ends in a passing result (`OK` from
-    unittest or `N passed`) and reports no failure or error."""
-    if not head or head.lower() not in text.lower():
+    """Local test output proves a green run on this head: it names the full head SHA, reports no failure or error, and shows
+    tests that ran and passed: `Ran N tests` with N above zero and `OK` (unittest), or `N passed` with N above zero (pytest).
+    A run of zero tests, or one in which every test was skipped, is not evidence."""
+    if not head or head.lower() not in text.lower() or _FAILURE_TEXT.search(text):
         return False
-    return not _FAILURE_TEXT.search(text) and bool(_SUCCESS_TEXT.search(text))
+    skipped = sum(int(n) for n in _SKIPPED.findall(text))
+    ran = _RAN.search(text)
+    if ran and re.search(r"^OK(\s|$)", text, re.M):
+        return int(ran.group(1)) > 0 and skipped < int(ran.group(1))
+    passed = _PASSED.search(text)
+    return bool(passed) and int(passed.group(1)) > 0
 
 
 def evaluate_pr(data, *, sha=None, evidence_text=None, required=()):

@@ -96,10 +96,27 @@ class Git:
         rc, out = self._run(root, "log", "-1", "--format=%H", "--", relpath)
         return out.strip() or None if rc == 0 else None
 
-    def count_since(self, root, since, head, exclude_prefix):
-        """Commits in since..head that changed a path outside `exclude_prefix/`."""
-        rc, out = self._run(root, "rev-list", "--count", f"{since}..{head}", "--", ".", f":(exclude){exclude_prefix}")
+    def count_since(self, root, since, head, excludes):
+        """Commits in since..head that changed a path outside every exclusion (a folder or a file; one or a list)."""
+        excludes = [excludes] if isinstance(excludes, str) else list(excludes)
+        rc, out = self._run(root, "rev-list", "--count", f"{since}..{head}", "--", ".", *[f":(exclude){e}" for e in excludes])
         return int(out.strip()) if rc == 0 and out.strip().isdigit() else 0
+
+    def merge_base(self, root, ref):
+        """The newest common ancestor of `ref` and HEAD, or None."""
+        rc, out = self._run(root, "merge-base", ref, "HEAD")
+        return out.strip() or None if rc == 0 else None
+
+    def log_files(self, root, head, limit):
+        """[(sha, [paths])], newest first, for at most `limit` commits ending at `head`."""
+        rc, out = self._run(root, "log", "--name-only", "--format=%x01%H", "--relative", "-n", str(limit), head)
+        if rc != 0:
+            return []
+        commits = []
+        for block in out.split("\x01")[1:]:
+            lines = block.split("\n")
+            commits.append((lines[0].strip(), [x for x in lines[1:] if x.strip()]))
+        return commits
 
     def show(self, root, ref, relpath):
         rc, out = self._run(root, "show", f"{ref}:./{relpath}")
@@ -294,7 +311,7 @@ def waiver_problems(status, cfg, today):
             out.append(item("FAIL", f"waiver for {gate} is dated {w.get('date')}, after today ({today})"))
         if not str(w.get("reason", "")).strip():
             out.append(item("FAIL", f"waiver for {gate} has a blank reason"))
-        if status.state(gate) != "waived":
+        if status.state(gate) not in ("waived", "passed"):   # a human waiver of L9-promote may also cover a threshold decrease
             out.append(item("WARN", f"waiver for {gate} is recorded but the gate is {status.state(gate)}"))
     for gate in waived:
         if gate not in by_gate:
@@ -366,6 +383,47 @@ def resolve_commit(history, text):
     return hits[0] if len(hits) == 1 else None
 
 
+LOG_LIMIT = 500
+READINESS_FILES = ("data/derived/readiness.json", "docs/design/readiness.json", "docs/design/previews.json")
+RECORD_PATH = "docs/design/contract-tests.json"
+
+
+def _under(path, *prefixes):
+    return any(path.startswith(p) for p in prefixes)
+
+
+def is_contract_path(path):
+    return _under(path, "contracts/", "docs/contracts/")
+
+
+def is_code_path(path):
+    """The unit's code, tests and models: everything that is not a record of the method (specs, docs, contracts, the
+    coordination folder, changelog fragments, top-level Markdown) nor the readiness document."""
+    if _under(path, "specs/", "docs/", "contracts/", ".batuta/", "changes/") or path in READINESS_FILES:
+        return False
+    return not ("/" not in path and path.endswith(".md"))
+
+
+def judged(gate, feature):
+    """The predicate over repository paths of what a gate judges, or None when the gate has none (L9 is current against the
+    whole head instead; L10 judges the lesson line)."""
+    spec = {f"specs/{feature}/spec.md", f"specs/{feature}/tasks.md", f"specs/{feature}/trace.json"}
+    sizing = lambda p: p == "sizing.md" or p.endswith("/sizing.md")   # noqa: E731
+    decisions = lambda p: _under(p, "docs/decisions/", "docs/design/tech/")   # noqa: E731
+    table = {
+        "L0-understand": lambda p: p in spec,
+        "L1-size": lambda p: p in spec or sizing(p),
+        "L2-decide": decisions,
+        "L3-contracts": is_contract_path,
+        "L4-boundaries": lambda p: is_contract_path(p) or p.startswith("models/"),
+        "L5-freeze": lambda p: p in spec or is_contract_path(p) or decisions(p),
+        "L6-skeleton": lambda p: is_code_path(p) or p in READINESS_FILES,
+        "L7-build": is_code_path,
+        "L8-integrate": lambda p: is_code_path(p) or p in READINESS_FILES,
+    }
+    return table.get(gate)
+
+
 class Repo:
     """What one `gate check` knows of the repository, gathered once."""
 
@@ -376,6 +434,17 @@ class Repo:
         self.head = head or (info[1] if info else None)
         self.history = GIT.history(root, self.head) if self.ok and self.head else []
         self._anc = {}
+        self._log = None
+
+    def newest_change(self, predicate):
+        """(commit, path) of the newest commit that changed a path the predicate accepts, or None."""
+        if self._log is None:
+            self._log = GIT.log_files(self.root, self.head, LOG_LIMIT) if self.ok and self.head else []
+        for sha, paths in self._log:
+            for p in paths:
+                if predicate(p):
+                    return sha, p
+        return None
 
     def full(self, text):
         return resolve_commit(self.history, text)
@@ -424,6 +493,12 @@ def gate_evidence_items(root, feature, g, cfg, repo, today, current, prev):
     if repo is not None and repo.ok:
         c_items, full = commit_items(repo, root, feature, g, meta.get("commit", ""), prel, current=current)
         out.extend(c_items)
+        predicate = judged(g, feature)
+        if full and predicate:
+            newest = repo.newest_change(predicate)
+            if newest and not repo.ancestor(newest[0], full):
+                out.append(item("FAIL", f"evidence for {g} predates the change: {newest[1]} changed in {newest[0][:12]}, after the "
+                                        f"evidence commit {full[:12]}; the gate judges it, so its evidence must be for that commit or later", prel))
         if full and prev and not repo.ancestor(prev[1], full):
             out.append(item("FAIL", f"evidence for {g} is for {full[:12]}, which is earlier than the evidence for {prev[0]} "
                                     f"({prev[1][:12]}): evidence commits never go backwards", prel))
@@ -432,16 +507,69 @@ def gate_evidence_items(root, feature, g, cfg, repo, today, current, prev):
     return out, full
 
 
+# ------------------------------------------------------------------ settings that can weaken a gate
+
+TARGET_CANDIDATES = ("origin/develop", "develop", "origin/main", "main")
+PROJECT_CONFIG = f"{config.PROJECT_DIR}/{config.FILE_NAME}"
+
+
+def base_revision(root, against=None):
+    """(base sha or None, problem or None): the revision that thresholds and routing are read from. `against` names it;
+    otherwise it is the merge-base of HEAD with the target branch (the first of TARGET_CANDIDATES that exists), which is
+    HEAD itself when HEAD is on the target, so an uncommitted edit is still compared with what was committed."""
+    if against:
+        sha = GIT.rev(root, against)
+        return (sha, None) if sha else (None, f"cannot resolve the base revision {against!r}")
+    for ref in TARGET_CANDIDATES:
+        sha = GIT.merge_base(root, ref)
+        if sha:
+            return sha, None
+    return None, None
+
+
+def settings_from_base(root, cfg, base, from_project):
+    """(cfg whose `gates` block is the base revision's, items). A change to the routing inside the range is a WARN naming the
+    commit; the check itself uses the base revision's routing, so the change under review cannot weaken it. A configuration
+    named by `--config` or the environment is the caller's explicit choice and is used as given."""
+    if base is None or not from_project:
+        return cfg, []
+    defaults = config.default_config()["gates"]
+    text, items, base_gates = GIT.show(root, base, PROJECT_CONFIG), [], defaults
+    if text is not None:
+        try:
+            doc = core.loads_strict(text)
+            found = doc.get("gates") if isinstance(doc, dict) else None
+            base_gates = found if isinstance(found, dict) else defaults
+        except ValueError:
+            items.append(item("WARN", f"{PROJECT_CONFIG} at the base revision {base[:12]} is not valid JSON; the default routing is used", PROJECT_CONFIG))
+    now = cfg.get("gates", {})
+    if now == base_gates:
+        return cfg, items
+    dirty = GIT.dirty(root) or []
+    where = "an uncommitted change" if PROJECT_CONFIG in dirty else f"commit {(GIT.last_commit(root, PROJECT_CONFIG) or 'unknown')[:12]}"
+    items.append(item("WARN", f"the gates settings (critical gates, critical units, adversary models) differ from the base revision "
+                              f"{base[:12]}, changed by {where}: this check routes by the base revision's settings", PROJECT_CONFIG))
+    effective = dict(cfg)
+    effective["gates"] = base_gates
+    return effective, items
+
+
 # ------------------------------------------------------------------ gate check
 
 def check_feature(root, feature, cfg, *, head=None, today=None, release=False, strict_commits=False, commit_check=True,
-                  readiness_path=None, catalog=None, lag=0):
-    """The items of `gate check`: FAIL for every violated rule, OK lines for what holds."""
+                  readiness_path=None, catalog=None, lag=0, against=None, project_config=True):
+    """The items of `gate check`: FAIL for every violated rule, OK lines for what holds. The thresholds and the gates
+    routing are read from the base revision of the checked range (`against`, or the merge-base with the target branch)."""
     root = Path(root)
     today = today or today_iso()
     status, items = load_status(root, feature)
     if status is None:
         return items
+    base, problem = base_revision(root, against)
+    if problem:
+        items.append(item("FAIL", problem))
+    cfg, base_items = settings_from_base(root, cfg, base, project_config)
+    items.extend(base_items)
     rel = status.path.relative_to(root).as_posix()
     gates = {g: status.state(g) for g in GATES}
     first_open = None
@@ -457,6 +585,8 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
     if status.meta.get("phase") != expected:
         items.append(item("FAIL", f"phase is {status.meta.get('phase')!r} but the gates put it at {expected!r}", rel))
     items.extend(waiver_problems(status, cfg, today))
+    from batuta_lib import thresholds as th   # imported here: thresholds imports this module
+    items.extend(th.check_range(root, cfg, base))
     if status.meta.get("blocked") and not str(status.meta.get("blocked_reason", "")).strip():
         items.append(item("WARN", "the unit is blocked and states no blocked_reason", rel))
 
@@ -493,4 +623,9 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
     elif release:
         items.extend(rd.check_readiness(root, found, catalog=catalog, head=head, lag=lag, release=True, tests=False,
                                         age=gates["L10-lessons"] not in COMPLETE))
+    if release:
+        cat = rd._abs(root, catalog or rd.CATALOG_PATH)
+        rows = rd.catalog_rows(root, cat)[0] if cat.is_file() else None
+        if rows is not None:
+            items.extend(rd.check_tests(root, rows, None, RECORD_PATH, head=head))
     return items

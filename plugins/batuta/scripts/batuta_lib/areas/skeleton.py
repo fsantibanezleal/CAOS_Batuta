@@ -48,7 +48,7 @@ def register(subparsers):
     p.add_argument("--lag", type=int, default=0, help="commits that changed files outside specs/ the readiness may be behind (default 0)")
     p.add_argument("--release", action="store_true", help="list every component that is not real as a gap and fail")
     p.add_argument("--require", action="store_true", help="a missing readiness document is a failure, not a skip")
-    p.add_argument("--tests-record", metavar="FILE", help='JSON {"results": {"<test path>": "pass"|"fail"}} of the contract tests')
+    p.add_argument("--tests-record", metavar="FILE", help="the contract-tests record (C34, written by `gate tests-record`; default docs/design/contract-tests.json when it exists)")
     p.add_argument("--url", action="append", metavar="URL", help="a preview URL to check (repeatable; fetched only with --check-network)")
     p.add_argument("--check-network", action="store_true", help="fetch each preview URL (off by default)")
     p.set_defaults(func=_check)

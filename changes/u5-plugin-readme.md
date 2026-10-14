@@ -40,9 +40,36 @@ python scripts/batuta.py lessons check [--lessons FILE]
   same day; `--against REF` finds a value lowered by editing the file.
 - `gate promote` never overrides a failed or pending check and never switches branches; a repository without CI promotes with
   local test output that names the full head SHA. The merge command is printed unless `--apply` is given.
+- Settings that can weaken a gate come from the base revision of the checked range, never from the change under review: `gate check`
+  reads the thresholds (and runs the ratchet on them: a lowering inside the range fails unless a human waiver of L9-promote of that
+  date and a history entry cover it) and the `gates` block of `.batuta/batuta.json` (critical gates, critical units, adversary models)
+  from the merge-base with the target branch (`origin/develop`, `develop`, `origin/main` or `main`), or from `--against REV`. A change to
+  the gates block inside the range is a WARN naming the commit; the check keeps routing by the base revision's settings. A
+  configuration named by `--config` or the environment is used as given.
+- Evidence must not predate the change it certifies: for each gate the newest commit that changed a path the gate judges (L0 and L5 the
+  spec, tasks and trace of the feature; L1 also the sizing; L2 the ADRs and technology decisions; L3 the contracts and catalog; L4 also
+  the models; L5 also the decisions; L6 and L8 the code and the readiness documents; L7 the code and tests) must be the evidence's
+  commit or an ancestor of it; otherwise `gate check` fails with `evidence ... predates the change`. L9 evidence must describe the head
+  until L10 passes.
+- `gate tests-record` writes the contract-tests record (C34, `docs/design/contract-tests.json`), validated before it is written:
+  `--result <test path>=pass|fail|skip` (repeatable) and `--run` (runs the python test files the catalog names, one unittest
+  discovery each; no test run is a skip). It records HEAD and refuses a working tree with uncommitted changes outside `specs/`.
+  `skeleton check` reads the record (the default path, or `--tests-record`): a failed or skipped test fails, a record for a commit
+  with later code or contract changes fails, and no record is a WARN. `gate check` reads it at the release gate.
+- Tool scope of the `adversary` agent: the agent definition cannot scope `Write` or `Bash` to a path, so the limit to
+  `specs/*/evidence/*.md` is enforced by the guards, not by the definition; the guard is listed for the guards unit.
 - Stop hook: `gate-stop` (a handler in the `gate` area, wired by `hooks.json`) blocks once while a unit with uncommitted
   changes has a failing gate check, then writes `- <date> UNVERIFIED: ...` to the unit's status file and lets the session
-  end. A unit's `scope: [paths]` front matter ties changes outside `specs/<feature>/` to it.
+  end. A unit's `scope: [paths]` front matter, and the write scopes of the units named in its `tasks.md` (the sizing's Parallel
+  units table), tie changes outside `specs/<feature>/` to it. The handler keeps its own once-per-failure state in
+  `<coordination root>/gate-stop.state` (keyed by session and failure, at most 1000 entries, replaced atomically), so it blocks
+  once even when the host sends no `stop_hook_active`; an internal error allows the stop and says why in the handler result's
+  `message`. Residual, listed for the hooks units: the handler does not know which session changed the files, so a session that
+  changed nothing can be held by a unit another session left dirty in a shared checkout; recording each session's touched paths
+  needs a PostToolUse hook.
+- Promotion evidence for a head without CI shows tests that ran: `Ran N tests` with N above zero and `OK`, or `N passed`; zero
+  tests, an all-skipped run or any failure line is refused.
+- `lessons check` ignores lesson lines inside HTML comments and code fences and refuses a blank field.
 - `skeleton check` reads the catalog hash and the age of the readiness document (more than `--lag` commits outside `specs/`
   behind the head is stale); before L6-skeleton the document is absent and the check says `SKIP`. The network is touched only
   with `--check-network`.

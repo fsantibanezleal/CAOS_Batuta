@@ -228,36 +228,74 @@ def _gap_line(e):
     return f"release gap: {e['id']} is {e['state']}{served}: {reason_text(e['reason'])}{extra}"
 
 
-def check_tests(root, rows, record_path, rel):
-    items = []
-    results, recorded = {}, False
-    if record_path:
-        try:
-            doc = core.loads_strict(_abs(root, record_path).read_text(encoding="utf-8-sig"))
-            results, recorded = doc.get("results", {}), True
-        except (OSError, ValueError, AttributeError) as exc:
-            items.append(item("FAIL", f"contract test record {record_path}: {exc}", rel))
+def load_record(root, record_path):
+    """(doc, errors) of a contract-tests record (C34)."""
+    path = _abs(root, record_path)
+    label = f"contract-tests record (C34) {_rel(root, path)}"
+    try:
+        doc = core.loads_strict(path.read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        return None, [f"{label}: cannot read ({exc})"]
+    except ValueError as exc:
+        return None, [f"{label}: invalid JSON ({exc})"]
+    errs = _validate("C34", doc)
+    return (None, [f"{label}: {e}" for e in errs]) if errs else (doc, [])
+
+
+def catalog_tests(rows):
+    """The test files the catalog's producer and consumer columns name, once each, in order."""
+    out = []
     for row in rows:
         for tok in list(row["producer test"]) + list(row["consumer test"]):
             tpath = core.cell_path(tok)
-            if not tpath:
-                continue
-            if not (Path(root) / tpath).is_file():
-                items.append(item("FAIL", f"{row['id']}: contract test {tpath} does not exist", rel))
-            elif recorded:
-                got = results.get(tpath)
-                if got == "pass":
-                    continue
-                if got is None:
-                    items.append(item("WARN", f"{row['id']}: no recorded result for contract test {tpath}", rel))
-                else:
-                    items.append(item("FAIL", f"{row['id']}: contract test {tpath} is recorded as {got}", rel))
-    if not recorded and not record_path:
-        items.append(item("WARN", "no contract test status recorded (give --tests-record: a JSON file with results per test path)", rel))
-    elif recorded and not any(i["tag"] in ("FAIL", "WARN") for i in items):
-        items.append(item("OK", "every contract test the catalog names exists and is recorded as passing", rel))
-    return items
+            if tpath and tpath not in out:
+                out.append(tpath)
+    return out
 
+
+def check_tests(root, rows, record_path, rel, head=None):
+    """Items for the contract tests the catalog names: each file exists; the C34 record (the given path, or the default one
+    when it exists) is valid, is for the head (no code or contract change since its commit), and records each file as
+    passed. A skipped test is not evidence. Without a record the answer is an honest partial (WARN)."""
+    root, items = Path(root), []
+    tests = catalog_tests(rows)
+    items.extend(item("FAIL", f"contract test {t} does not exist", rel) for t in tests if not (root / t).is_file())
+    path = record_path or (gate_model.RECORD_PATH if (root / gate_model.RECORD_PATH).is_file() else None)
+    if path is None:
+        items.append(item("WARN", "no contract test status recorded (run `gate tests-record` to write the C34 record)", rel))
+        return items
+    doc, errs = load_record(root, path)
+    if doc is None:
+        return items + [item("FAIL", e, rel) for e in errs]
+    info = None if head else gate_model.GIT.info(root)
+    head = head or (info[1] if info else None)
+    record_rel = _rel(root, _abs(root, path))
+    if head:
+        full = gate_model.resolve_commit(gate_model.GIT.history(root, head), doc["commit"])
+        if full is None:
+            items.append(item("FAIL", f"the contract-tests record is for commit {doc['commit']}, which is not in the history of the head", record_rel))
+        else:
+            moved = [p for p in gate_model.GIT.changed(root, full, head)
+                     if p != record_rel and (gate_model.is_code_path(p) or gate_model.is_contract_path(p))]
+            if moved:
+                items.append(item("FAIL", f"the contract-tests record is for {full[:12]} but files changed since ({', '.join(moved[:3])}); "
+                                          f"run `gate tests-record` again", record_rel))
+    else:
+        items.append(item("WARN", "the head is unknown: the age of the contract-tests record was not checked", record_rel))
+    by_file = {}
+    for key, value in doc["results"].items():
+        by_file.setdefault(key.split("::")[0], set()).add(value)
+    for t in tests:
+        got = by_file.get(t)
+        if not got:
+            items.append(item("WARN", f"no recorded result for contract test {t}", record_rel))
+        elif "fail" in got:
+            items.append(item("FAIL", f"contract test {t} is recorded as fail", record_rel))
+        elif got != {"pass"}:
+            items.append(item("FAIL", f"contract test {t} is recorded as skip: a skipped test is not evidence", record_rel))
+    if not any(i["tag"] in ("FAIL", "WARN") for i in items):
+        items.append(item("OK", f"every contract test the catalog names exists and is recorded as passing at {doc['commit'][:12]}", record_rel))
+    return items
 
 def check_readiness(root, path, *, catalog=None, head=None, lag=0, release=False, tests=True, tests_record=None, age=True):
     """Items of `skeleton check` for the readiness document at `path`."""
@@ -307,7 +345,7 @@ def check_readiness(root, path, *, catalog=None, head=None, lag=0, release=False
             if asof is None:
                 items.append(item("WARN", f"{rel} is not committed: its age was not checked", rel))
             else:
-                behind = gate_model.GIT.count_since(root, asof, head or info[1], "specs")
+                behind = gate_model.GIT.count_since(root, asof, head or info[1], ["specs", gate_model.RECORD_PATH])
                 if behind > lag:
                     items.append(item("FAIL", f"{rel} is {behind} commit(s) behind the head (as of {asof[:12]}) that changed files outside "
                                               f"specs/; allowed {lag}: regenerate it", rel))
@@ -324,7 +362,7 @@ def check_readiness(root, path, *, catalog=None, head=None, lag=0, release=False
     elif gaps:
         items.append(item("OK", f"{len(gaps)} component(s) are not real yet (allowed before release): {', '.join(e['id'] for e in gaps)}", rel))
     if tests and rows is not None:
-        items.extend(check_tests(root, rows, tests_record, rel))
+        items.extend(check_tests(root, rows, tests_record, rel, head=head))
     return items
 
 

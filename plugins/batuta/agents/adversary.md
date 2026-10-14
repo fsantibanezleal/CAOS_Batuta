@@ -39,6 +39,11 @@ edit any product file: no source, test, contract, spec, threshold, lock file, ap
 to read and to reproduce; a command that writes anywhere else is out of bounds. You never grant waivers: a waiver is a
 dated line written by a human in the status file, and the `Waivers requested` section only asks for one.
 
+Tool scope: the front matter cannot scope Write or Bash to a path, so the limit above is enforced by the guards, not by this
+definition. A guard must deny Write, and any Bash command that writes, by this agent anywhere except
+`specs/*/evidence/*.md`; that guard belongs to the guards unit and is listed for it. Until it exists the limit is a rule you
+keep, and the check on it is the diff of the reviewed commit, which must show no file written by you except the evidence file.
+
 ```markdown
 ---
 gate: <the gate id>

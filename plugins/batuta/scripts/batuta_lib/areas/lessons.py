@@ -36,12 +36,26 @@ def _units(root):
     return done, warns
 
 
+def _visible(text):
+    """The lines of a text with HTML comments and fenced code blanked (line numbers are kept): a lesson in a comment or a
+    code block is not a lesson."""
+    out, fence = [], None
+    for line in evidence.strip_comments(text).split("\n"):
+        m = re.match(r"^\s*(```|~~~)", line)
+        if m:
+            fence = None if fence == m.group(1) else (fence or m.group(1))
+            out.append("")
+        else:
+            out.append("" if fence else line)
+    return out
+
+
 def _lesson_lines(path, today):
     """(units named, items) of the lesson lines in a file."""
     sp = core.find_schema(config.contracts_dir(), "C19")
     schema = core.load_schema(sp)
     named, items = set(), []
-    for n, line in enumerate(path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").split("\n"), 1):
+    for n, line in enumerate(_visible(path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")), 1):
         if not line.startswith("- "):
             continue
         if not DATED_BULLET.match(line):
@@ -51,6 +65,8 @@ def _lesson_lines(path, today):
         date = line[2:12]
         if errors:
             items.append(item("FAIL", f"line {n} is not a valid lesson line (- date | unit | lesson | action): {errors[0]}", path.name))
+        elif any(not part.strip() for part in line[2:].split(" | ")):
+            items.append(item("FAIL", f"line {n}: a lesson line has no blank field (date, unit, lesson, action)", path.name))
         elif not core._is_date(date):
             items.append(item("FAIL", f"line {n}: {date} is not a calendar date", path.name))
         elif date > today:

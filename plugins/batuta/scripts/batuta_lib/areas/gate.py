@@ -6,6 +6,7 @@ Verbs:
     check          enforce gate order, evidence, the freeze approval, human waivers, phase and the release rules
     thresholds     the quality thresholds only ratchet up (C11): `--check` or `--propose name=value`
     promote        merge only on green for the exact head commit (a pull request, or a local branch with evidence)
+    tests-record   write the contract-tests record (C34) that skeleton check and the release gate read
     hook-stop      the Stop hook as a command (reads the hook payload on stdin)
 
 The Stop handler `gate-stop` blocks once when a unit with uncommitted changes has a failing gate check; on the second
@@ -14,12 +15,17 @@ unit is never blocked. Files are written only with `--apply` (dry run by default
 Exit codes: 0 ok, 1 failure or refusal, 2 warnings or honest partial.
 """
 import datetime
+import fnmatch
+import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
-from batuta_lib import config, evidence, gate_model, promote, thresholds
+from batuta_lib import config, evidence, gate_model, promote, readiness, thresholds
+from batuta_lib import contract as core
 from batuta_lib import frontmatter as fm
 from batuta_lib.output import emit, item
 
@@ -35,8 +41,17 @@ def _root(args):
     return Path(getattr(args, "root", None) or ".")
 
 
+def _resolved(args, root):
+    return config.load(config_arg=getattr(args, "config", None), project_root=root)
+
+
 def _cfg(args, root):
-    return config.load(config_arg=getattr(args, "config", None), project_root=root).config
+    return _resolved(args, root).config
+
+
+def _from_project(resolved):
+    """True when the configuration is the project's (or the defaults): then its gates settings are read from the base revision."""
+    return resolved.source in ("project", "defaults")
 
 
 def _fail(verb, args, message):
@@ -84,10 +99,12 @@ def _status(args):
             items.append(item("OK", f"{g}: {status.state(g)}"))
         return emit(AREA, "status", items, f"{feature} phase {status.meta['phase']}", _json(args))
     try:
-        cfg = _cfg(args, root)
+        resolved = _resolved(args, root)
         wanted = [_parse_set(s) for s in args.set]
     except (config.ConfigError, ValueError) as exc:
         return emit(AREA, "status", [item("REFUSED", str(exc))], "nothing changed", _json(args))
+    base, _problem = gate_model.base_revision(root)
+    cfg, _notes = gate_model.settings_from_base(root, resolved.config, base, _from_project(resolved))
     gates = {g: status.state(g) for g in gate_model.GATES}
     refused = []
     for gate, state in wanted:
@@ -144,12 +161,13 @@ def _status(args):
 def _check(args):
     root = _root(args)
     try:
-        cfg = _cfg(args, root)
+        resolved = _resolved(args, root)
     except config.ConfigError as exc:
         return _fail("check", args, str(exc))
-    items = gate_model.check_feature(root, args.feature, cfg, head=args.head, today=args.today, release=args.release,
+    items = gate_model.check_feature(root, args.feature, resolved.config, head=args.head, today=args.today, release=args.release,
                                      strict_commits=args.strict_commits, commit_check=not args.no_commit_check,
-                                     readiness_path=args.readiness, catalog=args.catalog, lag=args.lag)
+                                     readiness_path=args.readiness, catalog=args.catalog, lag=args.lag, against=args.against,
+                                     project_config=_from_project(resolved))
     bad = [i for i in items if i["tag"] == "FAIL"]
     return emit(AREA, "check", items, f"{args.feature}: {len(bad)} failure(s)" if bad else f"{args.feature}: every gate rule holds", _json(args))
 
@@ -194,6 +212,78 @@ def _promote(args):
     return emit(AREA, "promote", items, f"promotion {summary}", _json(args))
 
 
+# ------------------------------------------------------------------ tests-record
+
+def _run_test_file(root, rel, timeout):
+    """pass, fail or skip for one test file: its unittest run exits 0 with tests run; no test ran is a skip."""
+    if not rel.endswith(".py"):
+        return "skip"
+    if not (root / rel).is_file():
+        return "fail"
+    parent = Path(rel).parent.as_posix() or "."
+    cmd = [sys.executable, "-B", "-m", "unittest", "discover", "-s", parent, "-p", Path(rel).name]
+    try:
+        p = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=timeout, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    except (OSError, subprocess.TimeoutExpired):
+        return "fail"
+    m = re.search(r"^Ran (\d+) tests?", p.stdout + p.stderr, re.M)
+    ran = int(m.group(1)) if m else 0
+    if p.returncode == 0 and ran > 0:
+        return "pass"
+    return "skip" if ran == 0 and p.returncode in (0, 5) else "fail"
+
+
+def _tests_record(args):
+    root = _root(args)
+    refused = lambda msg: emit(AREA, "tests-record", [item("REFUSED", msg)], "nothing written", _json(args))   # noqa: E731
+    info = gate_model.GIT.info(root)
+    if info is None:
+        return refused("not a git repository with a commit: a record names the commit the tests ran at")
+    head, commit = info[1], info[1]
+    if args.commit:
+        commit = gate_model.resolve_commit(gate_model.GIT.history(root, head), args.commit)
+        if commit is None:
+            return refused(f"commit {args.commit!r} is not in the history of the head")
+    results = {}
+    if args.run:
+        rows, errors = readiness.catalog_rows(root, readiness._abs(root, args.catalog or readiness.CATALOG_PATH))
+        if rows is None:
+            return refused("; ".join(errors))
+        results.update({t: _run_test_file(root, t, args.timeout) for t in readiness.catalog_tests(rows)})
+    for text in args.result or []:
+        key, sep, value = text.rpartition("=")
+        if not sep or not key:
+            return refused(f"'{text}' is not <test path>=<pass|fail|skip>")
+        results[key] = value
+    if not results:
+        return refused("nothing to record: give --result <test path>=<pass|fail|skip> or --run")
+    out_rel = Path(args.output or gate_model.RECORD_PATH).as_posix()
+    doc = {"contract_version": "1.0", "commit": commit, "generated": args.today or gate_model.today_iso(), "results": results}
+    problems = readiness._validate("C34", doc)
+    if problems:
+        return emit(AREA, "tests-record", [item("REFUSED", f"the record would not satisfy C34: {p}") for p in problems],
+                    "nothing written", _json(args))
+    if commit == head and not args.allow_dirty:
+        loose = [p for p in (gate_model.GIT.dirty(root) or []) if not p.startswith("specs/") and p != out_rel]
+        if loose:
+            return refused(f"uncommitted changes outside specs/ ({', '.join(loose[:3])}): the tests did not run at the commit; "
+                           f"commit them first (or --allow-dirty)")
+    text = json.dumps(doc, indent=2) + "\n"
+    target = root / out_rel
+    try:
+        same = target.is_file() and target.read_text(encoding="utf-8") == text
+    except OSError:
+        same = False
+    if same:
+        return emit(AREA, "tests-record", [item("SAME", f"{out_rel} already holds this record", out_rel)], "no change", _json(args))
+    tag = "CHANGED" if target.is_file() else "NEW"
+    if args.apply:
+        gate_model.write_atomic(target, text)
+    note = "" if args.apply else " (dry run; use --apply)"
+    return emit(AREA, "tests-record", [item(tag, f"{len(results)} result(s) at {commit[:12]}{note}", out_rel)],
+                f"record for {commit[:12]}", _json(args))
+
 # ------------------------------------------------------------------ the Stop handler
 
 def _project_root(start):
@@ -204,23 +294,67 @@ def _project_root(start):
     return None
 
 
-def _scope_paths(root, feature):
+def _brace_expand(pattern):
+    """`a/{b,c}.py` as ['a/b.py', 'a/c.py'] (one level, as the sizing's write scopes use it)."""
+    m = re.search(r"\{([^{}]*)\}", pattern)
+    if not m:
+        return [pattern]
+    return [x for alt in m.group(1).split(",") for x in _brace_expand(pattern[:m.start()] + alt + pattern[m.end():])]
+
+
+def _in_scope(path, scopes):
+    for scope in scopes:
+        for pat in _brace_expand(scope):
+            bare = pat.rstrip("/")
+            if path == bare or path.startswith(bare + "/") or fnmatch.fnmatchcase(path, pat):
+                return True
+    return False
+
+
+def _unit_scopes(root, feature, cfg):
+    """The write scopes of the units that carry the feature's tasks: the `Unit` column of specs/<feature>/tasks.md names the
+    units, the sizing's Parallel units table (in the coordination root) gives each unit's write scope."""
+    try:
+        tasks = gate_model.read(root / "specs" / feature / "tasks.md")
+    except OSError:
+        return []
+    hit = core.read_table(tasks, {"headers": ["Task", "Unit"], "headers_match": "contains"})
+    units = {str(r.get("Unit", "")).strip() for r in (hit[0] if hit else [])} - {"", "-"}
+    coord = root / cfg.get("coordination_root", config.PROJECT_DIR)
+    scopes = []
+    for sizing in [coord / "sizing.md", *sorted(coord.glob("*/sizing.md")), root / "sizing.md"]:
+        try:
+            text = gate_model.read(sizing)
+        except OSError:
+            continue
+        found = core.read_table(text, {"headers": ["Unit", "Write scope"], "headers_match": "contains", "section": "Parallel units"}, ci=True)
+        for row in (found[0] if found else []):
+            if str(row.get("Unit", "")).strip() in units:
+                scopes.extend(core._scopes(str(row.get("Write scope", ""))))
+        if found:
+            break
+    return scopes
+
+
+def _scope_paths(root, feature, cfg):
+    """The paths a unit owns beyond its specs folder: the `scope: [paths]` of its status file and the write scopes of its units."""
     try:
         meta, _ = fm.parse(evidence.strip_comments(gate_model.read(root / "specs" / feature / "status.md")))
     except (OSError, ValueError):
-        return []
-    scope = meta.get("scope", [])
-    return [str(s).strip("/") for s in scope] if isinstance(scope, list) else []
+        meta = {}
+    declared = meta.get("scope", [])
+    own = [str(s).strip() for s in declared] if isinstance(declared, list) else []
+    return own + _unit_scopes(root, feature, cfg)
 
 
-def _units_in_scope(root, dirty):
-    """Features of this project that have uncommitted changes: a path under specs/<feature>/ or under a `scope` path of the
-    feature's status file."""
+def _units_in_scope(root, dirty, cfg):
+    """Features of this project that have uncommitted changes: a path under specs/<feature>/, under a `scope` path of the
+    feature's status file or in the write scope of a unit that carries its tasks."""
     found = []
     for status in sorted((root / "specs").glob("*/status.md")):
         feature = status.parent.name
-        scope = [f"specs/{feature}"] + _scope_paths(root, feature)
-        if any(d == s or d.startswith(s + "/") for d in dirty for s in scope):
+        scopes = [f"specs/{feature}"] + _scope_paths(root, feature, cfg)
+        if any(_in_scope(d, scopes) for d in dirty):
             found.append(feature)
     return found
 
@@ -236,8 +370,47 @@ def _append_unverified(root, feature, today, message):
     gate_model.write_atomic(path, text + ("" if text.endswith("\n") else "\n") + line + "\n")
 
 
+# The handler's own once-per-failure state (the host's `stop_hook_active` flag is only one of two ways it knows a stop is
+# the second attempt): one line per held failure, bounded, replaced atomically.
+STATE_NAME = "gate-stop.state"
+MAX_STATE_ENTRIES = 1000
+
+
+def _state_path(root, cfg):
+    return root / cfg.get("coordination_root", config.PROJECT_DIR) / STATE_NAME
+
+
+def _held_before(root, cfg, key):
+    try:
+        return key in gate_model.read(_state_path(root, cfg)).split("\n")
+    except OSError:
+        return False
+
+
+def _remember_hold(root, cfg, key):
+    """Record that this failure was held once. At most MAX_STATE_ENTRIES keys are kept (the oldest dropped first)."""
+    path = _state_path(root, cfg)
+    try:
+        try:
+            lines = [x for x in gate_model.read(path).split("\n") if x]
+        except OSError:
+            lines = []
+        if key in lines:
+            return
+        gate_model.write_atomic(path, "\n".join((lines + [key])[-MAX_STATE_ENTRIES:]) + "\n")
+    except OSError:
+        pass   # the block still stands; only the extra loop guard is lost
+
+
+def _failure_key(payload, failing):
+    """One session's one set of failures: a different failure, or a different session, is held once again."""
+    digest = hashlib.sha256("\n".join(f"{f}: {m}" for f, bad in sorted(failing.items()) for m in bad).encode("utf-8")).hexdigest()
+    session = str((payload or {}).get("session_id") or "nosession").replace("\n", " ")[:120]
+    return f"{session}|{digest}"
+
+
 def handler(payload):
-    """Stop hook (C31 handler result). Fail open: an unreadable project, git or configuration allows the stop."""
+    """Stop hook (C31 handler result). Fail open: an unreadable project, git or configuration allows the stop, and says why."""
     allow = {"contract_version": "1.0", "exit_code": 0, "output": None}
     try:
         root = _project_root((payload or {}).get("cwd") or os.getcwd())
@@ -246,27 +419,29 @@ def handler(payload):
         dirty = gate_model.GIT.dirty(root)
         if not dirty:
             return allow
-        cfg = config.load(project_root=root).config
+        resolved = config.load(project_root=root)
+        cfg = resolved.config
         today = datetime.date.today().isoformat()
         failing = {}
-        for feature in _units_in_scope(root, dirty):
-            found = gate_model.check_feature(root, feature, cfg, today=today)
+        for feature in _units_in_scope(root, dirty, cfg):
+            found = gate_model.check_feature(root, feature, cfg, today=today, project_config=_from_project(resolved))
             bad = [i["message"] for i in found if i["tag"] == "FAIL"]
             if bad:
                 failing[feature] = bad
         if not failing:
             return allow
-        if (payload or {}).get("stop_hook_active") is True:
+        key = _failure_key(payload, failing)
+        if (payload or {}).get("stop_hook_active") is True or _held_before(root, cfg, key):
             for feature, bad in failing.items():
                 _append_unverified(root, feature, today, bad[0])
             return allow
+        _remember_hold(root, cfg, key)
         parts = [f"{feature}: " + " | ".join(bad[:3]) for feature, bad in failing.items()]
         reason = ("Gate check fails for a unit you changed: " + "; ".join(parts) + ". Fix it and stop again; if you stop again "
                   "without fixing it, an UNVERIFIED line is written to the unit's status file and the stop is allowed.")
         return {"contract_version": "1.0", "exit_code": 0, "output": {"decision": "block", "reason": reason}}
-    except Exception:   # noqa: BLE001 (a quality hook never blocks on its own error)
-        return allow
-
+    except Exception as exc:   # noqa: BLE001 (a quality hook never blocks on its own error, and says why)
+        return {**allow, "message": f"gate-stop: allowed the stop after an internal error: {exc!r}"}
 
 HOOKS = {"gate-stop": handler}
 
@@ -317,6 +492,7 @@ def register(subparsers):
     p.add_argument("--readiness", help="the readiness document (default: data/derived/readiness.json or docs/design/readiness.json)")
     p.add_argument("--catalog", help="the contract catalog (default: docs/contracts/catalog.md)")
     p.add_argument("--lag", type=int, default=0, help="commits the readiness document may be behind the head (default 0)")
+    p.add_argument("--against", metavar="REV", help="the base revision thresholds and routing are read from (default: the merge-base with the target branch)")
     p.add_argument("--today", help="today's date YYYY-MM-DD (tests)")
     p.set_defaults(func=_check)
 
@@ -344,5 +520,17 @@ def register(subparsers):
     p.add_argument("--apply", action="store_true", help="run the merge (default: print the command)")
     p.set_defaults(func=_promote)
 
+    p = subparsers.add_parser("tests-record", help="write the contract-tests record (C34)")
+    p.add_argument("--root", help="the project folder (default: the current folder)")
+    p.add_argument("--output", help=f"the record file (default {gate_model.RECORD_PATH})")
+    p.add_argument("--commit", help="the commit the tests ran at (default: HEAD)")
+    p.add_argument("--result", action="append", metavar="TEST=RESULT", help="a result: <test path>[::name]=pass|fail|skip; repeatable")
+    p.add_argument("--run", action="store_true", help="run the python test files the catalog names and record each")
+    p.add_argument("--catalog", help="the contract catalog for --run (default: docs/contracts/catalog.md)")
+    p.add_argument("--timeout", type=int, default=600, help="seconds allowed per test file with --run (default 600)")
+    p.add_argument("--allow-dirty", action="store_true", help="record at HEAD although the working tree has uncommitted changes")
+    p.add_argument("--apply", action="store_true", help="write the record (default: dry run)")
+    p.add_argument("--today", help="today's date YYYY-MM-DD (tests)")
+    p.set_defaults(func=_tests_record)
     p = subparsers.add_parser("hook-stop", help="the Stop hook as a command: reads the payload on stdin")
     p.set_defaults(func=_hook_stop)

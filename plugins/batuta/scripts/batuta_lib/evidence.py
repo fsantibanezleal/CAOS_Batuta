@@ -70,11 +70,13 @@ def routing(cfg, gate, feature):
 
 
 def model_matches(model, expected):
-    """The evidence model names the routed model: `sonnet`, `claude-sonnet-5-5` and `Sonnet 5` all match `sonnet`. An
-    `inherit` routing cannot be checked and accepts any model."""
+    """The evidence model is the routed model by its whole name: `sonnet`, `claude-sonnet-5-5`, `Claude Sonnet 5.5` and
+    `claude-sonnet-5-5[1m]` match `sonnet`; `haiku-not-sonnet` and `sonnet-lite` do not. An `inherit` routing cannot be
+    checked and accepts any model."""
     if expected == "inherit":
         return True
-    return expected.lower() in re.split(r"[^a-z0-9]+", str(model).lower())
+    name = re.sub(r"[\s_]+", "-", str(model).strip().lower())
+    return re.fullmatch(rf"(claude-)?{re.escape(expected.lower())}(-\d+(?:[.-]\d+)*)?(\[[^\]]*\])?", name) is not None
 
 
 def _schema_and_spec():
