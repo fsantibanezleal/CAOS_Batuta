@@ -30,7 +30,7 @@ def samples():
         "GitLab token": "token = glpat-" + a * 2,
         "npm token": "token = npm_" + a * 3 + "a1B2c3",
         "AWS access key": "id = AKIA" + "ABCDEFGHIJKLMNOP",
-        "private key": "-----BEGIN RSA PRIVATE KEY-----",
+        "private key": "-----BEGIN RSA PRIVATE" + " KEY-----",   # built at run time: the repository scans clean
         "git access token in URL": "url = https://x-access-token:abcDEF123456@github.com/x/y",
         "credentials in URL": "url = https://someone:" + "a1B2c3D4e5f6G7h8i9" + "@host.example/path",
         "bearer token": "Authorization: Bearer " + a * 3,

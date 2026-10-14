@@ -59,6 +59,10 @@ class Restore(DeviceCase):
         self.assertNotIn("NEW", out)
 
     def test_missing_launcher_skips_only_the_session_check_with_a_warn(self):
+        # the device copy is made inside the test's temp folder; it is the copy that loses its launcher, so the branch is
+        # tested whatever the repository holds
+        (self.deploy_dir / "scripts" / "hook.py").unlink(missing_ok=True)
+        self.assertFalse((self.deploy_dir / "scripts" / "hook.py").exists())
         code, out, _ = self.restore()
         self.assertEqual(2, code)
         self.assertIn("WARN", out)
