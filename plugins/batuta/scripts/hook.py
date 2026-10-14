@@ -30,8 +30,6 @@ HERE = Path(__file__).resolve().parent
 AREAS_DIR = HERE / "batuta_lib" / "areas"
 HOOK_ID = re.compile(r"[a-z][a-z0-9-]*")
 OUTPUT_CAP = 10000  # the official cap on hook output (characters)
-RESULT_KEYS = {"contract_version", "exit_code", "output", "message"}
-DECISIONS = {"allow", "deny", "ask"}
 
 
 def discover(areas_dir: Path):
@@ -66,53 +64,28 @@ def discover(areas_dir: Path):
 
 
 def validate_result(result) -> list[str]:
-    """Problems of a handler result against C31 `handler_result` (empty when sound); light, no schema load."""
+    """Problems of a handler result: the contract decides (C31 `handler_result`, whose output is a C16 object), so a new
+    event the contract learns passes without a change here; the launcher adds only the official cap on field length."""
     if not isinstance(result, dict):
         return [f"the handler result must be an object, not {type(result).__name__}"]
-    problems = [f"unknown key '{k}' in the handler result" for k in sorted(set(result) - RESULT_KEYS)]
-    if result.get("contract_version") != "1.0":
-        problems.append("contract_version must be '1.0'")
-    code = result.get("exit_code")
-    if isinstance(code, bool) or code not in (0, 2):
-        problems.append("exit_code must be 0 or 2")
-    output = result.get("output")
-    if output is not None:
-        problems.extend(_output_problems(output))
-    message = result.get("message")
-    if message is not None and not isinstance(message, str):
-        problems.append("message must be a string")
-    if code == 2 and not (isinstance(message, str) and message.strip()):
-        problems.append("exit code 2 blocks and states why in message (a non-blank text)")
-    return problems
+    try:
+        from batuta_lib import contract
+        schema = contract.load_schema(contract.find_schema(HERE.parent / "contracts", "C31"))
+        problems = contract.validate_instance("C31", result, schema)
+    except Exception as exc:  # noqa: BLE001 (a validator that cannot run is a non-blocking error, never a guess)
+        return [f"cannot validate against C31 ({type(exc).__name__}: {exc})"]
+    return problems + _cap_problems(result.get("output"))
 
 
-def _output_problems(output) -> list[str]:
-    """The output must be a C16 object: a block (decision and reason), a PreToolUse decision or a SessionStart context."""
-    if not isinstance(output, dict):
-        return ["output must be an object or null"]
-    if "decision" in output:
-        if output.get("decision") != "block" or not (isinstance(output.get("reason"), str) and output["reason"]):
-            return ["output: a block needs decision 'block' and a non-empty reason"]
-        if len(output["reason"]) > OUTPUT_CAP:
-            return [f"output: the block reason must be at most {OUTPUT_CAP} characters"]
-        return []
-    spec = output.get("hookSpecificOutput")
-    if not isinstance(spec, dict):
-        return ["output is not a C16 output (no 'decision' and no 'hookSpecificOutput')"]
-    name = spec.get("hookEventName")
-    if name == "PreToolUse":
-        reason = spec.get("permissionDecisionReason")
-        if spec.get("permissionDecision") not in DECISIONS or not isinstance(reason, str):
-            return ["output: a PreToolUse output needs permissionDecision (allow, deny or ask) and permissionDecisionReason"]
-        if len(reason) > OUTPUT_CAP:
-            return [f"output: permissionDecisionReason must be at most {OUTPUT_CAP} characters"]
-        return []
-    if name == "SessionStart":
-        context = spec.get("additionalContext")
-        if not isinstance(context, str) or len(context) > OUTPUT_CAP:
-            return [f"output: SessionStart additionalContext must be a string of at most {OUTPUT_CAP} characters"]
-        return []
-    return ["output: hookEventName must be PreToolUse or SessionStart"]
+def _cap_problems(value, path: str = "output") -> list[str]:
+    """Any string field of the output longer than the official cap (10,000 characters)."""
+    if isinstance(value, str):
+        return [f"{path} is {len(value)} characters, over the {OUTPUT_CAP} cap"] if len(value) > OUTPUT_CAP else []
+    if isinstance(value, dict):
+        return [p for k, v in value.items() for p in _cap_problems(v, f"{path}/{k}")]
+    if isinstance(value, list):
+        return [p for i, v in enumerate(value) for p in _cap_problems(v, f"{path}/{i}")]
+    return []
 
 
 def _load(module_name: str, areas_dir: Path):
