@@ -5,6 +5,7 @@ the Gate cell rules (a backticked command or a test id), the named test files a 
 lookups, and the LF-normalized SHA-256 every hash of the freeze uses (decision 4: CRLF and LF variants hash equal).
 """
 import hashlib
+import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _FENCE = re.compile(r"^[ \t]*(```|~~~)")
 PLACEHOLDER_GATES = {"", "-", "tbd", "todo", "n/a", "na", "none", "manual", "later", "?"}
 _TEST_ID = re.compile(r"[A-Za-z0-9_.@-]+(?:/[A-Za-z0-9_.@-]+)*\.[A-Za-z0-9]+(?:::[A-Za-z0-9_\[\]-]+)?\Z")
+_SPANS_ONLY = re.compile(r"\s*(?:`[^`]+`[\s;]*)+\Z")
+NO_FAIL = {"true", "false", ":", "echo", "exit"}
 _PATH_TOKEN = re.compile(r"[A-Za-z0-9_.@-]+(?:/[A-Za-z0-9_.@-]+)*/?\Z")
 _TEST_SEGMENTS = {"test", "tests", "__tests__"}
 _SKIP_PARTS = {"__pycache__", "node_modules", ".git"}
@@ -202,19 +205,34 @@ def _spans(cell):
     return [s.strip() for s in re.findall(r"`([^`]+)`", cell) if s.strip()]
 
 
+def _lead(text):
+    """The first word of `text` in lower case, trailing and leading punctuation removed (so `tbd.` and `todo:` are placeholders)."""
+    words = text.strip().split()
+    return words[0].strip(".,:;!?\"'`()").lower() if words else ""
+
+
 def check_gate(cell):
-    """None when the Gate cell is runnable text (a backticked command or a test id `path[::name]`), else the reason."""
+    """None when the Gate cell is runnable text, else the reason. Runnable: one or more backticked commands with nothing but
+    whitespace or `;` between them, or a test id `path[::name]` of a test file; a placeholder word, prose around a span, a bare
+    file name, a `..` segment and a command that cannot fail (`true`, `exit 0`, `echo ...`) are not."""
     raw = cell.strip()
-    if raw.strip("`").strip().lower() in PLACEHOLDER_GATES:
+    if _lead(raw.strip("`")) in PLACEHOLDER_GATES:
         return "the gate is empty or a placeholder"
-    spans = _spans(raw)
-    if spans:
-        if all(s.lower() in PLACEHOLDER_GATES for s in spans):
-            return "the gate is a placeholder"
+    if _SPANS_ONLY.match(raw):
+        for span in _spans(raw):
+            if _lead(span) in PLACEHOLDER_GATES:
+                return "the gate is a placeholder"
+            if span.split()[0].lower() in NO_FAIL or _lead(span) == "":
+                return f"'{span}' cannot fail, so it is no gate"
         return None
     if _TEST_ID.match(raw):
+        path = raw.split("::")[0]
+        if ".." in path.split("/"):
+            return "a test id cannot contain a '..' segment"
+        if not is_test_path(path):
+            return f"'{path}' is not a test file (a test id names one)"
         return None
-    return "the gate is neither a backticked command nor a test id (path or path::name)"
+    return "the gate is neither backticked commands nor a test id (path or path::name)"
 
 
 def is_test_path(path):
@@ -224,51 +242,111 @@ def is_test_path(path):
             or ".test." in name or ".spec." in name)
 
 
+def _looks_like_path(word):
+    return "/" in word or bool(re.search(r"\.[A-Za-z0-9]+\Z", word))
+
+
 def named_test_tokens(cell):
-    """Repository-relative paths (files, or folders ending in `/`) that a Gate cell names as tests."""
+    """(tokens, escapes) of a Gate cell. Tokens are the repository-relative paths (files, or folders) the cell names, with
+    backslashes turned into slashes and `.` and `..` segments folded; a bare word is a candidate too (a folder such as `tests`),
+    kept only when it exists. Escapes are the paths that leave the repository (`../x/test_a.py`, an absolute test path)."""
     spans = _spans(cell) or [cell.strip()]
-    found = []
+    tokens, escapes = [], []
     for span in spans:
         for word in span.split():
-            word = word.strip("\"',;()").split("::")[0]
-            if word.startswith("./"):
-                word = word[2:]
-            if not word or word.startswith(("-", "/")) or ".." in word.split("/") or not _PATH_TOKEN.match(word):
+            word = word.strip("\"',;()").split("::")[0].replace("\\", "/")
+            if not word or word.startswith("-") or "=" in word or "://" in word:
                 continue
-            if "/" not in word and "." not in word:
+            if re.match(r"(?:/|[A-Za-z]:/)\S", word):
+                if _looks_like_path(word) and is_test_path(word) and word not in escapes:
+                    escapes.append(word)
                 continue
-            if is_test_path(word) and word not in found:
-                found.append(word)
-    return found
+            if not _PATH_TOKEN.match(word):
+                continue
+            norm = posixpath.normpath(word)
+            if norm == ".":
+                continue
+            if norm == ".." or norm.startswith("../"):
+                if "/" in word and word not in escapes:
+                    escapes.append(word)
+                continue
+            if norm not in tokens:
+                tokens.append(norm)
+    return tokens, escapes
+
+
+def _under(path, root_resolved):
+    try:
+        path.resolve().relative_to(root_resolved)
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def expand_tests(root, tokens):
-    """(files, missing): the existing test files named by `tokens` (a folder token adds every file under it)."""
+    """(files, missing, outside): the existing files named by `tokens` (a folder adds every file under it), the test-looking
+    paths that do not exist, and the paths that resolve outside the root (a link out of the repository)."""
     root = Path(root)
-    files, missing = [], []
+    root_r = root.resolve()
+    files, missing, outside = [], [], []
     for tok in tokens:
+        norm = posixpath.normpath(tok.replace("\\", "/"))
+        if norm == ".." or norm.startswith("../") or posixpath.isabs(norm):
+            outside.append(tok)
+            continue
         p = root / tok.rstrip("/")
-        if p.is_dir():
-            for f in sorted(x for x in p.rglob("*") if x.is_file() and not (_SKIP_PARTS & set(x.parts)) and x.suffix != ".pyc"):
-                r = rel(f, root)
+        if p.exists():
+            if not _under(p, root_r):
+                outside.append(tok)
+            elif p.is_dir():
+                for f in sorted(x for x in p.rglob("*") if x.is_file() and not (_SKIP_PARTS & set(x.parts)) and x.suffix != ".pyc"):
+                    if not _under(f, root_r):
+                        if tok not in outside:
+                            outside.append(tok)
+                        continue
+                    r = rel(f, root)
+                    if r not in files:
+                        files.append(r)
+            else:
+                r = rel(p, root)
                 if r not in files:
                     files.append(r)
-        elif p.is_file():
-            r = rel(p, root)
-            if r not in files:
-                files.append(r)
-        else:
+        elif _looks_like_path(tok) and is_test_path(tok):
             missing.append(tok)
-    return files, missing
+    return files, missing, outside
+
+
+def gate_refs(spec, include_retired=False):
+    """[(requirement id, tokens, escapes)] for the rows whose Gate is read (active rows, plus retired ones on request)."""
+    out = []
+    for row in (spec.rows if include_retired else spec.active_rows()):
+        tokens, escapes = named_test_tokens(row.get("Gate", ""))
+        out.append((row.get("Id", ""), tokens, escapes))
+    return out
 
 
 def spec_test_tokens(spec, include_retired=False):
     tokens = []
-    for row in (spec.rows if include_retired else spec.active_rows()):
-        for tok in named_test_tokens(row.get("Gate", "")):
-            if tok not in tokens:
-                tokens.append(tok)
+    for _, toks, _ in gate_refs(spec, include_retired):
+        for t in toks:
+            if t not in tokens:
+                tokens.append(t)
     return tokens
+
+
+def gate_findings(root, spec):
+    """Per active row, what the freeze could not hash: [(requirement id, kind, detail)] with kind `escape`, `outside`, `none`
+    (the Gate names no file or folder at all) or `missing` (a test-looking path that does not exist)."""
+    found = []
+    for rid, tokens, escapes in gate_refs(spec):
+        for e in escapes:
+            found.append((rid, "escape", e))
+        files, missing, outside = expand_tests(root, tokens)
+        found.extend((rid, "outside", o) for o in outside)
+        found.extend((rid, "missing", m) for m in missing)
+        if not (files or missing or outside or escapes):
+            found.append((rid, "none", ""))
+    return found
 
 
 # ------------------------------------------------------------------ catalog, ADRs, sizing

@@ -112,6 +112,9 @@ def lint(root=".", today=None):
                 items.append(item("FAIL", f"{label}: supersedes {target}, which is not an ADR of this project", label))
             elif docs[target][1].get("superseded_by") != adr_id:
                 items.append(item("FAIL", f"{label}: {target} must say superseded_by: {adr_id} (the link is not reciprocal)", label))
+        if isinstance(meta.get("superseded_by"), str) and status in ("Proposed", "Accepted"):
+            items.append(item("FAIL", f"{label}: {adr_id} is {status} but names superseded_by {meta['superseded_by']}; "
+                                      "a superseded ADR has the status Superseded", label))
         trig = _REVIEW_BY.search(str(meta.get("review_trigger", "")))
         if trig and status in ("Proposed", "Accepted"):
             try:
@@ -126,6 +129,18 @@ def lint(root=".", today=None):
                 why = _decided(root, tech_id, c25)
                 if why:
                     items.append(item("FAIL", f"{label}: Accepted but its technology evaluation '{tech_id}' is not decided: {why}", label))
+    seen_cycles = set()
+    for start in sorted(docs):
+        chain, cur = [start], docs[start][1].get("superseded_by")
+        while isinstance(cur, str) and cur in docs and cur != chain[-1]:
+            if cur in chain:
+                loop = chain[chain.index(cur):]
+                if frozenset(loop) not in seen_cycles:
+                    seen_cycles.add(frozenset(loop))
+                    items.append(item("FAIL", "supersession cycle: " + " to ".join(loop + [cur]), docs[loop[0]][0]))
+                break
+            chain.append(cur)
+            cur = docs[cur][1].get("superseded_by")
     if not any(i["tag"] in ("FAIL", "WARN") for i in items):
         items.append(item("OK", f"{len(files)} ADR(s) satisfy C24 and the lifecycle rules", sm.ADR_DIR))
     return items

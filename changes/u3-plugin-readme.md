@@ -8,7 +8,8 @@ python scripts/batuta.py spec new --title TITLE [--tier S|M|L] [--apply]
 python scripts/batuta.py spec lint [--spec ID] [--catalog FILE]
 python scripts/batuta.py spec trace ID [--tests PATH] [--apply]
 python scripts/batuta.py spec show ID
-python scripts/batuta.py spec approve ID                      # manual path: the typed phrase on stdin
+python scripts/batuta.py spec approve ID                      # manual path: a human types the phrase at the console
+python scripts/batuta.py spec hook-approval < payload.json     # dry run of the hook handler, never writes
 python scripts/batuta.py spec freeze --check ID
 ```
 
@@ -25,6 +26,15 @@ python scripts/batuta.py spec freeze --check ID
   with a comment line `# REQ: <id>[, <id>]` (Python) or `// REQ: <id>` (JavaScript, TypeScript); `spec trace` fails on
   orphans, unknown or retired ids and test files without a marker (a Draft spec is exempt from the orphan rule).
 - The freeze: `spec show ID` prints the files that are hashed and the phrase to type, `approve <spec id> <first 12 hex of the
-  spec sha256>`. The prompt hook records it where hooks run; `spec approve ID` is the path where they do not. A prefix that is
-  not the current spec's is refused and nothing is written. `spec freeze --check ID` reports VALID, or VOID with the files
+  spec sha256>`. The prompt hook records it where hooks run; `spec approve ID` is the path where they do not, and it reads the
+  phrase from the console device (`CONIN$`, `/dev/tty`), so it refuses piped input and runs only in an interactive terminal.
+  `spec hook-approval` is a dry run and never writes. A prefix that is not the current spec's is refused and nothing is written. `spec freeze --check ID` reports VALID, or VOID with the files
   that changed, were deleted or are no longer covered.
+- Gates name what the freeze hashes: every token of a Gate that resolves to an existing file or folder under the root is hashed
+  (folders expand, backslashes are read as slashes, `..` is folded and one that leaves the root is refused); a Gate in Review
+  or Frozen that names none is a lint failure, as is prose around a span, a bare file name or a command that cannot fail
+  (`true`, `exit 0`, `echo ...`). A `# REQ:` marker counts only as a real Python comment token, and a `// REQ:` marker only
+  outside strings, template literals and block comments.
+- Residual risk (waived for this unit, review F-02): a schema-valid approval record written by another process (an inline
+  interpreter) is indistinguishable from a captured one. The controls are the approvals write guard, the guard on the three
+  approval commands and the permission preset that deny agents those writes, and human review of the committed record.

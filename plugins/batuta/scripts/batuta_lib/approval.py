@@ -13,7 +13,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from batuta_lib import contract as core
@@ -125,8 +125,16 @@ def gather(root, spec_id, catalog=None):
             g.adrs[sm.rel(found, root)] = sm.sha256_lf(found)
         else:
             g.warnings.append(f"{aid} is {sm.adr_status(found) or 'of unknown status'}, not Accepted; it is not hashed")
-    files, missing = sm.expand_tests(root, sm.spec_test_tokens(spec))
-    g.missing.extend(missing)
+    for rid, kind, detail in sm.gate_findings(root, spec):
+        if kind == "escape":
+            g.problems.append(f"{rid}: the Gate names {detail}, outside the repository")
+        elif kind == "outside":
+            g.problems.append(f"{rid}: the Gate names {detail}, which resolves outside the repository")
+        elif kind == "none":
+            g.problems.append(f"{rid}: the Gate names no file or folder the freeze can hash (name the test file or folder it runs)")
+        elif detail not in g.missing:
+            g.missing.append(detail)
+    files, _, _ = sm.expand_tests(root, sm.spec_test_tokens(spec))
     for f in files:
         g.tests[f] = sm.sha256_lf(root / f)
     return g
@@ -179,11 +187,26 @@ def write_record(root, g, typed, approved_by, tool_version, now=None):
             n += 1
 
 
+def _utcnow():
+    return datetime.now(timezone.utc)
+
+
+def _instant(text):
+    """The UTC instant of an ISO 8601 `approved_at` (the C06 pattern allows Z and numeric offsets), or None."""
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def read_records(root, spec_id):
-    """[(path, record or None, errors)] for every file under approvals/, oldest first by approved_at then name."""
+    """[(path, record or None, errors)] for every file under approvals/, oldest first by the instant in `approved_at`
+    (not by its text), then by name. A record dated in the future never counts (a forged date must not outrank a real one)."""
     folder = approvals_dir(root, spec_id)
     out = []
     schema = core.load_schema(core.find_schema(config.contracts_dir(), "C06"))
+    now = _utcnow()
     for f in sorted(folder.glob("*.json")) if folder.is_dir() else []:
         try:
             doc = core.loads_strict(f.read_text(encoding="utf-8-sig"))
@@ -193,8 +216,15 @@ def read_records(root, spec_id):
         errors = core.validate_instance("C06", doc, schema) if isinstance(doc, dict) else ["the record is not an object"]
         if not errors and doc.get("spec_id") != spec_id:
             errors = [f"the record is for spec {doc.get('spec_id')}, not {spec_id}"]
+        if not errors:
+            at = _instant(doc["approved_at"])
+            if at is None:
+                errors = ["approved_at is not a valid instant"]
+            elif at > now + timedelta(minutes=5):
+                errors = [f"approved_at {doc['approved_at']} is in the future"]
         out.append((f, None if errors else doc, errors))
-    out.sort(key=lambda r: (r[1]["approved_at"] if r[1] else "", r[0].name))
+    zero = datetime.min.replace(tzinfo=timezone.utc)
+    out.sort(key=lambda r: (_instant(r[1]["approved_at"]) if r[1] else zero, r[0].name))
     return out
 
 

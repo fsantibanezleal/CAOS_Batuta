@@ -24,6 +24,8 @@ def _age_item(subject, verified, today, max_age, path):
         days = (today - date.fromisoformat(verified)).days
     except ValueError:
         return None
+    if days < 0:
+        return item("WARN", f"{subject}: verified {verified}, a date in the future; record the day it was actually verified", path)
     if days > max_age:
         return item("WARN", f"{subject}: verified {verified}, older than {max_age} days ({days} days ago); verify it again on its primary source", path)
     return None
@@ -46,7 +48,10 @@ def lint(root=".", sizing=None, tech_dir=None, max_age=DEFAULT_MAX_AGE_DAYS, tod
         return [item("FAIL", "no sizing found; expected one of: " + ", ".join(places) + " (or pass --sizing)")]
     label = sm.rel(path, root)
     schema, _, _ = sm.schema_and_sections("C23")
-    rows = matrix_rows(path)
+    try:
+        rows = matrix_rows(path)
+    except ValueError as exc:
+        return [item("FAIL", f"{label}: the Technology matrix cannot be read ({exc}); escape a literal pipe in a cell as \\|", label)]
     if rows is None:
         return [item("FAIL", f"{label}: no Technology matrix table (Tool, Version, Primary source URL, Verified date)", label)]
     bad = 0

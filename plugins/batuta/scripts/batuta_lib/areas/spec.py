@@ -5,13 +5,16 @@ Verbs:
     lint           C05 and the spec rules: runnable gates, interfaces resolved against the catalog, ids never reused
     trace          the requirement to test to task matrix (C08), written to `trace.json` with --apply
     show           the files the freeze hashes and the approval phrase to type
-    approve        the manual fallback for devices where hooks do not run: asks for the typed phrase on stdin
-    hook-approval  the CLI twin of the `spec-approval` hook handler: reads the UserPromptSubmit payload on stdin
+    approve        the manual fallback for devices where hooks do not run: the phrase is typed at the console device
+                   (`CONIN$`, `/dev/tty`), never read from piped input; refused without a terminal
+    hook-approval  a dry run of the `spec-approval` handler: reads a UserPromptSubmit payload on stdin, writes nothing
     freeze         `--check`: recompute every hash and report VALID or VOID with the files that changed
 
 The approval is only ever created from the human's typed text, `approve <spec id> <first 12 hex of the spec's sha256>`,
-by the UserPromptSubmit handler (HOOKS below) or by `spec approve`; both go through one function, and a prefix that is not
-the current spec's is refused with nothing written. Comments (the templates' examples) are stripped before anything is read.
+by the UserPromptSubmit handler (HOOKS below, run by the harness) or by a human at `spec approve`; both go through one
+function, and a prefix that is not the current spec's is refused with nothing written. Residual risk: a schema-valid record
+written by another process is indistinguishable from a captured one; the approvals write guard, the guard on the approve
+commands and the permission preset are the controls, with human review of the committed record. Comments (the templates' examples) are stripped before anything is read.
 Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
 import argparse
@@ -58,7 +61,7 @@ def new(root, title, tier="M", owner=None, apply=False, today=None):
     values = {"id": spec_id, "title": title, "tier": tier, "owner": owner or approval.current_user(),
               "created": (today or date.today()).isoformat()}
     folder = root / sm.SPECS_DIR / spec_id
-    plan = [("spec.md", "spec.md"), ("tasks.md", "tasks.md"), ("test-change-requests.md", "test-change-requests.md")]
+    plan = [("spec.md", "spec.md"), ("tasks.md", "tasks.md")]
     if tier != NO_PLAN:
         plan.append(("plan.md", "plan.md"))
     out = []
@@ -71,9 +74,10 @@ def new(root, title, tier="M", owner=None, apply=False, today=None):
         out.append(item(status, f"{spec_id}/{name}", sm.rel(path, root)))
     for sub in ("approvals", "evidence"):
         keep = folder / sub / ".gitkeep"
-        if apply and not keep.exists():
+        status = "SAME" if keep.exists() else "NEW"
+        if apply and status == "NEW":
             render.write_atomic(keep, "")
-        out.append(item("SAME" if keep.exists() else "NEW", f"{spec_id}/{sub}/", sm.rel(keep, root)))
+        out.append(item(status, f"{spec_id}/{sub}/", sm.rel(keep, root)))
     constitution = root / sm.SPECS_DIR / sm.FOUNDATION / "constitution.md"
     if not constitution.exists():
         if apply:
@@ -136,8 +140,8 @@ def _tasks_items(root, d, spec, ids, items, label):
     if not rows:
         items.append(item("SKIP" if draft else "FAIL", f"{tlabel}: no tasks yet" + ("" if draft else " (a spec in Review or Frozen has tasks)"), tlabel))
         return rows
-    errors = sm.validate_text("C21", stripped)
-    items.extend(item("FAIL", f"{tlabel}: {e}", tlabel) for e in errors)
+    if not draft:
+        items.extend(item("FAIL", f"{tlabel}: {e}", tlabel) for e in sm.validate_text("C21", stripped))
     known = {r["Id"] for r in spec.rows}
     for t in rows:
         for r in t["Requirements"]:
@@ -192,16 +196,21 @@ def lint_spec(root, d, catalog=None, ids_map=None):
                 items.append(item("WARN", f"{label}: {aid} is referenced but not found under {sm.ADR_DIR}/ (it is not hashed at the freeze)", label))
         if spec.tier == "L" and not adrs:
             items.append(item("FAIL", f"{label}: tier L references at least one ADR (ADR-NNNN) so the freeze hashes it", label))
-        _, missing = sm.expand_tests(root, sm.spec_test_tokens(spec))
-        for m in missing:
-            items.append(item("FAIL" if spec.status == "Frozen" else "WARN", f"{label}: the Gate names {m}, which does not exist (the freeze hashes every named test)", label))
+        for rid, kind, detail in sm.gate_findings(root, spec):
+            if kind == "escape":
+                items.append(item("FAIL", f"{rid}: the Gate names {detail}, outside the repository", label))
+            elif kind == "outside":
+                items.append(item("FAIL", f"{rid}: the Gate names {detail}, which resolves outside the repository", label))
+            elif kind == "none":
+                items.append(item("FAIL", f"{rid}: the Gate names no file or folder the freeze can hash (name the test file or folder it runs)", label))
+            else:
+                items.append(item("FAIL" if spec.status == "Frozen" else "WARN",
+                                  f"{label}: the Gate of {rid} names {detail}, which does not exist (the freeze hashes every named test)", label))
         if not (root / sm.SPECS_DIR / sm.FOUNDATION / "constitution.md").is_file():
             items.append(item("WARN", f"{sm.SPECS_DIR}/{sm.FOUNDATION}/constitution.md is missing; the plans' constitution check has nothing to check against"))
         tcr = d / "test-change-requests.md"
-        tlabel = sm.rel(tcr, root)
-        if not tcr.is_file():
-            items.append(item("WARN", f"{tlabel} is missing; a locked test could not be changed through a request", tlabel))
-        else:
+        if tcr.is_file():
+            tlabel = sm.rel(tcr, root)
             stripped = sm.strip_comments(tcr.read_text(encoding="utf-8-sig").replace("\r\n", "\n"))
             rows = sm.read_rows("C33", "Change requests", stripped, False)
             if rows is None:
@@ -300,9 +309,9 @@ def show(root, spec_id, catalog=None):
     return items
 
 
-def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None):
+def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None, write=True):
     """The one function that writes an approval. `typed` is the human's text; `spec_id` pins the spec when the caller knows it.
-    Returns (items, record path or None). Refusals write nothing."""
+    Returns (items, record path or None). Refusals write nothing; with `write=False` (a dry run) nothing is ever written."""
     root = Path(root)
     parsed = approval.parse_phrase(typed)
     if parsed is None:
@@ -328,17 +337,40 @@ def approve_typed(root, typed, spec_id=None, catalog=None, approved_by=None):
         return [item("REFUSED", f"the freeze of {spec_id} is refused: {r}") for r in g.refusals()], None
     if typed_prefix != g.prefix:
         return [item("REFUSED", f"the prefix {typed_prefix} is not the current spec's: the spec changed since you read it{shown}")], None
-    path = approval.write_record(root, g, typed, approved_by or approval.current_user(), approval.tool_version())
+    if not write:
+        out = [item("OK", f"would record the approval of {spec_id} at {g.prefix} (dry run: nothing written)")]
+        out.extend(item("OK", f"would hash {p}", p) for p in sorted(g.hashed()))
+        return out, None
+    try:
+        path = approval.write_record(root, g, typed, approved_by or approval.current_user(), approval.tool_version())
+    except (ValueError, OSError) as exc:
+        return [item("REFUSED", f"the approval of {spec_id} could not be recorded: {exc}")], None
     out = [item("NEW", f"approval recorded for {spec_id} at {g.prefix}", sm.rel(path, root))]
     out.extend(item("OK", f"hashed {p}", p) for p in sorted(g.hashed()))
     return out, path
 
 
-def _read_line():
+class ConsoleError(Exception):
+    """There is no human at a console to type the approval phrase."""
+
+
+def _read_console():
+    """One line typed at the console device (`CONIN$` on Windows, `/dev/tty` elsewhere), never the piped standard input: a
+    process that pipes its own text into `spec approve` is not a human typing. Raises ConsoleError when stdin is not a
+    terminal or the console cannot be opened."""
     try:
-        return sys.stdin.readline()
-    except (OSError, ValueError):
-        return ""
+        interactive = sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        interactive = False
+    if not interactive:
+        raise ConsoleError("standard input is not a terminal: `spec approve` reads the phrase from the console device, "
+                           "so a human must run it in an interactive terminal (where hooks run, type the phrase in the prompt)")
+    device = "CONIN$" if sys.platform == "win32" else "/dev/tty"
+    try:
+        with open(device, "r", encoding="utf-8", errors="replace") as console:
+            return console.readline()
+    except OSError as exc:
+        raise ConsoleError(f"the console device {device} cannot be opened ({exc})") from exc
 
 
 def _cmd_approve(args):
@@ -349,7 +381,11 @@ def _cmd_approve(args):
     items.extend(_files_items(g, args.root))
     items.append(item("OK", "this is the manual path for devices where hooks do not run; where hooks run, type the phrase in the prompt instead"))
     print(f"Type exactly: {approval.phrase(args.spec_id, g.spec_sha)}", file=sys.stderr)
-    typed = _read_line()
+    try:
+        typed = _read_console()
+    except ConsoleError as exc:
+        items.append(item("REFUSED", f"no human at a console: {exc}"))
+        return emit(AREA, "approve", items, "spec approve: refused, nothing written", _json(args))
     res, _ = approve_typed(args.root, typed, args.spec_id, args.catalog)
     items.extend(res)
     return emit(AREA, "approve", items, "spec approve: " + ("approved" if all(i["tag"] != "REFUSED" for i in res) else "refused, nothing written"), _json(args))
@@ -369,22 +405,27 @@ def approval_hook(payload):
     except Exception as exc:  # noqa: BLE001 (the capture must never block a prompt)
         text = f"REFUSED approval capture failed: {exc}"
     return {"contract_version": "1.0", "exit_code": 0,
-            "output": {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}}}
+            "output": {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text},
+                       "systemMessage": text}}
 
 
 HOOKS = {"spec-approval": approval_hook}
 
 
 def _cmd_hook(args):
+    """A dry run of the handler: what it would record for this payload. It never writes; only the harness-run handler does."""
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except ValueError as exc:
         print(f"spec hook-approval: the stdin payload is not JSON ({exc})", file=sys.stderr)
         return 1
-    res = approval_hook(payload)
-    if res["output"] is not None:
-        print(json.dumps(res["output"]))
-    return res["exit_code"]
+    prompt = payload.get("prompt") if isinstance(payload, dict) else None
+    if not isinstance(prompt, str) or approval.parse_phrase(prompt) is None:
+        items = [item("SKIP", "dry run: the prompt does not start with the approval phrase; the handler would ignore it")]
+    else:
+        items, _ = approve_typed(payload.get("cwd") or os.getcwd(), prompt, write=False)
+        items.append(item("SKIP", "dry run: nothing written; the approval is recorded only by the hook handler run by the harness"))
+    return emit(AREA, "hook-approval", items, _summary("spec hook-approval (dry run)", items), _json(args))
 
 
 def freeze(root, spec_id, catalog=None):
@@ -392,7 +433,7 @@ def freeze(root, spec_id, catalog=None):
     items = []
     for p, rec, errors in records:
         if rec is None:
-            items.append(item("WARN", f"approval record ignored (it does not satisfy C06): {'; '.join(errors)}", sm.rel(p, root)))
+            items.append(item("WARN", f"approval record ignored: {'; '.join(errors)}", sm.rel(p, root)))
     if state == "VALID":
         g = approval.gather(root, spec_id, catalog)
         items.append(item("OK", f"VALID {spec_id}: {sm.rel(path, root)} matches the {len(g.hashed())} hashed file(s)", sm.rel(path, root)))
@@ -477,7 +518,8 @@ def register(subparsers):
     _common(p)
     p.set_defaults(func=_cmd_approve)
 
-    p = subparsers.add_parser("hook-approval", help="CLI twin of the spec-approval hook handler: the payload JSON on stdin")
+    p = subparsers.add_parser("hook-approval", help="dry run of the spec-approval hook handler: the payload JSON on stdin; never writes")
+    p.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="print the C20 JSON object")
     p.set_defaults(func=_cmd_hook)
 
     p = subparsers.add_parser("freeze", help="check that the approval still matches every hashed file (VALID or VOID)")
