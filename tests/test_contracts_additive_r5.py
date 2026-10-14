@@ -312,6 +312,58 @@ class C23Overlap(unittest.TestCase):
                 self.assertEqual(not fx("C23", p.name), p.name.startswith("valid-"))
 
 
+class ProseFences(unittest.TestCase):
+    """F-15: the checker strips fenced code as CommonMark defines a fence, for backticks and for tildes."""
+
+    def test_tilde_fence(self):
+        self.assertNotIn("TODO", contract.prose("before\n~~~\nTODO inside\n~~~\nafter\n"))
+
+    def test_four_tildes_close_only_with_four_or_more(self):
+        text = "a\n~~~~\nTODO one\n~~~\nTODO two\n~~~~\nout\n"
+        self.assertNotIn("TODO", contract.prose(text))
+
+    def test_a_longer_backtick_fence_holds_a_shorter_one(self):
+        text = "a\n````\n```\nTODO\n```\n````\nout\n"
+        self.assertNotIn("TODO", contract.prose(text))
+
+    def test_indented_fence_up_to_three_spaces(self):
+        self.assertNotIn("TODO", contract.prose("a\n   ~~~\n   TODO\n   ~~~\nb\n"))
+        self.assertNotIn("TODO", contract.prose("a\n  ```\n  TODO\n  ```\nb\n"))
+
+    def test_four_spaces_is_not_a_fence(self):
+        self.assertIn("TODO", contract.prose("a\n    ~~~\nTODO\n"))
+
+    def test_info_string(self):
+        self.assertNotIn("TODO", contract.prose("a\n~~~python title\nTODO\n~~~\nb\n"))
+        self.assertNotIn("TODO", contract.prose("a\n```json\nTODO\n```\nb\n"))
+
+    def test_an_unclosed_fence_runs_to_the_end(self):
+        out = contract.prose("keep\n~~~\nTODO\nmore\n")
+        self.assertNotIn("TODO", out)
+        self.assertIn("keep", out)
+        self.assertNotIn("TODO", contract.prose("keep\n```\nTODO\n"))
+
+    def test_a_closing_fence_with_text_does_not_close(self):
+        self.assertNotIn("TODO", contract.prose("a\n~~~\nx\n~~~ not a close\nTODO\n~~~\nb\n"))
+
+    def test_a_different_character_does_not_close(self):
+        self.assertNotIn("TODO", contract.prose("a\n~~~\nx\n```\nTODO\n~~~\nb\n"))
+
+    def test_text_outside_the_fence_is_still_checked(self):
+        out = contract.prose("TODO before\n~~~\nquoted\n~~~\nTODO after\n")
+        self.assertEqual(out.count("TODO"), 2)
+
+    def test_a_report_with_a_placeholder_inside_a_tilde_fence_is_valid(self):
+        text = (FX / "C03" / "valid-placeholder-words-inside-code-are-quoted-not-prose.md").read_text(encoding="utf-8")
+        spec = contract.load_sections_spec(schema_file("C03"))
+        self.assertEqual(contract.validate_markdown(text, schema("C03"), spec), [])
+        self.assertEqual(contract.validate_markdown(text.replace("```", "~~~"), schema("C03"), spec), [])
+
+    def test_a_placeholder_outside_any_fence_is_still_refused(self):
+        text = (FX / "C03" / "invalid-placeholder-in-prose.md").read_text(encoding="utf-8")
+        self.assertTrue(contract.validate_markdown(text, schema("C03"), contract.load_sections_spec(schema_file("C03"))))
+
+
 class Lint(unittest.TestCase):
     def test_contract_lint_reports_no_failure(self):
         proc = subprocess.run([sys.executable, "-B", str(ROOT / "plugins" / "batuta" / "scripts" / "batuta.py"), "contract", "lint"],
