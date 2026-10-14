@@ -127,6 +127,52 @@ class Deploy(DeviceCase):
             self.assertNotRegex(text, r"(?<![A-Za-z])[A-Za-z]:[\\/](?![\\/])")
 
 
+class TemplateFolders(unittest.TestCase):
+    """A deploy mirrors the repository's templates and the plugin's own together (an area adding plugin templates
+    must never drop the presets or the user core), and never a folder above a device copy."""
+
+    def layout(self, base, *folders):
+        for rel in folders:
+            (base / rel).mkdir(parents=True)
+            (base / rel / "x.md").write_text(rel, encoding="utf-8")
+
+    def test_a_checkout_mirrors_the_repository_templates_and_the_plugin_templates(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            self.layout(base, "templates/presets", "plugins/batuta/templates/spec")
+            (base / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            with mock.patch.object(device, "PLUGIN_ROOT", base / "plugins" / "batuta"):
+                self.assertEqual([base / "templates", base / "plugins" / "batuta" / "templates"],
+                                 device._templates_dirs())
+
+    def test_a_checkout_without_plugin_templates_still_mirrors_the_repository_templates(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            self.layout(base, "templates/presets")
+            (base / "plugins" / "batuta").mkdir(parents=True)
+            (base / ".git").mkdir()
+            with mock.patch.object(device, "PLUGIN_ROOT", base / "plugins" / "batuta"):
+                self.assertEqual([base / "templates"], device._templates_dirs())
+
+    def test_a_plugins_folder_outside_a_repository_is_not_a_checkout(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            self.layout(base, "templates/unrelated", "plugins/batuta/templates/spec")
+            with mock.patch.object(device, "PLUGIN_ROOT", base / "plugins" / "batuta"):
+                self.assertEqual([base / "plugins" / "batuta" / "templates"], device._templates_dirs())
+
+    def test_a_device_copy_never_reads_a_templates_folder_above_it(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            self.layout(base, "templates/unrelated", "home/copy/templates/presets")
+            with mock.patch.object(device, "PLUGIN_ROOT", base / "home" / "copy"):
+                self.assertEqual([base / "home" / "copy" / "templates"], device._templates_dirs())
+
+
 class DeployLinks(DeviceCase):
     """Re-check of F2 for deploy mirroring: a link nested in a mirrored area is never followed or deleted through."""
 
