@@ -108,7 +108,8 @@ character (an embedded newline cannot hide a segment), no empty segment and no `
 availability rule) are semantic checks in `batuta_lib/contract.py` for C01, C06, C07 (a path has one live lock), C12, C16, C25, C26,
 C27, C28, C30, C31, C32 and C34, and rules in the sections file for the Markdown contracts.
 
-Every JSON artifact carries `"contract_version": "1.0"`. The exceptions are artifacts Batuta does not own or that
+Every JSON artifact carries `"contract_version": "1.0"`, except a C01 document that uses the 1.1 `tdd` block, which carries
+`"1.1"` (C01 accepts both; its `tdd` block is checked only under 1.1, so a 1.0 document may hold any `tdd` value). The other exceptions are artifacts Batuta does not own or that
 another tool reads: C16 (Claude Code hook payloads), C14 (a block that lives inside C01 and is validated standalone),
 C27 (the product's readiness document, identified by its `schema` field), C26 (a block embedded in other artifacts), the
 hooks file of C31 (read by Claude Code), and the Markdown and text contracts (the version lives in the schema file).

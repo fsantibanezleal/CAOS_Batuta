@@ -175,12 +175,13 @@
         },
         "decision": {
           "const": "block",
-          "description": "block stops the prompt; it comes with a non-blank reason (semantic check)."
+          "description": "block stops the prompt; it may come with a reason."
         },
         "reason": {
           "type": "string",
           "minLength": 1,
-          "description": "Shown to the human when decision is block; not added to context."
+          "pattern": "\\S",
+          "description": "Optional (the reference does not require it); when present it is non-blank. Shown to the human when decision is block; not added to context."
         },
         "hookSpecificOutput": {
           "type": "object",

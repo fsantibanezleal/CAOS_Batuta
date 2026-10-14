@@ -383,10 +383,7 @@ def _check_c16(inst, schema):
                 "UserPromptSubmit": "output_userpromptsubmit"}.get(event)
         if name is None:
             return [f"/hookSpecificOutput/hookEventName: unsupported output event {event!r}"]
-        errs = validate_def(inst, schema, name)
-        if not errs and name == "output_userpromptsubmit" and "decision" in inst and "reason" not in inst:
-            errs.append("/reason: a block decision states why in reason (a non-empty text)")
-        return errs
+        return validate_def(inst, schema, name)
     if "decision" in inst:
         return validate_def(inst, schema, "output_block")
     if "hook_event_name" in inst:
@@ -521,8 +518,23 @@ def _bad_relpath(p):
 
 
 
+def _check_c01_tdd(inst, schema):
+    """The closed `tdd` block (1.1). A 1.0 document may carry any `tdd` value (the root allows extra keys), so only a 1.1
+    document is held to the block."""
+    errs = []
+    for e in validate_def(inst["tdd"], schema, "tdd"):
+        errs.append(f"/tdd{e[1:]}" if e.startswith("/:") else f"/tdd{e}")
+    lock = inst["tdd"].get("lock_file") if isinstance(inst["tdd"], dict) else None
+    if isinstance(lock, str) and not errs:
+        if not lock.endswith(".json") or lock.casefold().rsplit("/", 1)[-1] == "batuta.json":
+            errs.append("/tdd/lock_file: a JSON file that is not the configuration itself (ends in .json, never batuta.json)")
+    return errs
+
+
 def _check_c01(inst, schema):
     errs, d = [], inst.get("dispatch")
+    if inst.get("contract_version") == "1.1" and "tdd" in inst:
+        errs.extend(_check_c01_tdd(inst, schema))
     if d is None:
         return errs
     if d["default_lane"] not in d["lanes"]:
@@ -540,9 +552,10 @@ def _check_c34(inst, schema):
     errs = []
     for key in inst["results"]:
         path, sep, name = key.partition("::")
-        if _bad_relpath(path) or (sep and not name.strip()):
-            errs.append(f"/results/{key}: a key is a relative test path (no leading '/', '..', backslash or drive letter) "
-                        "optionally followed by '::' and a non-empty test name")
+        if (_bad_relpath(path) or path.endswith("/") or (sep and not name.strip())
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in key)):
+            errs.append(f"/results/{key!r}: a key is a relative test file path (no leading '/', '..', backslash, drive letter, "
+                        "trailing '/' or control character) optionally followed by '::' and a non-empty test name")
     return errs
 
 
@@ -1170,13 +1183,11 @@ def _glob_prefix(path):
     return path[: path.rfind("/", 0, cut) + 1]
 
 
-def _bare(path):
-    return not path.endswith("/") and not _is_glob(path)
-
-
 def scopes_overlap(a, b):
-    """Two write scopes overlap when they are the same path, one contains the other (a bare name is a prefix of every path
-    under it, so `pipeline` meets `pipeline/x.py`), or globs meet. Compared case-folded: one folder on Windows and macOS."""
+    """Two write scopes overlap when they are the same path, one contains the other (a bare name without glob characters
+    is a prefix of every path below it, so `pipeline` meets `pipeline/x.py` but never a sibling such as `pipeline.py`), or,
+    for a scope with a glob, one matches the other by pattern or one is a folder prefix of the other's fixed leading part.
+    Compared with `str.casefold()`: one folder on Windows and macOS."""
     a, b = a.casefold(), b.casefold()
     if a == b:
         return True
@@ -1188,38 +1199,23 @@ def scopes_overlap(a, b):
             if not _is_glob(right) and not right.endswith("/") and fnmatch.fnmatchcase(right, left):
                 return True
             pre = _glob_prefix(left)
-            if _is_glob(right):
-                base = _glob_prefix(right)
-            elif right.endswith("/"):
-                base = right
-            else:
-                base = right + "/"
-            if (not _bare(right) or pre) and (base.startswith(pre) or pre.startswith(base)):
+            base = _glob_prefix(right) if _is_glob(right) else right
+            if (_is_glob(right) or right.endswith("/")) and (base.startswith(pre) or pre.startswith(base)):
                 return True
     return False
 
 
-_FENCE_OPEN = re.compile(r"( {0,3})(`{3,}|~{3,})(.*)\Z")
+_FENCED = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$", re.MULTILINE | re.DOTALL)
 _INLINE_CODE = re.compile(r"`[^`\n]+`")
 _EXIT = re.compile(r"\b(?:exit(?:ed)?(?:\s+(?:code|status))?|rc|returncode)\s*[:=]?\s*(-?\d+)", re.IGNORECASE | re.ASCII)
 
 
 def strip_fences(text):
-    """The text without fenced code blocks, as CommonMark defines them: a fence opens with three or more backticks or tildes
-    (up to three spaces of indent, an info string after it, none containing a backtick for a backtick fence) and closes
-    with the same character at least as many times and nothing but spaces after; an unclosed fence runs to the end."""
-    out, fence = [], None
-    for line in text.splitlines(keepends=True):
-        body = line.rstrip("\r\n")
-        if fence is None:
-            m = _FENCE_OPEN.match(body)
-            if m and not (m.group(2)[0] == "`" and "`" in m.group(3)):
-                fence = m.group(2)
-                continue
-            out.append(line)
-        elif re.match(r" {0,3}%s{%d,}[ \t]*\Z" % (re.escape(fence[0]), len(fence)), body):
-            fence = None
-    return "".join(out)
+    """The text without fenced code blocks. A fence opens on a line that starts (after any whitespace, so a fence inside a
+    nested list item counts) with three backticks or three tildes and closes on the next line that starts the same way with
+    the same character; an unclosed fence is not stripped. This is the rule contracts 1.0 applied to backticks, now also
+    for tildes."""
+    return _FENCED.sub("", text)
 
 
 def prose(text):
