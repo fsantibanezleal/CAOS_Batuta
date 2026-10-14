@@ -17,16 +17,16 @@ is the CPD contract catalog. There is no second machine-readable inventory (ADR-
 
 ## Freeze
 
-Every contract in the catalog below, C01 to C33, is frozen at version 1.0 since 2026-10-13, after the fourth
+Every contract in the catalog below, C01 to C33, was frozen at version 1.0 on 2026-10-13, after the fourth
 adversarial review returned PASS-WITH-FIXES and every fix was re-checked (ADR-0005). C12, C13, C14 and the C01
 `budgets` block were frozen first, on 2026-10-12. From the freeze on, a contract changes only additively, by a minor
-version with its own adversarial check; a breaking change is a new major version and reopens the spec freeze.
+version with its own adversarial check; a breaking change is a new major version and reopens the spec freeze. Additive revision 5 (ADR-0006) raised C01 and C16 to 1.1 and added C34 at 1.0, frozen on merge.
 
 ## Catalog
 
 | Id | File | Artifact and location | Producer | Consumers | Version |
 |---|---|---|---|---|---|
-| C01 | `C01-batuta-config.schema.json` | `batuta.json` configuration: roots, roles, caps (with `max_cost_usd_per_task`), gates (lifecycle names), dispatch (lanes, providers as environment variable names), budgets | user, `init` | every area, through `batuta_lib/config.py` | 1.0 |
+| C01 | `C01-batuta-config.schema.json` | `batuta.json` configuration: roots, roles, caps (with `max_cost_usd_per_task`), gates (lifecycle names), dispatch (lanes, providers as environment variable names), budgets, and since 1.1 the optional `tdd` block (`test_command`, `replay_timeout_seconds`, `lock_file`, `markers`) | user, `init` | every area, through `batuta_lib/config.py` | 1.1 |
 | C02 | `C02-brief.schema.json` | Brief `.batuta/delegation/<id>.brief.md`: title, metadata bullets, sections (the CPD sections for implement, job and skeleton) | `brief new`, main session | agents, `brief lint`, `report check`, SubagentStop hook | 1.0 |
 | C03 | `C03-report.schema.json` | Report (path named by the brief): Completeness table, one `## D<n>` section per deliverable, Red and Green run, Sources, Production path when present | agents | `report check`, hook, ledger | 1.0 |
 | C04 | `C04-ledger.schema.json` | Ledger `ledger.md`: the Markdown table the CAOS delegation tool writes (ID, Agent, Model, Brief, Report, Status, Accepted) plus the optional columns Provider, Tokens in, Tokens out, Cost USD and Superseded by | `brief new`, `report ledger-status`, `dispatch run` | main session, `gate check` | 1.0 |
@@ -41,7 +41,7 @@ version with its own adversarial check; a breaking change is a new major version
 | C13 | `C13-memory-topics.schema.json` | Memory topics `memory_topics.json` | owner | `memory index` | 1.0 |
 | C14 | `C14-context-budget.schema.json` | Context budget (the `budgets` block of C01) | owner | `context check`, doctor | 1.0 |
 | C15 | `C15-device-profile.schema.json` | Device profile `<deploy root>/device.json` | `device deploy` | `device restore`, doctor, renderers | 1.0 |
-| C16 | `C16-hook-io.schema.json` | Hook input subset and hook output | Claude Code, our hooks | our hooks, Claude Code | 1.0 |
+| C16 | `C16-hook-io.schema.json` | Hook input subset and hook output (since 1.1 the UserPromptSubmit output) | Claude Code, our hooks | our hooks, Claude Code | 1.1 |
 | C17 | `C17-settings-preset.schema.json` | Settings preset fragment `templates/presets/*.json` | Batuta | `device restore`, `init` | 1.0 |
 | C18 | `C18-agent-definition.schema.json` | Agent definition front matter `plugins/batuta/agents/*.md` | Batuta | Claude Code, `route check` | 1.0 |
 | C19 | `C19-lessons-line.schema.json` | Lessons entry line in `LESSONS.md` | main session | L10-lessons gate check | 1.0 |
@@ -59,6 +59,7 @@ version with its own adversarial check; a breaking change is a new major version
 | C31 | `C31-hooks.schema.json` | `plugins/batuta/hooks/hooks.json` (the registry and the file Claude Code reads, with the official entry fields), the handler discovery rule (`HOOKS = {id: handler}` in an area module) and the handler result | every unit that owns a hook (guards, SubagentStop, approval capture, SessionStart), distribution unit | `init`, the launcher, Claude Code | 1.0 |
 | C32 | `C32-commit-grammar.schema.json` | TDD commit message: `[red\|green\|refactor] T-NNN <title>` and the `Test-Change-Approved:` trailer | test-author, implementer | `tdd check`, the locked-test guard | 1.0 |
 | C33 | `C33-test-change-requests.schema.json` | Test change requests `specs/<NNN-slug>/test-change-requests.md`: Id (the C07 `change_request` and the `Test-Change-Approved` trailer value), Date, Test path, Requirement, Reason, Proposed change, Status (open, approved, rejected), Decided by | main session, `tdd` | `tdd check`, the locked-test guard | 1.0 |
+| C34 | `C34-contract-tests-record.schema.json` | Contract-tests record: `commit`, `generated` and `results` mapping a test path (optionally `::name`) to `pass`, `fail` or `skip`; an empty `results` means nothing ran | `gate tests-record` | `skeleton check --tests-record` | 1.0 |
 
 ## Layout
 
@@ -105,9 +106,10 @@ accepted. A relative path in a contract is a POSIX path with one pattern everywh
 same text, `contract lint` checks it equals the validator's): no leading `/`, no drive letter, no backslash, no control
 character (an embedded newline cannot hide a segment), no empty segment and no `.` or `..` segment (so no leading `./`). Rules the subset cannot express (a conditional `required`, an acyclic graph, an
 availability rule) are semantic checks in `batuta_lib/contract.py` for C01, C06, C07 (a path has one live lock), C12, C16, C25, C26,
-C27, C28, C30, C31 and C32, and rules in the sections file for the Markdown contracts.
+C27, C28, C30, C31, C32 and C34, and rules in the sections file for the Markdown contracts.
 
-Every JSON artifact carries `"contract_version": "1.0"`. The exceptions are artifacts Batuta does not own or that
+Every JSON artifact carries `"contract_version": "1.0"`, except a C01 document that uses the 1.1 `tdd` block, which carries
+`"1.1"` (C01 accepts both; its `tdd` block is checked only under 1.1, so a 1.0 document may hold any `tdd` value). The other exceptions are artifacts Batuta does not own or that
 another tool reads: C16 (Claude Code hook payloads), C14 (a block that lives inside C01 and is validated standalone),
 C27 (the product's readiness document, identified by its `schema` field), C26 (a block embedded in other artifacts), the
 hooks file of C31 (read by Claude Code), and the Markdown and text contracts (the version lives in the schema file).

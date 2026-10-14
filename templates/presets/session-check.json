@@ -1,0 +1,19 @@
+{
+  "contract_version": "1.0",
+  "env": {},
+  "permissions": {"deny": [], "ask": []},
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{python}}",
+            "args": ["-I", "{{deploy_root}}/scripts/hook.py", "session-check"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
