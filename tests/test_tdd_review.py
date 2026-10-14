@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from _support import SCRIPTS
-from test_tdd_check import EDITED, EXTRA_OK, REQUESTS, CheckBase, requests
+from test_tdd_check import EDITED, EXTRA_OK, REQUESTS, CheckBase, commit_request_open_first, requests
 from test_tdd_fixtures import CALC, LOCK, SPEC, TEST_CALC, message, run_cli, write_config
 
 if str(SCRIPTS) not in sys.path:
@@ -222,8 +222,7 @@ class C05ReplayUsesTheProjectsOwnCommand(ReviewBase):
 
 class M01SelfApproval(ReviewBase):
     def commit_request(self, repo, text):
-        repo.write(REQUESTS, text)
-        repo.commit("docs: change request", REQUESTS)
+        commit_request_open_first(repo, text)
 
     def edit_with_trailer(self, repo):
         repo.write("specs/calc/spec.md", SPEC)

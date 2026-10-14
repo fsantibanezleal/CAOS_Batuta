@@ -1,0 +1,277 @@
+"""The second round of the Opus review of U4 (R2-01 to R2-07) and decisions 32 and 33 (typed-prompt decision, runtime comparison of
+the locked tests), each reproduction as a test on scratch git repositories."""
+import json
+import os
+import subprocess
+import sys
+import unittest
+from unittest import mock
+
+from _support import SCRIPTS
+from test_tdd_check import EDITED, REQUESTS, commit_request_open_first, requests
+from test_tdd_fixtures import LOCK, TEST_CALC, message, run_cli
+from test_tdd_review import ReviewBase
+
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from batuta_lib import config  # noqa: E402
+from batuta_lib import contract as core  # noqa: E402
+from batuta_lib import tdd_history as hist  # noqa: E402
+from batuta_lib import tdd_lock as lk  # noqa: E402
+from batuta_lib.areas import tdd as tdd_area  # noqa: E402
+
+CLI = str(SCRIPTS / "batuta.py")
+
+
+class OpenRequestCase(ReviewBase):
+    """A scratch repository with one open request, CR-001, for tests/test_calc.py."""
+
+    def setUp(self):
+        self.repo = self.fresh(self.id().rsplit(".", 1)[-1])
+        self.repo.write("README.md", "x\n")
+        self.repo.commit("init", "README.md")
+        code, out = run_cli("--config", self.cfg, "tdd", "change-request", "new", "--repo", self.repo.root, "--test", "tests/test_calc.py",
+                            "--requirement", "REQ-CALC-001", "--reason", "wrong oracle", "--proposed", "expect 6", "--feature", "calc", "--apply")
+        self.assertEqual(code, 0, out)
+        self.file = self.repo.root / REQUESTS
+
+    def rows(self):
+        sp = core.find_schema(config.contracts_dir(), "C33")
+        return core.read_table(self.file.read_text(encoding="utf-8"), core.load_sections_spec(sp)["tables"][0])[0]
+
+
+class R201Console(OpenRequestCase):
+    """R2-01: the console must be a real interactive one, the wait is bounded and the decider is the account, not the environment."""
+
+    def decide_in_a_subprocess(self, **kwargs):
+        argv = [sys.executable, "-B", CLI, "--config", str(self.cfg), "tdd", "change-request", "decide", "--repo", str(self.repo.root),
+                "CR-001", "approve", "--apply"]
+        return subprocess.run(argv, capture_output=True, text=True, timeout=120, **kwargs)
+
+    def test_a_null_standard_input_is_not_a_console(self):
+        before = self.file.read_bytes()
+        proc = self.decide_in_a_subprocess(stdin=subprocess.DEVNULL)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertEqual(self.file.read_bytes(), before)
+
+    def test_a_piped_answer_is_not_a_console(self):
+        before = self.file.read_bytes()
+        proc = self.decide_in_a_subprocess(input="approve CR-001\n")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("REFUSED", proc.stdout)
+        self.assertEqual(self.file.read_bytes(), before)
+
+    def test_an_interactive_check_that_fails_refuses(self):
+        with mock.patch.object(tdd_area, "_console_interactive", return_value=(False, "standard input is not a console")):
+            with self.assertRaises(tdd_area.ConsoleUnavailable) as caught:
+                tdd_area.read_console("confirm: ")
+        self.assertIn("standard input", str(caught.exception))
+
+    def test_a_read_that_never_answers_times_out(self):
+        import time
+        with mock.patch.object(tdd_area, "_console_interactive", return_value=(True, "")), \
+                mock.patch.object(tdd_area, "_ask_on_console", side_effect=lambda prompt: time.sleep(5) or "approve CR-001"):
+            with self.assertRaises(tdd_area.ConsoleUnavailable) as caught:
+                tdd_area.read_console("confirm: ", timeout=0.2)
+        self.assertIn("timed out", str(caught.exception))
+
+    def test_an_answer_on_an_interactive_console_is_returned(self):
+        with mock.patch.object(tdd_area, "_console_interactive", return_value=(True, "")), \
+                mock.patch.object(tdd_area, "_ask_on_console", return_value="approve CR-001"):
+            self.assertEqual(tdd_area.read_console("confirm: "), "approve CR-001")
+
+    def test_the_decision_names_the_account_not_the_environment(self):
+        forged = {"USERNAME": "forged", "USER": "forged", "LOGNAME": "forged", "LNAME": "forged"}
+        with mock.patch.dict(os.environ, forged), mock.patch.object(tdd_area, "read_console", return_value="approve CR-001"):
+            code, out = run_cli("--config", self.cfg, "tdd", "change-request", "decide", "--repo", self.repo.root, "CR-001", "approve", "--apply")
+        self.assertEqual(code, 0, out)
+        by = self.rows()[0]["Decided by"]
+        self.assertNotIn(by.strip(), ("", "-", "forged"))
+        self.assertNotEqual(by, "forged")
+
+
+class R205RequestHistory(ReviewBase):
+    def test_a_row_born_approved_fails(self):
+        repo = self.clone()
+        repo.write(REQUESTS, requests())
+        repo.commit("docs: change request", REQUESTS)
+        self.failing(repo, "born")
+
+    def test_a_decided_row_edited_in_place_fails(self):
+        repo = self.clone()
+        commit_request_open_first(repo, requests(path="tests/test_other.py"))
+        repo.write(REQUESTS, requests(path="tests/test_calc.py"))
+        repo.commit("docs: retarget the request", REQUESTS)
+        self.failing(repo, "decided request")
+
+    def test_a_row_opened_and_then_decided_in_its_own_commits_passes(self):
+        repo = self.clone()
+        commit_request_open_first(repo, requests())
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)
+
+
+class R206SettingsWarning(ReviewBase):
+    def test_the_base_commits_own_configuration_is_not_a_change(self):
+        repo = self.fresh("base-config-quiet")
+        cfg = config.default_config({})
+        cfg["roots"] = {"temp": str(self.tmp / "qtemp"), "data": str(self.tmp / "qdata"), "worktrees": str(self.tmp / "qwt")}
+        cfg["tdd"] = {"markers": {"python": ["wip"]}}
+        repo.write("README.md", "x\n")
+        repo.write(".batuta/batuta.json", json.dumps(cfg, indent=2) + "\n")
+        repo.commit("init", "README.md", ".batuta/batuta.json")
+        repo.write("tests/test_calc.py", TEST_CALC)
+        code, out = self.plain("tdd", "lock", "--repo", repo.root, "--task", "T-001", "tests/test_calc.py", "--apply")
+        self.assertEqual(code, 0, out)
+        code, out = self.plain("tdd", "commit", "--repo", repo.root, "--red", "T-001", "-m", "calc", "tests/test_calc.py", "--apply")
+        self.assertEqual(code, 0, out)
+        code, out = self.plain("tdd", "check", "--repo", repo.root)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("tdd settings", out)
+
+
+class Q2ShowAndTypedPrompt(OpenRequestCase):
+    def hook(self, prompt, cwd=None):
+        payload = {"session_id": "s1", "cwd": str(cwd or self.repo.root), "transcript_path": "t.jsonl",
+                   "hook_event_name": "UserPromptSubmit", "prompt": prompt}
+        return tdd_area.HOOKS["tdd-change-request"](payload)
+
+    def phrases(self):
+        code, out = run_cli("--config", self.cfg, "tdd", "change-request", "show", "--repo", self.repo.root, "CR-001")
+        self.assertEqual(code, 0, out)
+        digest = lk.row_hash(self.rows()[0])[:12]
+        return out, digest
+
+    def test_show_prints_both_phrases_with_the_hash_of_the_row(self):
+        out, digest = self.phrases()
+        self.assertIn(f"approve CR-001 {digest}", out)
+        self.assertIn(f"reject CR-001 {digest}", out)
+        self.assertRegex(digest, r"^[0-9a-f]{12}$")
+
+    def test_show_refuses_an_unknown_request(self):
+        code, out = run_cli("--config", self.cfg, "tdd", "change-request", "show", "--repo", self.repo.root, "CR-009")
+        self.assertEqual(code, 1, out)
+
+    def test_the_typed_phrase_records_the_decision(self):
+        _, digest = self.phrases()
+        result = self.hook(f"approve CR-001 {digest}")
+        self.assertEqual(result["exit_code"], 0)
+        row = self.rows()[0]
+        self.assertEqual((row["Status"], row["Decided by"]), ("approved", "typed prompt"))
+        self.assertEqual(core.validate_file(self.file, core.find_schema(config.contracts_dir(), "C33")), [])
+        self.assertTrue(result["output"])
+
+    def test_the_typed_phrase_may_reject_and_be_followed_by_text(self):
+        _, digest = self.phrases()
+        self.hook(f"  reject CR-001 {digest} the oracle is right after all")
+        self.assertEqual(self.rows()[0]["Status"], "rejected")
+
+    def test_a_phrase_that_does_not_start_the_prompt_is_ignored(self):
+        _, digest = self.phrases()
+        before = self.file.read_bytes()
+        result = self.hook(f"please approve CR-001 {digest}")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(self.file.read_bytes(), before)
+
+    def test_a_wrong_or_stale_hash_is_ignored_and_never_blocks(self):
+        _, digest = self.phrases()
+        before = self.file.read_bytes()
+        result = self.hook("approve CR-001 " + "0" * 12)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertNotIn("decision", result.get("output") or {})
+        self.assertEqual(self.file.read_bytes(), before)
+        self.file.write_text(self.file.read_text(encoding="utf-8").replace("wrong oracle", "another reason"), encoding="utf-8", newline="\n")
+        stale = self.file.read_bytes()
+        self.hook(f"approve CR-001 {digest}")
+        self.assertEqual(self.file.read_bytes(), stale)
+
+    def test_a_decided_request_is_not_decided_again(self):
+        _, digest = self.phrases()
+        self.hook(f"approve CR-001 {digest}")
+        decided = self.file.read_bytes()
+        self.hook(f"reject CR-001 {lk.row_hash(self.rows()[0])[:12]}")
+        self.assertEqual(self.file.read_bytes(), decided)
+
+    def test_the_handler_never_raises(self):
+        for payload in ({}, {"prompt": None}, {"prompt": 7, "cwd": 3}, {"prompt": "approve CR-001 abcdef012345", "cwd": "no/such/folder"}):
+            with self.subTest(payload=payload):
+                result = tdd_area.HOOKS["tdd-change-request"](payload)
+                self.assertEqual(result["exit_code"], 0)
+
+    @unittest.expectedFailure   # C16 1.1 (task/u0r5-additive-contracts, U0r5) adds the UserPromptSubmit output; this tree has C16 1.0
+    def test_the_result_satisfies_c31_with_a_userpromptsubmit_output(self):
+        _, digest = self.phrases()
+        result = self.hook(f"approve CR-001 {digest}")
+        schema = core.load_schema(core.find_schema(config.contracts_dir(), "C31"))
+        self.assertEqual(core.validate_instance("C31", result, schema), [])
+
+
+class Q3RuntimeComparison(ReviewBase):
+    HIDE = 'exec("import unittest\\ndef load_" + "tests(loader, tests, pattern):\\n    return unittest.TestSuite()\\n")\n'
+
+    def test_a_locked_test_that_stops_being_collected_fails_the_replay(self):
+        repo = self.clone()
+        repo.write("tests/__init__.py", self.HIDE)
+        repo.commit(message("refactor", "T-001", "hide the tests from the loader"), "tests/__init__.py")
+        out = self.failing(repo, "disappears", "tests/test_calc.py", extra=("--replay",))
+        self.assertIn("CalcTests", out)
+
+    def test_the_same_history_passes_the_static_rules_alone(self):
+        repo = self.clone()
+        repo.write("tests/__init__.py", self.HIDE)
+        repo.commit(message("refactor", "T-001", "hide the tests from the loader"), "tests/__init__.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)
+
+    def test_static_ids_are_read_from_the_test_file(self):
+        ids = hist.static_test_ids("tests/test_calc.py", TEST_CALC)
+        self.assertEqual(sorted(ids), [("CalcTests", "test_add"), ("CalcTests", "test_add_negative")])
+        self.assertEqual(hist.static_test_ids("tests/test_f.py", "def test_a():\n    pass\n\n\ndef helper():\n    pass\n"), [(None, "test_a")])
+
+    def test_the_comparison_names_a_missing_and_a_skipped_test(self):
+        base = [("CalcTests", "test_add"), ("CalcTests", "test_gone"), ("CalcTests", "test_skipped")]
+        listing = [{"id": "test_calc.CalcTests.test_add", "skipped": False},
+                   {"id": "test_calc.CalcTests.test_skipped", "skipped": True}]
+        problems = hist.compare_listing("tests/test_calc.py", base, listing)
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(any("test_gone" in p and "disappears" in p for p in problems))
+        self.assertTrue(any("test_skipped" in p and "skipped" in p for p in problems))
+        self.assertEqual(hist.compare_listing("tests/test_calc.py", [("CalcTests", "test_add")], listing[:1]), [])
+
+    def test_a_pytest_listing_is_parsed(self):
+        out = "tests/test_calc.py::CalcTests::test_add\ntests/test_f.py::test_a\n\n2 tests collected in 0.01s\n"
+        self.assertEqual(hist.parse_pytest_listing(out), [{"id": "tests/test_calc.py::CalcTests::test_add", "skipped": False},
+                                                          {"id": "tests/test_f.py::test_a", "skipped": False}])
+
+
+class Q3TestConfiguration(ReviewBase):
+    def test_a_refactor_that_adds_a_conftest_needs_an_approved_request(self):
+        repo = self.clone()
+        repo.write("tests/conftest.py", "import pytest\n")
+        repo.commit(message("refactor", "T-001", "conftest"), "tests/conftest.py")
+        self.failing(repo, "test configuration", "tests/conftest.py")
+
+    def test_a_green_that_adds_runner_settings_needs_an_approved_request(self):
+        repo = self.clone()
+        repo.write("pytest.ini", "[pytest]\nminversion = 6\n")
+        repo.commit(message("green", "T-001", "settings"), "pytest.ini")
+        self.failing(repo, "test configuration", "pytest.ini")
+
+    def test_an_unrelated_pyproject_change_is_not_test_configuration(self):
+        repo = self.clone()
+        repo.write("pyproject.toml", '[project]\nname = "calc"\n')
+        repo.commit(message("refactor", "T-001", "project metadata"), "pyproject.toml")
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)
+
+    def test_a_pytest_section_of_pyproject_is_test_configuration(self):
+        repo = self.clone()
+        repo.write("pyproject.toml", '[tool.pytest.ini_options]\naddopts = "-q"\n')
+        repo.commit(message("refactor", "T-001", "pytest options"), "pyproject.toml")
+        self.failing(repo, "test configuration", "pyproject.toml")
+
+
+if __name__ == "__main__":
+    unittest.main()

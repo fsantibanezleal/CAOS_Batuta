@@ -244,5 +244,111 @@ class ReviewAssertionCounts(unittest.TestCase):
         self.assertEqual(self.count("const a = b / c;\nexpect(1).toBe(1);\nconst d = e / f;\n", "web/a.test.js"), 1)
 
 
+class SecondRoundPythonMarkers(unittest.TestCase):
+    """R2-02 and R2-03: import by call, name aliases, collection hooks."""
+
+    def count(self, src, path="tests/test_x.py"):
+        return sum(tm.weakening_markers(path, src).values())
+
+    def test_a_module_reached_through_importlib_or_dunder_import_is_resolved(self):
+        cases = [
+            "import importlib\nu = importlib.import_module('unittest')\n@u.skip('x')\ndef test_a(): pass\n",
+            "import importlib\n@importlib.import_module('unittest').skip('x')\ndef test_a(): pass\n",
+            "@__import__('unittest').skip('x')\ndef test_a(): pass\n",
+            "import unittest\nu = unittest\n@u.skip('x')\ndef test_a(): pass\n",
+            "import unittest\ns = unittest.skip\n@s('x')\ndef test_a(): pass\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_collection_hooks_and_ignore_lists_are_markers(self):
+        cases = [
+            "import unittest\ndef load_tests(loader, tests, pattern):\n    return unittest.TestSuite()\n",
+            "collect_ignore = ['test_calc.py']\n",
+            "collect_ignore_glob = ['test_*.py']\n",
+            "def pytest_collection_modifyitems(config, items):\n    items.clear()\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src, "tests/conftest.py"), 1)
+
+    def test_runner_settings_that_deselect_tests_are_markers(self):
+        cases = [
+            ("pytest.ini", '[pytest]\naddopts = -k "not test_add"\n'),
+            ("setup.cfg", "[tool:pytest]\npython_files = check_*.py\n"),
+            ("pyproject.toml", '[tool.pytest.ini_options]\naddopts = "--deselect tests/test_a.py::test_x"\n'),
+            ("tox.ini", "[pytest]\ntestpaths = nothing\n"),
+            ("pytest.ini", "[pytest]\nnorecursedirs = tests\n"),
+        ]
+        for path, text in cases:
+            with self.subTest(path=path):
+                self.assertGreaterEqual(self.count(text, path), 1)
+
+    def test_a_pyproject_without_a_pytest_section_is_clean(self):
+        self.assertEqual(self.count('[tool.ruff]\nselect = ["E"]\naddopts = "-k x"\n', "pyproject.toml"), 0)
+
+
+class SecondRoundJavascriptMarkers(unittest.TestCase):
+    def count(self, src):
+        return sum(tm.weakening_markers("web/a.test.js", src).values())
+
+    def test_aliases_template_keys_and_regex_after_a_condition(self):
+        cases = [
+            "const t = it;\nt.only('a', () => {});\n",
+            "let d = describe;\nd.skip('a', () => {});\n",
+            "it[`only`]('a', () => {});\n",
+            "if (true) /`/.test('a');\nit.only('a', () => {});\n",
+            "while (x) /'/.test(y);\nit.only('a', () => {});\nconst z = /'/;\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_a_division_after_a_parenthesis_is_not_a_regex(self):
+        self.assertEqual(self.count("const a = (b) / c;\nit.only('x', () => {});\nconst d = (e) / f;\n"), 1)
+
+
+class SecondRoundAssertionCounts(unittest.TestCase):
+    def count(self, src):
+        return tm.assertion_count("tests/test_x.py", src)
+
+    def test_a_helper_whose_assertion_ignores_its_arguments_does_not_count_at_its_calls(self):
+        src = "def assert_same(*a):\n    assert True\n\n\ndef test_a():\n    assert_same(1, 1)\n    assert_same(2, 2)\n"
+        self.assertEqual(self.count(src), 0)
+
+    def test_a_constant_true_assert_does_not_count(self):
+        self.assertEqual(self.count("def test_a():\n    assert True\n    assert 1\n"), 0)
+
+    def test_a_local_assert_method_counts_only_when_it_asserts(self):
+        noop = ("import unittest\nclass T(unittest.TestCase):\n    def assert_same(self, *a):\n        pass\n"
+                "    def test_a(self):\n        self.assert_same(1, 1)\n        self.assertEqual(1, 1)\n")
+        real = ("import unittest\nclass T(unittest.TestCase):\n    def assert_same(self, a, b):\n        self.assertEqual(a, b)\n"
+                "    def test_a(self):\n        self.assert_same(1, 1)\n")
+        self.assertEqual(self.count(noop), 1)
+        self.assertEqual(self.count(real), 2)
+
+    def test_asserts_after_a_return_a_raise_a_continue_or_a_break_do_not_count(self):
+        self.assertEqual(self.count("def test_a():\n    return\n    assert 1 == 2\n"), 0)
+        self.assertEqual(self.count("def test_a():\n    raise ValueError('x')\n    assert 1 == 2\n"), 0)
+        self.assertEqual(self.count("def test_a():\n    for i in range(2):\n        continue\n        assert i == 5\n"), 0)
+
+    def test_a_constant_expression_that_is_false_hides_its_branch(self):
+        self.assertEqual(self.count("def test_a():\n    if 1 == 2:\n        assert 1 == 1\n"), 0)
+        self.assertEqual(self.count("def test_a():\n    if 1 + 1 == 2:\n        assert 1 == 1\n"), 1)
+
+    def test_suppressing_assertion_errors_hides_the_block(self):
+        src = "import contextlib\ndef test_a():\n    with contextlib.suppress(AssertionError):\n        assert 1 == 2\n"
+        self.assertEqual(self.count(src), 0)
+        ok = "import contextlib\ndef test_a():\n    with contextlib.suppress(KeyError):\n        assert 1 == 1\n"
+        self.assertEqual(self.count(ok), 1)
+
+    def test_a_nested_function_counts_only_when_it_is_used(self):
+        never = "def test_a():\n    def inner():\n        assert 1 == 1\n"
+        called = "def test_a():\n    def inner():\n        assert 1 == 1\n    inner()\n"
+        self.assertEqual(self.count(never), 0)
+        self.assertEqual(self.count(called), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

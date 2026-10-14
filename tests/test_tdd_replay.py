@@ -82,7 +82,9 @@ class Replay(ReplayBase):
         folder.mkdir()
         cfg = write_config(folder, self.temp_root, test_command="python -m unittest {tests}")
         code, out = self.check(self.base, "--replay", cfg=cfg)
-        self.assertEqual(code, 0, out)
+        self.assertEqual(code, 2, out)   # the red fails; the runtime comparison needs a discovery command and says so
+        self.assertIn("runtime comparison", out)
+        self.assertIn("fails at the red commit", out)
         self.assert_clean(self.base)
 
 

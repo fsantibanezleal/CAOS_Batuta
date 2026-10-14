@@ -1,6 +1,7 @@
 """tdd check: the history rules, each violation as its own commit on a copy of a compliant history (D3)."""
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,19 @@ HEADER = ("# Test change requests: calc\n\n| Id | Date | Test path | Requirement
 
 def requests(rid="CR-001", path="tests/test_calc.py", status="approved", by="felipe"):
     return HEADER + f"| {rid} | 2026-10-12 | {path} | REQ-CALC-001 | the oracle was wrong | fix the expected value | {status} | {by} |\n"
+
+
+def commit_request_open_first(repo, text=None):
+    """Commit a request file the way the harness makes one: opened in a commit, decided in a commit of its own (a row that is
+    born approved is refused). `text` is the final file; None takes the file already written."""
+    if text is None:
+        text = (repo.root / REQUESTS).read_text(encoding="utf-8")
+    opened = re.sub(r"\| (approved|rejected) \| [^|\n]* \|\n", "| open |  |\n", text)
+    if opened != text:
+        repo.write(REQUESTS, opened)
+        repo.commit("docs: change request", REQUESTS)
+    repo.write(REQUESTS, text)
+    repo.commit("docs: change request decided" if opened != text else "docs: change request", REQUESTS)
 
 
 EDITED = TEST_CALC.replace("calc.add(2, 3), 5)", "calc.add(2, 3), 5 + 0)")
@@ -50,14 +64,13 @@ class CheckBase(TddCase):
         return out
 
     def commit_request_then_spec(self, repo):
-        repo.commit("docs: change request", REQUESTS)
+        commit_request_open_first(repo)
         repo.commit("docs: spec", "specs/calc/spec.md")
 
     def supersede_flow(self, repo, request_text=None, spec=True, trailer="CR-001", path="tests/test_calc.py"):
         """Commit the request (and spec change) and then the edit of the locked test with a superseding lock entry."""
         if request_text is not None:
-            repo.write(REQUESTS, request_text)
-            repo.commit("docs: change request", REQUESTS)   # a decision is a commit of its own
+            commit_request_open_first(repo, request_text)   # a decision is a commit of its own
         if spec:
             repo.write("specs/calc/spec.md", SPEC)
             repo.commit("docs: spec", "specs/calc/spec.md")
@@ -353,8 +366,7 @@ class OverrideRules(CheckBase):
 
     def test_an_approved_request_without_a_spec_change_in_the_range_does_not_exempt(self):
         repo = self.clone()
-        repo.write(REQUESTS, requests())
-        repo.commit("docs: request", REQUESTS)
+        commit_request_open_first(repo, requests())
         repo.write("tests/test_calc.py", EDITED)
         repo.commit(message("green", "T-001", "fix the oracle", "CR-001"), "tests/test_calc.py")
         self.failing(repo, "spec")
