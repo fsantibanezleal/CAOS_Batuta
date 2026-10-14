@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -128,6 +129,57 @@ def _load_config(args, items):
         return None
 
 
+def _is_link(path):
+    """True for a symlink and, on Windows, for any reparse point (a junction is one, and `islink` does not see it)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0)
+                                            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _managed_walk(base, area):
+    """(files, links) under `base/area` as posix paths relative to `base`: the files a mirror may remove and the links
+    found. A link or junction is reported and never descended into, so nothing behind it is listed or deleted."""
+    base, files, links = Path(base), [], []
+    root = base / area
+    if _is_link(root):
+        return files, [area]
+    if not root.is_dir():
+        return files, links
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in list(dirnames):
+            path = Path(dirpath) / name
+            if _is_link(path):
+                links.append(path.relative_to(base).as_posix())
+                dirnames.remove(name)
+        for name in filenames:
+            path = Path(dirpath) / name
+            rel = path.relative_to(base)
+            if _is_link(path):
+                links.append(rel.as_posix())
+            elif not (set(rel.parts[1:]) & SKIP_DIRS) and path.suffix != ".pyc" and not BACKUP_COPY.search(name):
+                files.append(rel.as_posix())
+    return files, links
+
+
+def _link_ancestors(base, rels):
+    """The first link or junction met while walking each relative path down from `base` (a managed file or folder
+    that is a link), as posix paths."""
+    base, found = Path(base), []
+    for rel in rels:
+        current = base
+        for part in rel.split("/"):
+            current = current / part
+            if not os.path.lexists(current):
+                break
+            if _is_link(current):
+                found.append(current.relative_to(base).as_posix())
+                break
+    return found
+
+
 def _refuse_escape(base, rels, items):
     """True (with a REFUSED item) when a relative path resolves outside `base` once links, junctions and symlinks are
     resolved: a write or a removal there would leave the folder the caller owns."""
@@ -141,10 +193,31 @@ def _refuse_escape(base, rels, items):
     return False
 
 
+def _precheck(base, desired, areas, items):
+    """The files a mirror may remove, {area: files}, or None (REFUSED items, nothing touched) when a managed path or
+    area resolves outside `base`, or a link or junction sits where a managed file or folder belongs or below an area."""
+    base = Path(base)
+    if _refuse_escape(base, [*desired, *areas], items):
+        return None
+    walked = {area: _managed_walk(base, area) for area in areas}
+    links = sorted(set(_link_ancestors(base, desired)) | {link for _, ls in walked.values() for link in ls})
+    for link in links:
+        items.append(item("REFUSED", f"{link} is a link or junction where a managed file or folder belongs; it is never "
+                                     f"followed or deleted through; remove the link yourself, then run again"))
+    if links:
+        return None
+    stale = [full for files, _ in walked.values() for full in files if full not in desired]
+    if _refuse_escape(base, stale, items):
+        return None
+    return {area: files for area, (files, _) in walked.items()}
+
+
 def _sync(base, desired, areas, apply, items):
     """Mirror `desired` into `base`; files outside `areas` are never removed. Returns (new, changed, removed, same), or
-    None (a REFUSED item, nothing written or removed) when a path or an area resolves outside `base`."""
-    if _refuse_escape(base, [*desired, *areas], items):
+    None (REFUSED items, nothing written or removed) when `_precheck` finds a path that leaves `base` or a link."""
+    base = Path(base)
+    walked = _precheck(base, desired, areas, items)
+    if walked is None:
         return None
     new, changed, removed, same = {}, 0, 0, 0
     for rel, data in sorted(desired.items()):
@@ -161,17 +234,22 @@ def _sync(base, desired, areas, apply, items):
             _write_bytes(target, data)
     for area, files in new.items():
         items.append(item("NEW", f"{area}: {len(files)} file(s)" if len(files) > 1 or "/" in files[0] else files[0]))
+    root = Path(os.path.realpath(base))
     for area in areas:
-        for rel in sorted(_tree(base / area)):
-            full = f"{area}/{rel}"
-            if full not in desired:
-                removed += 1
-                items.append(item("REMOVED", full))
-                if apply:
-                    (base / full).unlink()
-        if apply and (base / area).is_dir():
-            for folder in sorted((base / area).rglob("*"), reverse=True):
-                if folder.is_dir() and not any(folder.iterdir()):
+        for full in sorted(f for f in walked[area] if f not in desired):
+            removed += 1
+            items.append(item("REMOVED", full))
+            if apply:
+                path = base / full
+                # last guard, right before the removal: still a plain file that lies inside the folder
+                if _is_link(path) or not dp._inside(Path(os.path.realpath(path)), root):
+                    items.append(item("REFUSED", f"{full} became a link or left {base.as_posix()}; not removed"))
+                    return None
+                path.unlink()
+        if apply and (base / area).is_dir() and not _is_link(base / area):
+            for dirpath, _, _ in os.walk(base / area, topdown=False, followlinks=False):
+                folder = Path(dirpath)
+                if folder != base / area and not _is_link(folder) and not any(folder.iterdir()):
                     folder.rmdir()
     return sum(len(v) for v in new.values()), changed, removed, same
 
@@ -236,7 +314,7 @@ def _deploy(args):
     except (dp.ProfileError, RuntimeError) as exc:
         items.append(item("FAIL", str(exc)))
         return done("device deploy: failed")
-    if _refuse_escape(deploy, [*desired, dp.PROFILE_FILE, *MIRRORED], items):
+    if _precheck(deploy, {**desired, dp.PROFILE_FILE: b""}, MIRRORED, items) is None:
         return done("device deploy: refused, nothing written")
     profile_bytes = dp.profile_text(profile).encode("utf-8")
     # the profile goes first so an interrupted deploy is recognised and can be repeated
@@ -665,30 +743,33 @@ def line_sha(line):
     return hashlib.sha256(line.encode("utf-8")).hexdigest()
 
 
-def find_secrets(text, allowed=None):
-    """(line number, label) for every secret-pattern hit; `${VAR}` placeholders are not secrets. `allowed` holds the
-    sha256 of whole lines (no line break) that were reviewed and are exempt."""
+def _find_hits(text):
+    """(line number, label, matched text, sha256 of the whole line) for every secret-pattern hit in `text`."""
     hits = []
     for number, line in enumerate(text.splitlines(), 1):
-        if allowed and line_sha(line) in allowed:
-            continue
         for label, pattern in SECRET_PATTERNS:
-            if pattern.search(line):
-                hits.append((number, label))
+            match = pattern.search(line)
+            if match:
+                hits.append((number, label, match.group(0), line_sha(line)))
     return hits
 
 
+def find_secrets(text, allowed=None):
+    """(line number, label) for every secret-pattern hit; `${VAR}` placeholders are not secrets. `allowed` holds the
+    sha256 of whole lines (no line break) that were reviewed and are exempt."""
+    return [(number, label) for number, label, _, sha in _find_hits(text) if not (allowed and sha in allowed)]
+
+
 def _scan(data, allowed=None):
-    """(line number, label, sha256 of the line) for a hit in any decoding of `data`, without repeats."""
-    out, seen = [], set()
+    """(line number, label, sha256 of the line) for every hit in any decoding of `data`. The same token found at the
+    same line in several decodings is one hit: it carries the sha of the first decoding and is exempt when the sha of
+    any decoding of that line is in `allowed` (a BOM or a raw-byte view changes the line text, not the token)."""
+    groups = {}
     for text in decode_views(data):
-        lines = text.splitlines()
-        for number, label in find_secrets(text, allowed):
-            sha = line_sha(lines[number - 1])
-            if (number, label, sha) not in seen:
-                seen.add((number, label, sha))
-                out.append((number, label, sha))
-    return out
+        for number, label, token, sha in _find_hits(text):
+            groups.setdefault((number, label, token), []).append(sha)
+    return [(number, label, shas[0]) for (number, label, _), shas in groups.items()
+            if not (allowed and any(sha in allowed for sha in shas))]
 
 
 def scan_secrets(data, allowed=None):

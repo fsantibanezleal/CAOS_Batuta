@@ -41,6 +41,9 @@ python scripts/batuta.py preflight prereqs --register FILE [--timeout SECONDS]
   with the NUL bytes removed) and also scans each file name; a hit in any refuses the whole backup. `--out` must be
   empty, new, or hold a `MANIFEST.json` from an earlier backup (a bundle), and every path and area must resolve inside
   it once links and junctions are resolved, or nothing is written or removed. Deploy applies the same resolve-inside check.
+  A link or junction (a symlink, or any Windows reparse point) found where a managed file or folder belongs, or anywhere
+  below a managed area, is reported and refused (exit 1): the mirror never descends into it and never deletes through it.
+  A reviewed token is one hit however many decodings show it, so one `--allow` hash exempts it.
 - A re-read or replace that fails with a file-system error (a sharing violation, which running sessions cause on
   Windows) or that finds a half-written file counts as a lost race: it is retried, and after the last attempt the error
   names the missing items and the cause. Residual race, not closable without a file lock that Claude Code does not
