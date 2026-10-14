@@ -385,12 +385,25 @@ UPS_FIXTURE = textwrap.dedent("""
             "systemMessage": "shown to the user"}}
 
 
+    def t_ups_bad(payload):
+        return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit", "additionalContext": "x", "bogusField": 1}}}
+
+
+    def t_spec_approval(payload):
+        # the shape the spec unit's typed-prompt handler returns after it records an approval
+        return {"contract_version": "1.0", "exit_code": 0, "output": {
+            "hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                   "additionalContext": "The approval of 001-guards (abcdef012345) is recorded; continue with L6."},
+            "systemMessage": "approved 001-guards"}}
+
+
     def t_bad_event(payload):
         return {"contract_version": "1.0", "exit_code": 0, "output": {"hookSpecificOutput": {
             "hookEventName": "NoSuchEvent", "additionalContext": "x"}}}
 
 
-    HOOKS = {"t-ups": t_ups, "t-bad-event": t_bad_event}
+    HOOKS = {"t-ups": t_ups, "t-spec-approval": t_spec_approval, "t-ups-bad": t_ups_bad, "t-bad-event": t_bad_event}
 """)
 
 
@@ -412,15 +425,28 @@ class ContractValidation(LauncherCase):
         self.assertEqual(self.run_hook("t-ctx").returncode, 0)
         self.assertEqual(self.run_hook("fx-deny").returncode, 0)
 
+    def test_the_spec_approval_handler_shape_passes_end_to_end_through_hook_py(self):
+        payload = {"hook_event_name": "UserPromptSubmit", "prompt": "approve 001-guards abcdef012345"}
+        proc = self.run_hook("t-spec-approval", stdin=payload)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertIn("recorded", out["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(out["systemMessage"], "approved 001-guards")
+        self.assertEqual(proc.stderr.strip(), "")
+
+    def test_a_user_prompt_submit_output_with_an_unknown_field_is_still_refused(self):
+        proc = self.run_hook("t-ups-bad")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("invalid handler result", proc.stderr)
+
     def test_an_event_the_contract_does_not_know_is_refused_with_the_contract_message(self):
         proc = self.run_hook("t-bad-event")
         self.assertEqual(proc.returncode, 1)
         self.assertIn("invalid handler result", proc.stderr)
 
-    @unittest.expectedFailure
-    def test_a_user_prompt_submit_output_passes_once_c16_1_1_is_merged(self):
-        """Fails until the additive C16 1.1 (task/u0r5-additive-contracts, U0r5) is merged: hookEventName
-        UserPromptSubmit with additionalContext and a top-level systemMessage. Remove the decorator then."""
+    def test_a_user_prompt_submit_output_passes(self):
+        """C16 1.1 (U0r5): hookEventName UserPromptSubmit with additionalContext and a top-level systemMessage."""
         proc = self.run_hook("t-ups")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         out = json.loads(proc.stdout)
