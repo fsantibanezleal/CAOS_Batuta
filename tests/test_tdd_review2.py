@@ -9,7 +9,7 @@ from unittest import mock
 
 from _support import SCRIPTS
 from test_tdd_check import EDITED, REQUESTS, commit_request_open_first, requests
-from test_tdd_fixtures import LOCK, TEST_CALC, message, run_cli
+from test_tdd_fixtures import LOCK, TEST_CALC, message, run_cli, write_config
 from test_tdd_review import ReviewBase
 
 if str(SCRIPTS) not in sys.path:
@@ -118,7 +118,7 @@ class R206SettingsWarning(ReviewBase):
         repo = self.fresh("base-config-quiet")
         cfg = config.default_config({})
         cfg["roots"] = {"temp": str(self.tmp / "qtemp"), "data": str(self.tmp / "qdata"), "worktrees": str(self.tmp / "qwt")}
-        cfg["tdd"] = {"markers": {"python": ["wip"]}}
+        cfg["tdd"] = {"markers": ["wip"]}
         repo.write("README.md", "x\n")
         repo.write(".batuta/batuta.json", json.dumps(cfg, indent=2) + "\n")
         repo.commit("init", "README.md", ".batuta/batuta.json")
@@ -200,7 +200,6 @@ class Q2ShowAndTypedPrompt(OpenRequestCase):
                 result = tdd_area.HOOKS["tdd-change-request"](payload)
                 self.assertEqual(result["exit_code"], 0)
 
-    @unittest.expectedFailure   # C16 1.1 (task/u0r5-additive-contracts, U0r5) adds the UserPromptSubmit output; this tree has C16 1.0
     def test_the_result_satisfies_c31_with_a_userpromptsubmit_output(self):
         _, digest = self.phrases()
         result = self.hook(f"approve CR-001 {digest}")
@@ -271,6 +270,103 @@ class Q3TestConfiguration(ReviewBase):
         repo.write("pyproject.toml", '[tool.pytest.ini_options]\naddopts = "-q"\n')
         repo.commit(message("refactor", "T-001", "pytest options"), "pyproject.toml")
         self.failing(repo, "test configuration", "pyproject.toml")
+
+
+class C01Version11TddBlock(ReviewBase):
+    """C01 1.1 closes the `tdd` block: test_command, replay_timeout_seconds (integer, at least 1), lock_file (a .json that is not
+    batuta.json) and markers (an array of names replacing the default list). Each key is honoured, and a bad value is refused."""
+
+    def config11(self, name, **tdd):
+        folder = self.tmp / name
+        folder.mkdir(exist_ok=True)
+        cfg = config.default_config({})
+        cfg["contract_version"] = "1.1"
+        cfg["roots"] = {"temp": str(self.temp_root), "data": str(folder / "data"), "worktrees": str(folder / "wt")}
+        cfg["tdd"] = tdd
+        path = folder / "batuta.json"
+        path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        return path
+
+    def red_repo(self, name, test_text, cfg):
+        repo = self.fresh(name)
+        repo.write("README.md", "x\n")
+        repo.commit("init", "README.md")
+        repo.write("tests/test_calc.py", test_text)
+        code, out = self.lock(repo, "T-001", "tests/test_calc.py", cfg=cfg)
+        self.assertEqual(code, 0, out)
+        code, out = run_cli("--config", cfg, "tdd", "commit", "--repo", repo.root, "--red", "T-001", "-m", "calc", "tests/test_calc.py", "--apply")
+        self.assertEqual(code, 0, out)
+        return repo
+
+    PASSING = "# REQ: REQ-CALC-001\nimport unittest\n\n\nclass P(unittest.TestCase):\n    def test_p(self):\n        self.assertEqual(1, 1)\n"
+
+    def test_test_command_is_honoured(self):
+        cfg = self.config11("k-command", test_command='python -c "import sys; sys.exit(1)" {tests}')
+        repo = self.red_repo("k-command", self.PASSING, cfg)
+        code, out = self.check(repo, "--replay", cfg=cfg)
+        self.assertIn("fails at the red commit", out)   # the default discovery would find these tests passing
+        self.assertNotIn("pass at the red commit", out)
+
+    def test_replay_timeout_seconds_is_honoured(self):
+        slow = "# REQ: REQ-CALC-001\nimport time\nimport unittest\n\n\nclass S(unittest.TestCase):\n    def test_s(self):\n        time.sleep(30)\n        self.assertEqual(1, 2)\n"
+        cfg = self.config11("k-timeout", replay_timeout_seconds=1)
+        repo = self.red_repo("k-timeout", slow, cfg)
+        code, out = self.check(repo, "--replay", cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("timed out after 1 s", out)
+
+    def test_lock_file_is_honoured(self):
+        cfg = self.config11("k-lock", lock_file=".batuta/custom-locks.json")
+        repo = self.red_repo("k-lock", self.PASSING, cfg)
+        self.assertTrue((repo.root / ".batuta" / "custom-locks.json").is_file())
+        self.assertFalse((repo.root / ".batuta" / "test-locks.json").exists())
+        repo.write("tests/test_calc.py", self.PASSING + "\n# edited\n")
+        repo.commit(message("refactor", "T-001", "edit a locked test"), "tests/test_calc.py")
+        code, out = self.check(repo, cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("touches locked test", out)
+
+    def test_markers_replace_the_default_list(self):
+        cfg = self.config11("k-markers", markers=["wip"])
+        repo = self.red_repo("k-markers", self.PASSING, cfg)
+        repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.commit(message("refactor", "T-001", "extra"), "tests/test_extra.py")
+        code, out = self.check(repo, cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("'wip'", out)
+        repo.write("tests/test_other.py", "import unittest\n\n\n@unittest.skip('x')\nclass O(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.commit(message("refactor", "T-001", "other"), "tests/test_other.py")
+        code, out = self.check(repo, cfg=cfg)
+        self.assertNotIn("unittest.skip", out)   # the default list is replaced, not extended
+
+    def test_every_key_together(self):
+        cfg = self.config11("k-all", test_command='python -c "import sys; sys.exit(1)" {tests}', replay_timeout_seconds=60,
+                            lock_file=".batuta/all-locks.json", markers=["wip"])
+        repo = self.red_repo("k-all", self.PASSING, cfg)
+        code, out = self.check(repo, "--replay", cfg=cfg)
+        self.assertIn("fails at the red commit", out)
+        self.assertTrue((repo.root / ".batuta" / "all-locks.json").is_file())
+
+    def test_a_bad_value_is_refused_in_a_1_1_document(self):
+        bad = {"markers-as-an-object": {"markers": {"python": ["wip"]}}, "lock-file-is-the-config": {"lock_file": ".batuta/batuta.json"},
+               "lock-file-not-json": {"lock_file": ".batuta/locks.txt"}, "timeout-zero": {"replay_timeout_seconds": 0},
+               "timeout-fraction": {"replay_timeout_seconds": 1.5}, "unknown-key": {"retries": 3},
+               "lock-file-escapes": {"lock_file": "../locks.json"}}
+        repo = self.clone()
+        for name, block in bad.items():
+            with self.subTest(case=name):
+                cfg = self.config11("bad-" + name, **block)
+                code, out = self.check(repo, cfg=cfg)
+                self.assertEqual(code, 1, out)
+                self.assertIn("tdd", out)
+
+    def test_the_old_object_shape_of_markers_is_refused_in_a_1_0_document_too(self):
+        folder = self.tmp / "old-shape"
+        folder.mkdir(exist_ok=True)
+        cfg = write_config(folder, self.temp_root, markers={"python": ["wip"]})
+        code, out = self.check(self.clone(), cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("markers", out)
 
 
 if __name__ == "__main__":

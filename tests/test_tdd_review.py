@@ -92,7 +92,7 @@ class C02ConfigFromTheBaseCommit(ReviewBase):
 
     def test_a_committed_config_cannot_empty_the_marker_list(self):
         repo = self.clone()
-        self.commit_project_config(repo, markers={"python": ["nothing.matches"]})
+        self.commit_project_config(repo, markers=["nothing.matches"])
         repo.write("tests/test_extra.py", EXTRA_OK.replace("class E", "@unittest.skip('later')\nclass E"))
         repo.commit(message("refactor", "T-001", "extra tests"), "tests/test_extra.py")
         code, out = self.plain("tdd", "check", "--repo", repo.root)
@@ -139,7 +139,7 @@ class C02ConfigFromTheBaseCommit(ReviewBase):
     def test_an_explicit_config_still_overrides(self):
         folder = self.tmp / "override"
         folder.mkdir()
-        cfg = write_config(folder, self.temp_root, markers={"python": ["wip"]})
+        cfg = write_config(folder, self.temp_root, markers=["wip"])
         repo = self.clone()
         repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra tests"), "tests/test_extra.py")
