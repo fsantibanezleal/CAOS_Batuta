@@ -148,3 +148,37 @@ class AdrLifecycle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdrCycles(AdrLifecycle):
+    """F-07: supersession chains never loop, and a superseded ADR is not still Accepted."""
+
+    def test_two_adrs_superseding_each_other_fail(self):
+        self.adr(1, status="Superseded", superseded_by="ADR-0002", supersedes="[ADR-0002]")
+        self.adr(2, status="Superseded", superseded_by="ADR-0001", supersedes="[ADR-0001]", tech_evaluations="[]")
+        code, doc, _ = self.lint()
+        self.assertEqual(code, 1)
+        self.assertTrue(any("cycle" in m for m in messages(doc, "FAIL")), messages(doc))
+
+    def test_a_three_cycle_fails(self):
+        self.adr(1, status="Superseded", superseded_by="ADR-0002", supersedes="[ADR-0003]")
+        self.adr(2, status="Superseded", superseded_by="ADR-0003", supersedes="[ADR-0001]", tech_evaluations="[]")
+        self.adr(3, status="Superseded", superseded_by="ADR-0001", supersedes="[ADR-0002]", tech_evaluations="[]")
+        code, doc, _ = self.lint()
+        self.assertEqual(code, 1)
+        self.assertTrue(any("cycle" in m for m in messages(doc, "FAIL")), messages(doc))
+
+    def test_an_accepted_or_proposed_adr_with_superseded_by_fails(self):
+        for status in ("Accepted", "Proposed"):
+            self.adr(1, status=status, superseded_by="ADR-0002")
+            self.adr(2, tech_evaluations="[]", supersedes="[ADR-0001]")
+            code, doc, _ = self.lint()
+            self.assertEqual(code, 1, status)
+            self.assertTrue(any("superseded_by" in m and status in m for m in messages(doc, "FAIL")), messages(doc))
+
+    def test_a_straight_chain_passes(self):
+        self.adr(1, status="Superseded", superseded_by="ADR-0002")
+        self.adr(2, status="Superseded", superseded_by="ADR-0003", supersedes="[ADR-0001]", tech_evaluations="[]")
+        self.adr(3, tech_evaluations="[]", supersedes="[ADR-0002]")
+        code, doc, _ = self.lint()
+        self.assertEqual(code, 0, messages(doc))

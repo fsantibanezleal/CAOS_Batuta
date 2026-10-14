@@ -113,3 +113,28 @@ class TechLint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TechRobustness(TechLint):
+    """F-12 and F-13: a malformed table is a FAIL item, a verified date in the future is flagged."""
+
+    def test_an_unescaped_pipe_in_a_matrix_cell_is_a_fail_item_not_a_traceback(self):
+        self.sizing("| Python | 3.13.1 |", "| Py || thon | 3.13.1 |")
+        code, doc, err = self.lint()
+        self.assertEqual(code, 1)
+        self.assertNotIn("Traceback", err)
+        self.assertTrue(messages(doc, "FAIL"))
+
+    def test_a_verified_date_in_the_future_is_a_warning(self):
+        self.sizing("| https://docs.python.org/3.13/ | 2026-10-12 |", "| https://docs.python.org/3.13/ | 2099-01-01 |")
+        code, doc, _ = self.lint()
+        self.assertEqual(code, 2)
+        self.assertTrue(any("future" in m for m in messages(doc, "WARN")), messages(doc))
+        self.assertFalse(any("within 90 days" in m and "Python" in m for m in messages(doc, "OK")))
+
+    def test_a_decision_file_dated_in_the_future_is_a_warning(self):
+        d = copy.deepcopy(TECH)
+        d["verified_date"] = "2099-01-01"
+        self.tech_file(d)
+        code, doc, _ = self.lint()
+        self.assertEqual(code, 2)

@@ -52,8 +52,9 @@ class SpecNew(Base):
         code, doc, _ = self.new("--title", "Rate limits", "--tier", "M")
         self.assertEqual(code, 0, messages(doc))
         folder = self.root / "specs/002-rate-limits"
-        for name in ("spec.md", "plan.md", "tasks.md", "test-change-requests.md"):
+        for name in ("spec.md", "plan.md", "tasks.md"):
             self.assertTrue((folder / name).is_file(), name)
+        self.assertFalse((folder / "test-change-requests.md").exists())
         self.assertTrue((folder / "approvals").is_dir())
         self.assertTrue((folder / "evidence").is_dir())
         text = (folder / "spec.md").read_text(encoding="utf-8")
@@ -91,12 +92,23 @@ class SpecNew(Base):
         self.assertIn("<!--", (folder / "spec.md").read_text(encoding="utf-8"))
         self.assertIn("<!--", (folder / "tasks.md").read_text(encoding="utf-8"))
 
-    def test_change_requests_file_is_the_c33_header_without_rows(self):
+    def test_spec_new_writes_no_change_request_file_and_the_template_stays_for_the_first_request(self):
         self.new("--title", "Rate limits")
-        text = (self.root / "specs/002-rate-limits/test-change-requests.md").read_text(encoding="utf-8")
+        self.assertFalse((self.root / "specs/002-rate-limits/test-change-requests.md").exists())
+        text = (CONTRACTS.parent / "templates" / "spec" / "test-change-requests.md").read_text(encoding="utf-8")
         self.assertIn("| Id | Date | Test path | Requirement | Reason | Proposed change | Status | Decided by |", text)
-        rows = [l for l in text.splitlines() if l.startswith("| ") and not l.startswith("| Id")]
-        self.assertEqual(rows, [])
+
+    def test_a_fresh_spec_lints_clean_with_a_skip_for_the_empty_tasks(self):
+        self.new("--title", "Rate limits", "--tier", "L")
+        code, doc, _ = self.lint("--spec", "002-rate-limits")
+        self.assertEqual(code, 0, messages(doc))
+        self.assertTrue(any(i["tag"] == "SKIP" and "tasks" in i["message"] for i in doc["items"]), messages(doc))
+
+    def test_apply_prints_new_for_the_folders_it_creates(self):
+        code, doc, _ = self.new("--title", "Rate limits")
+        tags = {i["message"]: i["tag"] for i in doc["items"]}
+        self.assertEqual(tags["002-rate-limits/approvals/"], "NEW")
+        self.assertEqual(tags["002-rate-limits/evidence/"], "NEW")
 
     def test_templates_ship_generic_content(self):
         folder = CONTRACTS.parent / "templates" / "spec"

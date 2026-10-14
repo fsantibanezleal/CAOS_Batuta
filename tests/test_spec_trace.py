@@ -152,3 +152,46 @@ class Trace(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarkerReader(unittest.TestCase):
+    """F-11: one reader of the REQ markers (shared with `tdd lock` later); a marker inside a string never counts."""
+
+    def read(self, name, text):
+        from batuta_lib import trace
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / name
+            p.write_text(text, encoding="utf-8")
+            return trace.scan_markers(p)
+
+    def test_python_marker_inside_a_triple_quoted_string_does_not_count(self):
+        text = 'DOC = """\n# REQ: REQ-ALR-001\n"""\n'
+        self.assertEqual(self.read("test_a.py", text), [])
+
+    def test_python_comment_lines_count_including_indented_and_crlf(self):
+        text = "class T:\r\n    # REQ: REQ-ALR-001, REQ-ALR-002\r\n    def test_a(self): pass\r\n"
+        self.assertEqual(self.read("test_a.py", text), ["REQ-ALR-001", "REQ-ALR-002"])
+
+    def test_python_trailing_comment_and_other_spellings_do_not_count(self):
+        text = "x = 1  # REQ: REQ-ALR-001\n#REQ REQ-ALR-002\n# req: REQ-ALR-003\n"
+        self.assertEqual(self.read("test_a.py", text), [])
+
+    def test_python_file_that_cannot_be_tokenized_keeps_the_markers_before_the_error(self):
+        text = "# REQ: REQ-ALR-001\nx = (\n"
+        self.assertEqual(self.read("test_a.py", text), ["REQ-ALR-001"])
+
+    def test_js_marker_inside_a_template_literal_or_string_does_not_count(self):
+        text = "const a = `\n// REQ: REQ-ALR-001\n`;\nconst b = '// REQ: REQ-ALR-002';\nconst c = \"x\\n// REQ: REQ-ALR-003\";\n"
+        self.assertEqual(self.read("a.test.js", text), [])
+
+    def test_js_marker_inside_a_block_comment_does_not_count_and_real_ones_do(self):
+        text = "/*\n// REQ: REQ-ALR-001\n*/\n  // REQ: REQ-ALR-002\nconst x = 1; // REQ: REQ-ALR-003\n"
+        self.assertEqual(self.read("a.test.ts", text), ["REQ-ALR-002"])
+
+    def test_spec_trace_reports_a_requirement_tagged_only_inside_a_string_as_an_orphan(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = make_project(d)
+            write(root, "tests/test_alerts.py", 'DOC = """\n# REQ: REQ-ALR-001\n"""\n# REQ: REQ-ALR-002\n')
+            code, doc, _ = run_json("spec", "trace", SPEC_ID, "--root", root)
+            self.assertEqual(code, 1)
+            self.assertTrue(any("REQ-ALR-001" in m for m in messages(doc, "FAIL")), messages(doc))

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_spec_project import (CONTRACTS, SPEC, SPEC_ID, make_project, messages, prefix_of, run, run_json, sha, write)  # noqa: E402
@@ -28,7 +29,9 @@ class Base(unittest.TestCase):
         return sorted((self.root / f"specs/{SPEC_ID}/approvals").glob("*.json"))
 
     def approve(self, typed=None):
-        return run_json("spec", "approve", SPEC_ID, "--root", self.root, stdin=(typed or self.phrase()) + "\n")
+        """`spec approve` with the human's console patched in process (never an environment switch an agent could set)."""
+        with mock.patch.object(spec_area, "_read_console", return_value=(typed or self.phrase()) + "\n"):
+            return run_json("spec", "approve", SPEC_ID, "--root", self.root)
 
     def check(self):
         return run_json("spec", "freeze", "--check", SPEC_ID, "--root", self.root)
@@ -103,12 +106,14 @@ class Approve(Base):
             self.assertEqual(code, 1, typed)
         self.assertEqual(self.approvals(), [])
 
-    def test_empty_stdin_is_refused(self):
-        code, doc, _ = run_json("spec", "approve", SPEC_ID, "--root", self.root, stdin="")
+    def test_empty_console_line_is_refused(self):
+        with mock.patch.object(spec_area, "_read_console", return_value=""):
+            code, doc, _ = run_json("spec", "approve", SPEC_ID, "--root", self.root)
         self.assertEqual(code, 1)
 
     def test_output_states_what_is_hashed_and_that_it_is_the_hookless_path(self):
-        code, out, _ = run("spec", "approve", SPEC_ID, "--root", self.root, stdin=self.phrase() + "\n")
+        with mock.patch.object(spec_area, "_read_console", return_value=self.phrase() + "\n"):
+            code, out, _ = run("spec", "approve", SPEC_ID, "--root", self.root)
         self.assertIn("docs/contracts/alert-event.schema.json", out)
         self.assertIn("tests/test_alerts.py", out)
         self.assertIn("hooks", out.lower())
@@ -183,16 +188,79 @@ class Hook(Base):
         res = spec_area.HOOKS["spec-approval"]({"hook_event_name": "UserPromptSubmit"})
         self.assertEqual(res["exit_code"], 0)
 
-    def test_cli_twin_reads_the_payload_on_stdin(self):
+    def test_cli_twin_is_a_dry_run_that_never_writes(self):
         payload = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": self.phrase(), "cwd": str(self.root)})
         code, out, _ = run("spec", "hook-approval", stdin=payload)
         self.assertEqual(code, 0)
-        self.assertEqual(len(self.approvals()), 1)
+        self.assertEqual(self.approvals(), [])
+        self.assertIn("would record", out)
+        self.assertIn("dry run", out)
 
-    def test_handler_result_satisfies_c31(self):
+    def test_cli_twin_dry_run_reports_a_refusal(self):
+        payload = json.dumps({"prompt": f"approve {SPEC_ID} 000000000000", "cwd": str(self.root)})
+        code, out, _ = run("spec", "hook-approval", stdin=payload)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.approvals(), [])
+
+    # F-06: C16 1.1 (contracts unit U0r5) adds the UserPromptSubmit output; until it merges the full C31 check cannot pass.
+    @unittest.expectedFailure
+    def test_handler_result_satisfies_c31_through_the_full_check(self):
         res = self.hook(self.phrase())
         schema = core.load_schema(core.find_schema(CONTRACTS, "C31"))
-        self.assertEqual(core.validate_def(res, schema, "handler_result"), [])
+        self.assertEqual(core.validate_instance("C31", res, schema), [])
+
+    def test_handler_output_has_the_official_shape_with_a_system_message(self):
+        res = self.hook(self.phrase())
+        out = res["output"]
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertIn("recorded", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("recorded", out["systemMessage"])
+
+    def test_console_refusal_without_a_tty_writes_nothing(self):
+        code, doc, _ = run_json("spec", "approve", SPEC_ID, "--root", self.root, stdin=self.phrase() + "\n")
+        self.assertEqual(code, 1)
+        self.assertTrue(any("console" in m for m in messages(doc, "REFUSED")), messages(doc))
+        self.assertEqual(self.approvals(), [])
+
+    def test_console_reader_refuses_when_stdin_is_not_a_tty_and_names_the_device(self):
+        with mock.patch.object(sys, "stdin", mock.Mock(isatty=lambda: False)):
+            with self.assertRaises(spec_area.ConsoleError):
+                spec_area._read_console()
+
+    def test_console_reader_opens_the_console_device_not_stdin(self):
+        opened = []
+
+        def fake_open(path, *a, **k):
+            opened.append(path)
+            return mock.MagicMock(__enter__=lambda s: mock.Mock(readline=lambda: "typed\n"), __exit__=lambda *x: False)
+
+        with mock.patch.object(sys, "stdin", mock.Mock(isatty=lambda: True)), mock.patch("builtins.open", fake_open):
+            self.assertEqual(spec_area._read_console(), "typed\n")
+        self.assertEqual(opened, ["CONIN$" if sys.platform == "win32" else "/dev/tty"])
+
+    def test_refusals_never_write_even_on_a_record_that_fails_c06(self):
+        # F-12: a ValueError from write_record is a REFUSED item, never a traceback
+        with mock.patch.object(approval, "write_record", side_effect=ValueError("the approval record does not satisfy C06: x")):
+            code, doc, _ = self.approve()
+        self.assertEqual(code, 1)
+        self.assertTrue(any("C06" in m for m in messages(doc, "REFUSED")))
+
+    def test_forged_record_dated_in_the_future_is_ignored_and_a_later_real_approval_stands(self):
+        # F-10
+        old = prefix_of(self.spec)
+        write(self.root, f"specs/{SPEC_ID}/spec.md", SPEC.replace("Empty file.", "Changed."))
+        self.assertEqual(self.approve()[0], 0)
+        real = self.approvals()[0]
+        rec = json.loads(real.read_text(encoding="utf-8"))
+        rec["approved_at"] = "2099-01-01T00:00:00Z"
+        rec["spec_sha256"] = "a" * 64
+        rec["approved_spec_sha256_prefix"] = "a" * 12
+        rec["prompt_excerpt"] = f"approve {SPEC_ID} " + "a" * 12
+        write(self.root, f"specs/{SPEC_ID}/approvals/a.json", json.dumps(rec))
+        code, doc, _ = self.check()
+        self.assertEqual(code, 2, messages(doc))
+        self.assertTrue(any("future" in m for m in messages(doc, "WARN")))
+        self.assertIn("VALID", " ".join(messages(doc)))
 
     def test_hooks_dict_is_a_literal_discoverable_by_the_launcher(self):
         found, problems = core.discover_hook_ids(Path(spec_area.__file__).parent)
