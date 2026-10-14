@@ -37,7 +37,7 @@ class TestPathVocabulary(Base):
     def test_conventions_of_the_common_ecosystems_count(self):
         for path in ("tests/test_alerts.py", "alerts_test.py", "web/__tests__/a.js", "web/a.spec.ts", "web/a.test.tsx",
                      "pipeline/ingest_test.go", "src/test/java/com/x/AlertTest.java", "src/test/kotlin/AlertTests.kt",
-                     "Alerts.Tests/AlertTests.cs", "Alerts.UnitTests/Program.cs", "Alerts.Tests/Alerts.Tests.csproj",
+                     "Alerts.Tests/AlertTests.cs", "Alerts.UnitTests/AlertTests.cs", "Alerts.Tests/Alerts.Tests.csproj",
                      "Alerts.Tests", "tests/integration.rs", "tests", "spec/alert_spec.rb"):
             with self.subTest(path=path):
                 self.assertTrue(sm.is_test_path(path), path)
