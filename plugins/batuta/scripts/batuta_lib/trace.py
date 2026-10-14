@@ -106,7 +106,7 @@ def _js_markers(text):
             elif c == "/" and not in_class:
                 state, prev = "code", "a"
             elif c == _NL:
-                state = "code"   # an unterminated regex ends at its line
+                state, line_start = "code", True   # an unterminated regex ends at its line
         else:  # a string or a template literal
             if c == "\\":
                 i += 2
@@ -114,7 +114,7 @@ def _js_markers(text):
             if c == quote:
                 state, prev = "code", "a"
             elif c == _NL and quote != "`":
-                state = "code"   # an unterminated quote ends at its line
+                state, line_start = "code", True   # an unterminated quote (JSX text, an apostrophe) ends at its line
         i += 1
     return ids
 

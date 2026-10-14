@@ -46,3 +46,11 @@ python scripts/batuta.py spec freeze --check ID
   documentation files named next to it are still hashed but never count. A backticked command starts with a known runner, an
   executable on the PATH or a script of the repository, and a chain that can never fail (`|| true`, `; exit 0`,
   `python -c pass`, `echo ...`) is refused.
+- Gate vocabulary: a Gate command starts with a runner of the documented list (python, py, pytest, uv, poetry, tox, nox, hatch,
+  node, npm, npx, pnpm, yarn, bun, deno, vitest, jest, go, cargo, dotnet, mvn, gradle, java, make, bash, sh, pwsh, powershell,
+  ctest, cmake, bazel, rspec, bundle, ruby, php, phpunit, swift, mix, R, Rscript, julia, among others) or a script of the
+  repository that exists; the PATH is never consulted, so lint gives the same answer on every device. A leading `cd <dir> &&`
+  and a trailing `&& echo ...` are fine; a command after a double pipe, an unconditional success after the test, `ls`, `cat`
+  and other read-only commands alone, and `--collect-only` or `--dry-run` listings are refused. Test files are recognized by
+  the common conventions (`test_*.py`, `*_test.py`, `*.test.*`, `*.spec.*`, `__tests__/`, `*_test.go`, `tests/`, `src/test/`,
+  `*.Tests` folders); `conftest.py`, `__init__.py` and non-code files never count as the test, though they are hashed when named.

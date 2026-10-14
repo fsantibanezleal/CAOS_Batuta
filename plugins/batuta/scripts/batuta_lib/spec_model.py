@@ -7,7 +7,6 @@ lookups, and the LF-normalized SHA-256 every hash of the freeze uses (decision 4
 import hashlib
 import posixpath
 import re
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -213,13 +212,16 @@ def _lead(text):
 
 
 RUNNERS = {
-    "pytest", "py.test", "python", "python3", "py", "pip", "pipx", "uv", "uvx", "poetry", "hatch", "tox", "nox", "ruff", "mypy",
+    "python", "python3", "py", "pytest", "py.test", "uv", "uvx", "poetry", "hatch", "tox", "nox", "pip", "pipx", "ruff", "mypy",
     "flake8", "pylint", "black", "pyright", "unittest", "coverage", "node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "vitest",
-    "jest", "mocha", "tsc", "eslint", "make", "cmake", "ctest", "cargo", "rustc", "go", "dotnet", "mvn", "gradle", "gradlew",
-    "ant", "bash", "sh", "zsh", "pwsh", "powershell", "cmd", "git", "docker", "batuta", "java", "ruby", "rake", "bundle",
-    "rspec", "php", "composer", "phpunit", "swift", "gh",
+    "jest", "mocha", "tsc", "eslint", "go", "cargo", "rustc", "dotnet", "mvn", "gradle", "gradlew", "java", "make", "ant", "bash",
+    "sh", "zsh", "pwsh", "powershell", "cmd", "ctest", "cmake", "bazel", "rspec", "rake", "bundle", "ruby", "php", "phpunit",
+    "composer", "swift", "mix", "r", "rscript", "julia", "docker", "git", "batuta", "gh",
 }
-_SEGMENTS = re.compile(r"\|\||&&|;|&|\|")
+PREFIX_COMMANDS = {"cd", "pushd", "set", "export"}
+READ_ONLY = {"ls", "cat", "type", "dir", "test", "find", "sort", "more", "less", "head", "tail", "wc", "printf", "[", "stat"}
+GIT_READ_ONLY = {"status", "log", "blame", "diff", "show", "ls-files", "branch", "rev-parse", "describe"}
+LISTING_FLAGS = {"--collect-only", "--co", "--dry-run", "--list", "--list-tests", "--listtests", "--collectonly"}
 _SHELLS = {"sh", "bash", "zsh", "dash", "cmd", "python", "python3", "py", "node", "powershell", "pwsh"}
 _RUN_FLAGS = {"-c", "/c", "-command", "-e"}
 _NO_OP_BODIES = {"pass", "none"}
@@ -229,41 +231,95 @@ def _command_word(word):
     return posixpath.basename(word.strip("\"'").replace("\\", "/")).lower().removesuffix(".exe")
 
 
-def _no_op(segment, depth=0):
-    """True when a command segment cannot fail: `true`, `:`, `exit ...`, `echo ...`, or a shell or interpreter one-liner
-    (`sh -c true`, `cmd /c exit 0`, `python -c pass`) whose body is such a command."""
+def split_chain(span):
+    """[(operator before, segment)] of a shell-like command line, split on `;`, `&`, `&&`, `|` and the double pipe outside
+    quotes; a `&` that belongs to a redirection (`2>&1`, `&>`) does not split."""
+    out, buf, op, quote, i, n = [], "", "", "", 0, len(span)
+    while i < n:
+        c = span[i]
+        if quote:
+            buf += c
+            if c == "\\" and i + 1 < n:
+                buf += span[i + 1]
+                i += 1
+            elif c == quote:
+                quote = ""
+        elif c in "'\"":
+            quote, buf = c, buf + c
+        elif span[i:i + 2] in ("||", "&&"):
+            out.append((op, buf))
+            op, buf, i = span[i:i + 2], "", i + 1
+        elif c in ";&|" and not (c == "&" and (buf.endswith(">") or span[i + 1:i + 2] == ">")):
+            out.append((op, buf))
+            op, buf = c, ""
+        else:
+            buf += c
+        i += 1
+    out.append((op, buf))
+    return [(o, s.strip()) for o, s in out if s.strip()]
+
+
+def _words(segment):
     words = segment.split()
     while words and "=" in words[0] and not words[0].startswith(("-", "/")):
         words = words[1:]          # leading VAR=value assignments
-    if not words:
+    return words
+
+
+def _shell_body_no_op(words, depth=0):
+    """True for a shell or interpreter one-liner whose body cannot fail (`sh -c true`, `cmd /c exit 0`, `python -c pass`)."""
+    if not words or _command_word(words[0]) not in _SHELLS:
         return False
-    first = _command_word(words[0])
-    if first in NO_FAIL:
-        return True
-    if first in _SHELLS:
-        for i, w in enumerate(words[1:], 1):
-            if w.lower() in _RUN_FLAGS:
-                body = " ".join(words[i + 1:]).strip("\"' ")
-                lead = _command_word(body.split()[0]) if body.split() else ""
-                return lead in _NO_OP_BODIES or (depth < 2 and _no_op(body, depth + 1))
+    for i, w in enumerate(words[1:], 1):
+        if w.lower() in _RUN_FLAGS:
+            body = " ".join(words[i + 1:]).strip("\"' ")
+            inner = _words(body)
+            if not inner:
+                return False
+            if _command_word(inner[0]) in _NO_OP_BODIES or _command_word(inner[0]) in ("true", ":", "exit", "echo", "false"):
+                return True
+            return depth < 2 and _shell_body_no_op(inner, depth + 1)
     return False
 
 
 def _known_command(word, root):
+    """A runner of the documented list, or a script of the repository that exists. Never the PATH: lint must give the same
+    answer on every device."""
     word = word.strip("\"'")
-    if _command_word(word) in RUNNERS or shutil.which(word):
+    if _command_word(word) in RUNNERS:
         return True
     return bool(root) and (Path(root) / word.replace("\\", "/")).is_file()
 
 
 def _command_problem(span, root):
-    for segment in _SEGMENTS.split(span):
-        if _no_op(segment):
+    chain = split_chain(span)
+    if any(op == "||" for op, _ in chain[1:]):
+        return f"'{span.strip()}': a command after a double pipe runs only when the test failed and hides the failure"
+    ran = False
+    for idx, (op, segment) in enumerate(chain):
+        words = _words(segment)
+        if not words:
+            continue
+        first = _command_word(words[0])
+        if first in PREFIX_COMMANDS:
+            continue
+        if _shell_body_no_op(words):
             return f"'{span.strip()}' cannot fail (a no-op command or an unconditional success), so it is no gate"
-        words = [w for w in segment.split() if not ("=" in w and not w.startswith(("-", "/")))]
-        if words and not _known_command(words[0], root):
-            return (f"the first word '{words[0]}' of '{span.strip()}' is neither a known runner, an executable on the PATH "
-                    "nor a file of the repository")
+        if first in NO_FAIL:
+            # `x && echo done` still fails with x; anything else that succeeds unconditionally hides a failure
+            if idx == 0 or op in (";", "&", "|") or first == "exit":
+                return f"'{span.strip()}' cannot fail (a no-op command or an unconditional success), so it is no gate"
+            continue
+        if first in READ_ONLY or (first == "git" and len(words) > 1 and words[1].lower() in GIT_READ_ONLY):
+            continue
+        if not _known_command(words[0], root):
+            return (f"the first word '{words[0]}' of '{span.strip()}' is neither a runner of the documented list "
+                    "nor a script of the repository")
+        if any(w.lower() in LISTING_FLAGS for w in words[1:]):
+            return f"'{span.strip()}' only lists tests (a collect-only or dry-run flag), so it cannot fail on a test"
+        ran = True
+    if not ran:
+        return f"'{span.strip()}' runs no test (it only reads or lists), so it cannot fail on a test"
     return None
 
 
@@ -293,11 +349,35 @@ def check_gate(cell, root=None):
     return "the gate is neither backticked commands nor a test id (path or path::name)"
 
 
+CODE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs", ".fs", ".vb", ".rb",
+                 ".php", ".swift", ".scala", ".sh", ".ps1", ".r", ".jl", ".ex", ".exs", ".c", ".cc", ".cpp", ".h", ".m",
+                 ".csproj", ".fsproj", ".vbproj"}
+_SUPPORT_FILES = {"conftest.py", "__init__.py"}
+_TEST_DIRS = {"test", "tests", "__tests__"}
+_TEST_NAME_ENDS = ("_test.py", "_test.go", "_test.rs", "_spec.rb", "test.java", "tests.java", "test.kt", "tests.kt", "test.cs",
+                   "tests.cs", "test.scala", "spec.scala")
+
+
 def is_test_path(path):
+    """True for a path that is a test by the common conventions of the ecosystems: Python `test_*.py` and `*_test.py`, JavaScript
+    and TypeScript `*.test.*`, `*.spec.*` and `__tests__/`, Go `*_test.go`, Rust `tests/`, Ruby `*_spec.rb`, Java and Kotlin
+    `src/test/` and `*Test(s).java`, .NET `*.Tests` and `*.UnitTests` folders. A folder counts by its name. `conftest.py`,
+    `__init__.py` and files that are not code (data, configuration, documentation) never count, though they are hashed when named."""
     parts = path.rstrip("/").split("/")
     name = parts[-1]
-    return (any(p in _TEST_SEGMENTS for p in parts) or name.startswith("test_") or name.endswith("_test.py")
-            or ".test." in name or ".spec." in name)
+    low = name.lower()
+    suffix = posixpath.splitext(low)[1]
+    if low in _SUPPORT_FILES:
+        return False
+    in_test_dir = any(p.lower() in _TEST_DIRS or p.endswith((".Tests", ".UnitTests")) for p in parts[:-1]) or \
+        any(parts[i].lower() == "src" and parts[i + 1].lower() == "test" for i in range(len(parts) - 1))
+    if suffix in CODE_SUFFIXES:
+        name_hit = low.startswith("test_") or ".test." in low or ".spec." in low or low.endswith(_TEST_NAME_ENDS)
+        return in_test_dir or name_hit
+    if not suffix or "." in name and low.endswith((".tests", ".unittests")):
+        # a folder (or a folder-like token without an extension)
+        return low in _TEST_DIRS or name.endswith((".Tests", ".UnitTests")) or in_test_dir
+    return False
 
 
 def _looks_like_path(word):
