@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,27 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from _support import load_batuta  # noqa: E402
+
+def make_link(link, target):
+    """A directory symlink, or a junction on Windows when symlinks need a privilege; SkipTest when neither works."""
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return
+    except (OSError, NotImplementedError):
+        pass
+    if sys.platform == "win32":
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+        if done.returncode == 0:
+            return
+    raise unittest.SkipTest("cannot create a symlink or a junction here")
+
+
+def make_file_link(link, target):
+    """A file symlink; SkipTest when the account may not create one (a junction cannot point at a file)."""
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError):
+        raise unittest.SkipTest("cannot create a file symlink here")
 
 
 def run(*argv, env=None):

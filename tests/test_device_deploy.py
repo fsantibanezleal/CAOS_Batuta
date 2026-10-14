@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from test_device_support import DeviceCase, ROOT, tree_digest  # noqa: E402
+from test_device_support import DeviceCase, ROOT, make_file_link, make_link, tree_digest  # noqa: E402
 
 from batuta_lib import config, contract, device_profile  # noqa: E402
 from batuta_lib.areas import device  # noqa: E402
@@ -125,6 +125,58 @@ class Deploy(DeviceCase):
         for rel in ("areas/device.py", "areas/preflight.py", "settings_merge.py", "device_profile.py"):
             text = (ROOT / "plugins" / "batuta" / "scripts" / "batuta_lib" / rel).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"(?<![A-Za-z])[A-Za-z]:[\\/](?![\\/])")
+
+
+class DeployLinks(DeviceCase):
+    """Re-check of F2 for deploy mirroring: a link nested in a mirrored area is never followed or deleted through."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(0, self.deploy()[0])
+        self.victim = self.root / "victim"
+        (self.victim / "precious").mkdir(parents=True)
+        (self.victim / "precious" / "thesis.md").write_text("irreplaceable\n", encoding="utf-8")
+        self.before = tree_digest(self.victim)
+
+    def refused(self):
+        code, out, _ = self.deploy()
+        self.assertEqual(1, code, out)
+        self.assertIn("REFUSED", out)
+        self.assertNotIn("REMOVED", out)
+        self.assertEqual(self.before, tree_digest(self.victim))
+
+    def test_a_junction_directly_below_an_area_root(self):
+        make_link(self.deploy_dir / "scripts" / "old", self.victim)
+        self.refused()
+
+    def test_a_junction_two_levels_down(self):
+        make_link(self.deploy_dir / "scripts" / "batuta_lib" / "old", self.victim)
+        self.refused()
+
+    def test_a_symlink_file_where_a_managed_file_belongs(self):
+        outside = self.root / "outside.md"
+        outside.write_text("keep\n", encoding="utf-8")
+        target = self.deploy_dir / "templates" / "presets" / "base.json"
+        target.unlink()
+        make_file_link(target, outside)
+        self.refused()
+        self.assertEqual("keep\n", outside.read_text(encoding="utf-8"))
+
+    def test_a_file_link_is_refused_even_where_the_account_cannot_create_symlinks(self):
+        (self.deploy_dir / "templates" / "ghost.md").write_text("stale\n", encoding="utf-8")
+        with mock.patch.object(device, "_is_link", lambda p: Path(p).name == "ghost.md"):
+            code, out, _ = self.deploy()
+        self.assertEqual(1, code, out)
+        self.assertIn("ghost.md", out)
+        self.assertNotIn("REMOVED", out)
+        self.assertTrue((self.deploy_dir / "templates" / "ghost.md").exists())
+
+    def test_a_stale_symlink_file_in_an_area(self):
+        outside = self.root / "outside.md"
+        outside.write_text("keep\n", encoding="utf-8")
+        make_file_link(self.deploy_dir / "templates" / "ghost.md", outside)
+        self.refused()
+        self.assertEqual("keep\n", outside.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

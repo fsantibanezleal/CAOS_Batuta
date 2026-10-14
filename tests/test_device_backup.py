@@ -5,8 +5,9 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from test_device_support import DeviceCase, tree_digest  # noqa: E402
+from test_device_support import DeviceCase, make_file_link, make_link, tree_digest  # noqa: E402
 
 from batuta_lib import config  # noqa: E402
 from batuta_lib.areas import device  # noqa: E402
@@ -35,20 +36,6 @@ def samples():
         "bearer token": "Authorization: Bearer " + a * 3,
         "secret-named value": '{"my_api_token": "' + "z" * 20 + '"}',
     }
-
-
-def make_link(link, target):
-    """A directory symlink, or a junction on Windows when symlinks need a privilege; SkipTest when neither works."""
-    try:
-        os.symlink(target, link, target_is_directory=True)
-        return
-    except (OSError, NotImplementedError):
-        pass
-    if sys.platform == "win32":
-        done = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
-        if done.returncode == 0:
-            return
-    raise unittest.SkipTest("cannot create a symlink or a junction here")
 
 
 class BackupBase(DeviceCase):
@@ -208,6 +195,106 @@ class SecretScanEncodings(BackupBase):
     def test_a_clean_file_with_a_nul_byte_is_still_collected(self):
         (self.claude / "agents" / "binary.md").write_bytes(b"\x00\x01 just bytes, no secret\n")
         self.assertEqual(0, self.backup()[0])
+
+
+class NestedLinks(BackupBase):
+    """Re-check of F2: a link or junction nested below an area of an existing bundle is never followed or deleted through."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(0, self.backup()[0])               # an existing bundle, with its MANIFEST.json
+        self.victim = self.root / "victim"
+        (self.victim / "precious").mkdir(parents=True)
+        (self.victim / "precious" / "thesis.md").write_text("irreplaceable\n", encoding="utf-8")
+        self.before = tree_digest(self.victim)
+
+    def refused(self, label):
+        code, out, _ = self.backup()
+        self.assertEqual(1, code, out)
+        self.assertIn("REFUSED", out)
+        self.assertNotIn("REMOVED", out)
+        self.assertEqual(self.before, tree_digest(self.victim), label)
+        self.assertTrue((self.victim / "precious" / "thesis.md").exists())
+
+    def test_a_junction_directly_below_an_area_root(self):
+        make_link(self.bundle / "memory" / "old", self.victim)           # the reviewer's exact case
+        self.refused("memory/old")
+
+    def test_a_junction_two_levels_down(self):
+        (self.bundle / "rules" / "sub").mkdir()
+        make_link(self.bundle / "rules" / "sub" / "old", self.victim)
+        self.refused("rules/sub/old")
+
+    def test_a_symlink_file_where_a_managed_file_belongs(self):
+        outside = self.root / "outside.md"
+        outside.write_text("keep\n", encoding="utf-8")
+        (self.bundle / "agents" / "reviewer.md").unlink()
+        make_file_link(self.bundle / "agents" / "reviewer.md", outside)
+        self.refused("agents/reviewer.md")
+        self.assertEqual("keep\n", outside.read_text(encoding="utf-8"))
+
+    def test_a_stale_symlink_file_in_an_area_is_reported_not_followed(self):
+        outside = self.root / "outside.md"
+        outside.write_text("keep\n", encoding="utf-8")
+        make_file_link(self.bundle / "agents" / "ghost.md", outside)
+        self.refused("agents/ghost.md")
+        self.assertEqual("keep\n", outside.read_text(encoding="utf-8"))
+
+    def test_a_file_link_is_refused_even_where_the_account_cannot_create_symlinks(self):
+        # the same check as the two symlink-file cases above, with the link test faked: an account without the
+        # symlink privilege (the review machine) cannot create the real thing
+        (self.bundle / "agents" / "ghost.md").write_text("stale\n", encoding="utf-8")
+        with mock.patch.object(device, "_is_link", lambda p: Path(p).name == "ghost.md"):
+            code, out, _ = self.backup()
+        self.assertEqual(1, code, out)
+        self.assertIn("ghost.md", out)
+        self.assertNotIn("REMOVED", out)
+        self.assertTrue((self.bundle / "agents" / "ghost.md").exists())
+
+    def test_the_removal_guard_refuses_a_path_that_resolves_outside(self):
+        items = []
+        make_link(self.bundle / "memory" / "old", self.victim)
+        self.assertTrue(device._refuse_escape(self.bundle, ["memory/old/precious/thesis.md"], items))
+        self.assertEqual(self.before, tree_digest(self.victim))
+
+
+class ReviewedTokenOneHash(BackupBase):
+    """N1: one hash allows a reviewed token, whatever the encoding it was found in."""
+
+    def leak(self, data):
+        (self.claude / "agents" / "reviewed.md").write_bytes(data)
+
+    def hashes(self, out):
+        import re
+        return re.findall(r"--allow ([0-9a-f]{64})", out)
+
+    def test_utf16_with_a_bom_is_reported_once_and_one_hash_allows_it(self):
+        self.leak(("token = " + fake_token() + "\n").encode("utf-16"))
+        code, out, _ = self.backup()
+        self.assertEqual(1, code)
+        self.assertEqual(1, out.count("REFUSED"), out)
+        hashes = self.hashes(out)
+        self.assertEqual(1, len(hashes))
+        code, out, _ = self.backup("--allow", hashes[0])
+        self.assertEqual(0, code, out)
+
+    def test_utf16_without_a_bom_and_a_nul_first_file_are_one_hit_each(self):
+        for encode in (lambda s: s.encode("utf-16-be"), lambda s: s.encode("utf-16-le"), lambda s: b"\x00" + s.encode()):
+            with self.subTest():
+                self.leak(encode("token = " + fake_token() + "\n"))
+                code, out, _ = self.backup()
+                self.assertEqual(1, code)
+                hashes = self.hashes(out)
+                self.assertEqual(1, len(hashes), out)
+                self.assertEqual(0, self.backup("--allow", hashes[0])[0])
+
+    def test_both_decodings_stay_scanned_an_allowed_line_does_not_exempt_another_token(self):
+        self.leak(("token = " + fake_token() + "\n").encode("utf-16"))
+        sha = self.hashes(self.backup()[1])[0]
+        self.leak(("token = " + fake_token() + "\nsecond = ghp_" + "Z9y8X7w6V5" * 4 + "\n").encode("utf-16"))
+        code, out, _ = self.backup("--allow", sha)
+        self.assertEqual(1, code)
+        self.assertEqual(1, out.count("REFUSED"), out)
 
 
 class BundleSafety(BackupBase):
