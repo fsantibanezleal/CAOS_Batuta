@@ -6,7 +6,7 @@ Reads the C16 payload of the event on stdin, finds the handler `<id>` in the are
 defines the id is imported), calls `handler(payload)`, checks the handler result and then prints `output` as JSON on
 stdout, writes `message` to stderr and exits with `exit_code` (0, or 2 to block).
 
-An unknown id, an id defined twice, a module that fails to import, an exception, an invalid result or output over
+An unknown id, an id defined twice, a module that fails to import, an exception, an invalid result or a field over
 the official 10,000-character cap writes the reason to stderr and exits 1, which Claude Code treats as a
 non-blocking error: the launcher itself fails open. A guard that must block when it cannot decide is wired with
 `onFailure: "block"` in hooks.json; that choice is never made here.
@@ -16,6 +16,7 @@ Standard library only; writes no bytecode.
 from __future__ import annotations
 
 import ast
+import contextlib
 import importlib.util
 import json
 import re
@@ -91,14 +92,19 @@ def _output_problems(output) -> list[str]:
     if "decision" in output:
         if output.get("decision") != "block" or not (isinstance(output.get("reason"), str) and output["reason"]):
             return ["output: a block needs decision 'block' and a non-empty reason"]
+        if len(output["reason"]) > OUTPUT_CAP:
+            return [f"output: the block reason must be at most {OUTPUT_CAP} characters"]
         return []
     spec = output.get("hookSpecificOutput")
     if not isinstance(spec, dict):
         return ["output is not a C16 output (no 'decision' and no 'hookSpecificOutput')"]
     name = spec.get("hookEventName")
     if name == "PreToolUse":
-        if spec.get("permissionDecision") not in DECISIONS or not isinstance(spec.get("permissionDecisionReason"), str):
+        reason = spec.get("permissionDecisionReason")
+        if spec.get("permissionDecision") not in DECISIONS or not isinstance(reason, str):
             return ["output: a PreToolUse output needs permissionDecision (allow, deny or ask) and permissionDecisionReason"]
+        if len(reason) > OUTPUT_CAP:
+            return [f"output: permissionDecisionReason must be at most {OUTPUT_CAP} characters"]
         return []
     if name == "SessionStart":
         context = spec.get("additionalContext")
@@ -144,19 +150,19 @@ def run(hook_id: str, stdin_text: str, stdout, stderr, areas_dir: Path | None = 
             return fail(f"unknown handler id '{hook_id}' (no area module defines it)")
         if len(modules) > 1:
             return fail(f"handler id '{hook_id}' is defined twice (in {', '.join(modules)})")
-        module = _load(modules[0], areas_dir)
-        handler = getattr(module, "HOOKS", {}).get(hook_id)
-        if not callable(handler):
-            return fail(f"handler '{hook_id}' in {modules[0]} is not callable")
-        result = handler(payload)
+        # a handler's stray prints go to stderr: stdout carries exactly one JSON decision (or nothing)
+        with contextlib.redirect_stdout(stderr):
+            module = _load(modules[0], areas_dir)
+            handler = getattr(module, "HOOKS", {}).get(hook_id)
+            if not callable(handler):
+                return fail(f"handler '{hook_id}' in {modules[0]} is not callable")
+            result = handler(payload)
         problems = validate_result(result)
         if problems:
             return fail("invalid handler result: " + "; ".join(problems))
         printed = ""
         if result.get("output") is not None:
             printed = json.dumps(result["output"])
-            if len(printed) > OUTPUT_CAP:
-                return fail(f"the output is {len(printed)} characters, over the {OUTPUT_CAP} cap")
         if printed:
             _write(stdout, printed + "\n")
         if result["exit_code"] == 2:
@@ -164,7 +170,7 @@ def run(hook_id: str, stdin_text: str, stdout, stderr, areas_dir: Path | None = 
         return result["exit_code"]
     except json.JSONDecodeError as exc:
         return fail(f"the payload on stdin is not valid JSON ({exc.msg})")
-    except Exception as exc:  # noqa: BLE001 (any failure is a non-blocking error, never a crash of the session)
+    except BaseException as exc:  # noqa: BLE001 (SystemExit and KeyboardInterrupt included: always a non-blocking error)
         return fail(f"{type(exc).__name__}: {exc}")
 
 
