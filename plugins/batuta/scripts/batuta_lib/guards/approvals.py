@@ -2,15 +2,18 @@
 
 The approval record (C06) proves a human approved a frozen spec: the human types `approve <spec id> <first 12 hex of
 the spec sha256>`, and the record is written from that prompt (or by the manual `spec approve` command run by the
-human). This guard denies Edit, Write and shell writes to `specs/<id>/approvals/` and asks before an agent runs
-`spec approve --apply`.
+human). This guard denies Edit, Write and shell writes (redirects, cp or Copy-Item into the folder, sc/ac, links,
+pipe-fed deletes, globs, cmd /c bodies) to `specs/<id>/approvals/`, resolves existing links and junctions, and asks
+before an agent runs `spec approve --apply`.
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import Path
 
-from . import FILE_TOOLS, ask, allow, command_of, deny, file_path_of, norm_path, project_root, tool_name
+from . import (FILE_TOOLS, allow, ask, candidate_roots, command_of, deny, file_path_of, has_glob, norm_path,
+               project_root, spellings, tool_name)
 from . import shell
 from . import text as textlib
 from .locked_tests import INLINE_WRITE, INTERPRETERS
@@ -28,8 +31,15 @@ EXPLAIN = [
 PHRASE = "approve <spec id> <first 12 hex of the spec sha256>"
 
 
+def _approval_dirs(root: Path) -> list[Path]:
+    try:
+        return [p for p in root.glob("**/specs/*/approvals") if p.is_dir()] if root.is_dir() else []
+    except OSError:
+        return []
+
+
 def state(root: Path) -> str:
-    found = [p for p in root.glob("**/specs/*/approvals") if p.is_dir()][:3] if root.is_dir() else []
+    found = _approval_dirs(root)[:3]
     if not found:
         return "no approvals folder under specs/<id>/: nothing to protect yet, the guard still denies writes to one"
     return f"approvals folders: {', '.join(p.relative_to(root).as_posix() for p in found)}"
@@ -41,19 +51,35 @@ def _deny(path: str) -> dict:
                 "Ask the human to type the approval phrase.")
 
 
+def _glob_hits(spelling: str, root: Path) -> bool:
+    """Does a glob target match an existing file or folder of an approvals folder?"""
+    for folder in _approval_dirs(root):
+        rel = folder.relative_to(root).as_posix().lower()
+        names = [rel] + [f"{rel}/{p.relative_to(folder).as_posix().lower()}" for p in folder.rglob("*")]
+        if any(fnmatch.fnmatchcase(n, spelling) for n in names):
+            return True
+    return False
+
+
 def decide(payload) -> dict:
     name = tool_name(payload)
     command = command_of(payload)
     path = file_path_of(payload) if name in FILE_TOOLS else ""
+    cwd = payload.get("cwd") if isinstance(payload, dict) and isinstance(payload.get("cwd"), str) else None
     if path:
-        return _deny(path) if APPROVALS.search(norm_path(path, project_root(payload))) else allow()
+        for root in candidate_roots(payload, [path]):
+            if any(APPROVALS.search(sp) for sp in spellings(path, root, cwd)):
+                return _deny(path)
+        return allow()
     if not command:
         return allow()
-    root = project_root(payload)
     normal = textlib.normalize(command)
-    for _name, token in shell.write_pairs(normal):
-        if APPROVALS.search(norm_path(token, root)):
-            return _deny(token)
+    pairs = shell.write_pairs(normal)
+    for root in candidate_roots(payload, [t for _, t in pairs]):
+        for _name, token in pairs:
+            for sp in spellings(token, root, cwd):
+                if APPROVALS.search(sp) or (has_glob(sp) and _glob_hits(sp, root)):
+                    return _deny(token)
     segs = shell.all_segments(normal)
     flat = normal.replace("\\", "/").lower()
     if any(shell.command_name(s) in INTERPRETERS for s in segs) or "io.file]" in flat:

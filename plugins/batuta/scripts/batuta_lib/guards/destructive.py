@@ -1,10 +1,12 @@
 """Guard `destructive`: packs of commands that destroy work or data, each with an explain line.
 
-Packs: `force-push-protected` (git push --force or +refspec to a protected branch, or with no branch named),
-`hard-reset` (git reset --hard), `git-clean` (git clean -f without a dry run), `rm-roots` (recursive delete of a
-filesystem root, a home folder, a drive or the current folder contents), `disk-format` (mkfs, format, Format-Volume,
-diskpart, dd to a device, wipefs, fdisk). Configuration: `guards.protected_branches` adds to the protected list
-(default main, master, develop, release/*); `guards.destructive_disable` lists packs to switch off.
+Packs: `force-push-protected` (git push --force or +refspec to a protected branch or with no branch named, and
+deleting a protected branch remotely: `:main`, `--delete main`), `hard-reset` (git reset --hard), `git-clean`
+(git clean -f without a dry run), `rm-roots` (recursive delete of a filesystem root, a home folder, a drive or the
+current folder contents, also fed through a pipe, `xargs rm -r` or `find ... -delete`), `disk-format` (mkfs, format,
+Format-Volume, diskpart, dd to a device, wipefs, fdisk). Git accepts any unambiguous prefix of a long option, so
+`--har` is `--hard`. Configuration: `guards.protected_branches` adds to the protected list (default main, master,
+develop, release/*); `guards.destructive_disable` lists packs to switch off.
 """
 from __future__ import annotations
 
@@ -18,8 +20,8 @@ from . import text as textlib
 NAME = "destructive"
 DEFAULT_PROTECTED = ["main", "master", "develop", "release/*"]
 EXPLAIN_BY_PACK = {
-    "force-push-protected": "force-pushing a protected branch (or any push with no branch named) rewrites shared "
-                            "history; push a task branch and merge through a pull request",
+    "force-push-protected": "force-pushing or deleting a protected branch (or any force push with no branch named) "
+                            "rewrites shared history; push a task branch and merge through a pull request",
     "hard-reset": "git reset --hard throws away uncommitted work and local commits for good; use git stash or a new branch",
     "git-clean": "git clean -f deletes untracked files that git cannot restore; preview with git clean -n",
     "rm-roots": "a recursive delete of a root, home or drive folder (or `*`) wipes the machine; name the exact subfolder",
@@ -35,9 +37,11 @@ ROOT_NAMES = {"", "*", ".", "..", "~", "$home", "${home}", "%userprofile%", "$en
               "/sbin", "/usr", "/var", "/sys", "/proc", "/users", "/windows", "c:/users", "c:/windows",
               "c:/program files"}
 DRIVE = re.compile(r"^[a-z]:(/\*?)?$")
+HOME_FOLDER = re.compile(r"^(/home/[^/]+|/users/[^/]+|[a-z]:/users/[^/]+)$")
 RECURSIVE_FLAG = re.compile(r"^-[A-Za-z]*[rR][A-Za-z]*$|^--recursive$|^-recurse$", re.IGNORECASE)
 RECURSIVE_WIN = re.compile(r"^/s$", re.IGNORECASE)
-FORCE_FLAG = re.compile(r"^--force(-with-lease(=.*)?|-if-includes)?$|^-[a-zA-Z]*f[a-zA-Z]*$")
+DELETERS = {"rm", "remove-item", "ri", "rmdir", "rd", "del", "erase"}
+PRODUCERS = {"ls", "dir", "gci", "get-childitem", "find", "echo", "printf", "cat", "get-item", "gi", "tree", "fd"}
 DISK_COMMANDS = {"format-volume", "clear-disk", "diskpart", "fdisk", "cfdisk", "sfdisk", "parted", "wipefs",
                  "initialize-disk", "remove-partition"}
 DEVICE = re.compile(r"^(/dev/|\\\\\.\\|//\./)", re.IGNORECASE)
@@ -59,23 +63,46 @@ def _is_protected(branch: str, protected: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(branch, p) for p in protected)
 
 
-def _force_push(args: list[str], protected: list[str]) -> bool:
-    forced = any(FORCE_FLAG.match(a) for a in args if a.startswith("-"))
+def _opt(arg: str, full: str, minlen: int) -> bool:
+    """`arg` is the long option `full` or an abbreviation of it (git parse-options accepts unique prefixes)."""
+    return arg.startswith("--") and len(arg) >= minlen and full.startswith(arg.split("=", 1)[0])
+
+
+FORCE_FORMS = ("--force", "--force-with-lease", "--force-if-includes")
+
+
+def _is_force_flag(arg: str) -> bool:
+    if re.fullmatch(r"-[a-zA-Z]*f[a-zA-Z]*", arg):
+        return True
+    return any(_opt(arg, full, 5) for full in FORCE_FORMS)
+
+
+def _is_delete_flag(arg: str) -> bool:
+    return arg == "-d" or _opt(arg, "--delete", 5)
+
+
+def _push_hits(args: list[str], protected: list[str]) -> bool:
+    flags = [a for a in args if a.startswith("-")]
+    forced = any(_is_force_flag(a) for a in flags)
+    deleting = any(_is_delete_flag(a) for a in flags)
     positional = [a for a in args if not a.startswith("-")]
     refspecs = positional[1:]
-    plus = [r for r in refspecs if r.startswith("+")]
-    if not forced and not plus:
-        return False
-    if any(a in ("--all", "--mirror") for a in args):
+    if any(a in ("--all", "--mirror") or _opt(a, "--mirror", 5) or _opt(a, "--all", 4) for a in flags) and forced:
         return True
-    if not refspecs:
+    if forced and not refspecs:
         return True
     for ref in refspecs:
+        source, colon, target = ref.lstrip("+").partition(":")
+        target = target if colon else source
+        is_delete = deleting or (colon and source == "")
         is_forced = forced or ref.startswith("+")
-        target = ref.lstrip("+").split(":")[-1]
-        if not is_forced:
+        if not (is_delete or is_forced):
             continue
-        if target in ("HEAD", "") or _is_protected(target, protected):
+        if is_delete and not colon:
+            target = source
+        if is_forced and target in ("HEAD", ""):
+            return True
+        if _is_protected(target, protected):
             return True
     return False
 
@@ -85,7 +112,21 @@ def _root_like(token: str) -> bool:
     stripped = t.rstrip("/")
     if t.startswith("/") and stripped == "":
         return True
-    return stripped in ROOT_NAMES or bool(DRIVE.match(stripped))
+    return stripped in ROOT_NAMES or bool(DRIVE.match(stripped)) or bool(HOME_FOLDER.match(stripped))
+
+
+def _recursive(name: str, args: list[str]) -> bool:
+    return any(RECURSIVE_FLAG.match(a) or RECURSIVE_WIN.match(a) for a in args) or \
+        (name in ("remove-item", "ri") and any(a.lower().startswith("-r") for a in args))
+
+
+def _producer_roots(segs: list, skip) -> bool:
+    for other in segs:
+        if other is skip or shell.command_name(other) not in PRODUCERS:
+            continue
+        if any(_root_like(t) for t in shell._positional(shell.args_of(other))):
+            return True
+    return False
 
 
 def scan_text(command: str, protected: list[str] | None = None, disabled: set[str] | None = None) -> list[tuple[str, str]]:
@@ -98,21 +139,37 @@ def scan_text(command: str, protected: list[str] | None = None, disabled: set[st
         if pack not in disabled and all(h[0] != pack for h in hits):
             hits.append((pack, EXPLAIN_BY_PACK[pack]))
 
-    for seg in shell.all_segments(textlib.normalize(command)):
+    segs = shell.all_segments(textlib.normalize(command))
+    for seg in segs:
         name, args = shell.command_name(seg), shell.args_of(seg)
+        if name == "xargs":
+            inner = shell.Segment(words=args[shell._flag_value_skip("xargs", args):], piped=True)
+            if shell.command_name(inner) in DELETERS and _recursive(shell.command_name(inner), shell.args_of(inner)) \
+                    and not shell._positional(shell.args_of(inner)) and _producer_roots(segs, seg):
+                add("rm-roots")
         if name == "git":
             sub, rest = shell._git_sub(args)
-            if sub == "push" and _force_push(rest, protected):
+            if sub == "push" and _push_hits(rest, protected):
                 add("force-push-protected")
-            elif sub == "reset" and "--hard" in rest:
+            elif sub == "reset" and any(_opt(a, "--hard", 4) for a in rest):
                 add("hard-reset")
-            elif sub == "clean" and not any(a in ("-n", "--dry-run") or re.fullmatch(r"-[a-z]*n[a-z]*", a) for a in rest):
-                if any(a == "--force" or re.fullmatch(r"-[a-zA-Z]*f[a-zA-Z]*", a) for a in rest):
+            elif sub == "clean":
+                dry = any(a == "-n" or _opt(a, "--dry-run", 4) or re.fullmatch(r"-[a-z]*n[a-z]*", a) for a in rest)
+                force = any(_opt(a, "--force", 4) or re.fullmatch(r"-[a-zA-Z]*f[a-zA-Z]*", a) for a in rest)
+                if force and not dry:
                     add("git-clean")
-        elif name in ("rm", "remove-item", "ri", "rmdir", "rd", "del", "erase"):
-            recursive = any(RECURSIVE_FLAG.match(a) or RECURSIVE_WIN.match(a) for a in args) or name in ("remove-item", "ri") and \
-                any(a.lower().startswith("-r") for a in args)
-            if recursive and any(_root_like(t) for t in shell._positional(args)):
+        elif name in DELETERS:
+            pos = shell._positional(args)
+            if _recursive(name, args):
+                if any(_root_like(t) for t in pos):
+                    add("rm-roots")
+                elif not pos and seg.piped and _producer_roots(segs, seg):
+                    add("rm-roots")
+        elif name == "find":
+            operands, deletes, runs_writer = shell._find_parts(args)
+            exec_rm = any(a in shell.FIND_EXEC and i + 1 < len(args) and shell.command_name(shell.Segment(words=args[i + 1:])) in DELETERS
+                          for i, a in enumerate(args))
+            if (deletes or exec_rm) and any(_root_like(t) for t in operands or ["."]):
                 add("rm-roots")
         elif name.startswith("mkfs") and any(DEVICE.match(a) or a.lower().startswith("/dev") for a in args):
             add("disk-format")

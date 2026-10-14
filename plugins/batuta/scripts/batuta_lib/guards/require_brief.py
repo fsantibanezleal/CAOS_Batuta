@@ -18,10 +18,10 @@ LAUNCH_TOOLS = ("Agent", "Task")
 QUICK_AGENTS = ("searcher", "runner")
 MODES = ("deny", "ask", "off")
 BRIEF_PATH = re.compile(r"(?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?[^\s\"'`<>|*?]*?\.brief\.md(?!\w)")
-BRIEF_NONE = re.compile(r"\bBRIEF:\s*none\b", re.IGNORECASE)
+BRIEF_NONE = re.compile(r"^\s*BRIEF:\s*none\s*$", re.IGNORECASE)
 EXPLAIN = [
     "Every Agent or Task launch must name a path ending in .brief.md whose file satisfies the brief contract (C02).",
-    "A searcher or runner launch may go without a brief when its prompt has a `BRIEF: none` line.",
+    "A searcher or runner launch may go without a brief when the last line of its prompt is `BRIEF: none`.",
     "Mode: guards.require_brief in batuta.json: deny (default), ask or off.",
 ]
 
@@ -33,6 +33,12 @@ def state(root: Path) -> str:
 def mode(root: Path) -> str:
     value = section(guard_config(root), "guards").get("require_brief", "deny")
     return value if value in MODES else "deny"
+
+
+def last_line(prompt: str) -> bool:
+    """Does the prompt end with a `BRIEF: none` line (the last non-empty line, nothing after it)?"""
+    lines = [ln for ln in prompt.splitlines() if ln.strip()]
+    return bool(lines) and bool(BRIEF_NONE.match(lines[-1]))
 
 
 def brief_paths(prompt: str) -> list[str]:
@@ -50,11 +56,11 @@ def _problem(payload, root: Path) -> str | None:
     agent = str(info.get("subagent_type") or "")
     paths = brief_paths(prompt)
     if not paths:
-        if agent in QUICK_AGENTS and BRIEF_NONE.search(prompt):
+        if agent in QUICK_AGENTS and last_line(prompt):
             return None
         return ("launch refused: the prompt names no path ending in .brief.md (write a brief, check it with "
                 "`batuta.py contract validate C02 <file>` and name its path in the prompt); only a searcher or runner "
-                "launch ending in a `BRIEF: none` line may go without one")
+                "launch whose last line is `BRIEF: none` may go without one")
     base = Path(payload["cwd"]) if isinstance(payload.get("cwd"), str) and payload["cwd"] else root
     schema = contract.find_schema(config.contracts_dir(), "C02")
     for raw in paths:

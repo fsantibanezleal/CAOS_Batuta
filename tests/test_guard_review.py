@@ -111,8 +111,8 @@ class F5MissingWriters(Project):
         self.deny_all("locked-tests", [
             "cp /tmp/test_a.py tests/", "cp /tmp/test_a.py tests", "cp -r /tmp/x/* tests/", "install /tmp/test_a.py tests/",
             "find tests -name test_a.py -exec sed -i s/1/2/ {} +", "find tests -name test_a.py -delete",
-            "echo tests/test_a.py | xargs rm", "echo x | xargs rm", "git apply evil.patch", "git am evil.mbox",
-            "mv /tmp/new tests/", "rsync -a /tmp/x/ tests/"])
+            "echo tests/test_a.py | xargs rm", "cat list.txt | xargs rm", "git apply evil.patch", "git am evil.mbox",
+            "mv /tmp/test_a.py tests/", "rsync -a /tmp/x/ tests/"])
         self.deny_all("locked-tests", [
             "Copy-Item C:\\tmp\\test_a.py tests\\", "sc tests\\test_a.py 'x'", "ac tests\\test_a.py 'x'",
             "'x' | Tee-Object -FilePath tests\\test_a.py", "clc tests\\test_a.py", "Get-ChildItem tests | Remove-Item"], "PowerShell")
@@ -121,6 +121,7 @@ class F5MissingWriters(Project):
 
     def test_copies_out_of_the_folder_are_reads(self):
         self.allow_all("locked-tests", ["cp tests/test_a.py /tmp/", "cp tests/test_a.py /tmp/copy.py", "find src -name '*.py'",
+                                        "cp /tmp/other.py tests/", "mv /tmp/new.py tests/", "echo build/a.o | xargs rm",
                                         "find tests -name test_a.py", "ls tests | xargs echo"])
 
 
