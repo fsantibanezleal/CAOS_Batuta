@@ -120,7 +120,9 @@ class F8ConfigChangeWarning(ScanBase):
 
 class F18ArgumentInjection(ScanBase):
     def test_a_range_that_starts_with_a_dash_is_refused_and_nothing_is_written(self):
-        target = self.root.parent / "injected.txt"
+        other = tempfile.TemporaryDirectory()
+        self.addCleanup(other.cleanup)
+        target = pathlib.Path(other.name) / "injected.txt"
         code, out, _ = run_cli("guard", "scan", f"--diff=--output={target.as_posix()}", "--root", str(self.root))
         self.assertEqual(code, 1)
         self.assertIn("FAIL", out)

@@ -177,16 +177,22 @@ class ScanDiff(unittest.TestCase):
         code, out, _ = self.scan()
         self.assertEqual(code, 0, out)
 
-    def test_markdown_tests_and_guard_tables_are_ignored_by_default(self):
-        self.commit({"docs/a.md": "schtasks /create /tn x\n", "tests/test_a.py": "x = 'crontab foo'\n",
-                     "plugins/batuta/scripts/batuta_lib/guards/t.py": "x = 'nohup y'\n"})
+    def test_only_markdown_is_exempt_by_default_and_it_is_reported(self):
+        self.commit({"docs/a.md": "schtasks /create /tn x\n"})
         code, out, _ = self.scan()
-        self.assertEqual(code, 0, out)
+        self.assertEqual(code, 2, out)
+        self.assertIn("WARN", out)
 
-    def test_the_inline_marker_and_extra_ignore_globs(self):
-        self.commit({"a.sh": "crontab foo  # batuta-guard: ignore\n", "legacy/b.sh": "crontab foo\n"})
-        code, out, _ = self.scan("--ignore", "legacy/**")
-        self.assertEqual(code, 0, out)
+    def test_tests_and_guard_tables_are_scanned_like_any_file(self):
+        self.commit({"tests/test_a.py": "x = 'crontab foo'\n", "plugins/batuta/scripts/batuta_lib/guards/t.py": "x = 'nohup y'\n"})
+        code, out, _ = self.scan()
+        self.assertEqual(code, 1, out)
+        self.assertIn("tests/test_a.py:1", out)
+
+    def test_the_inline_marker_names_the_rule_it_excuses(self):
+        self.commit({"a.sh": "crontab foo  # batuta-guard: ignore linux-autostart\n"})
+        code, out, _ = self.scan()
+        self.assertEqual(code, 2, out)
 
     def test_an_unbounded_loop_across_added_lines_is_reported(self):
         self.commit({"loop.sh": "while true; do\n  sleep 5\ndone\n"})
