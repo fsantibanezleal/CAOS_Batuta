@@ -219,12 +219,16 @@ RUNNERS = {
     "composer", "swift", "mix", "r", "rscript", "julia", "docker", "git", "batuta", "gh",
 }
 PREFIX_COMMANDS = {"cd", "pushd", "set", "export"}
-READ_ONLY = {"ls", "cat", "type", "dir", "test", "find", "sort", "more", "less", "head", "tail", "wc", "printf", "[", "stat"}
-GIT_READ_ONLY = {"status", "log", "blame", "diff", "show", "ls-files", "branch", "rev-parse", "describe"}
+READ_ONLY = {"ls", "cat", "type", "dir", "test", "find", "sort", "more", "less", "head", "tail", "wc", "printf", "[", "stat", "git"}
 LISTING_FLAGS = {"--collect-only", "--co", "--dry-run", "--list", "--list-tests", "--listtests", "--collectonly"}
-_SHELLS = {"sh", "bash", "zsh", "dash", "cmd", "python", "python3", "py", "node", "powershell", "pwsh"}
-_RUN_FLAGS = {"-c", "/c", "-command", "-e"}
-_NO_OP_BODIES = {"pass", "none"}
+INFO_FLAGS = LISTING_FLAGS | {"--version", "-V", "-h", "--help"}
+_SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "cmd", "powershell", "pwsh"}
+_SHELL_RUN_FLAGS = {"-c", "/c", "/k", "-command"}
+_INTERPRETERS = {"python", "python3", "py", "node", "ruby"}
+_INTERPRETER_RUN_FLAGS = {"-c", "-e"}
+_TEST_MODULES = {"pytest", "unittest", "nose", "nose2", "coverage", "tox", "nox", "behave", "doctest", "robot"}
+_POWERSHELL = {"powershell", "pwsh"}
+_NO_FAIL_NOTE = "cannot fail (a no-op command or an unconditional success), so it is no gate"
 
 
 def _command_word(word):
@@ -233,17 +237,25 @@ def _command_word(word):
 
 def split_chain(span):
     """[(operator before, segment)] of a shell-like command line, split on `;`, `&`, `&&`, `|` and the double pipe outside
-    quotes; a `&` that belongs to a redirection (`2>&1`, `&>`) does not split."""
+    quotes, with POSIX quoting: no escape inside single quotes, a backslash escapes the next character outside quotes and
+    inside double quotes. A `&` that belongs to a redirection (`2>&1`, `&>`) does not split."""
     out, buf, op, quote, i, n = [], "", "", "", 0, len(span)
     while i < n:
         c = span[i]
-        if quote:
+        if quote == "'":
+            buf += c
+            if c == "'":
+                quote = ""
+        elif quote == '"':
             buf += c
             if c == "\\" and i + 1 < n:
                 buf += span[i + 1]
                 i += 1
-            elif c == quote:
+            elif c == '"':
                 quote = ""
+        elif c == "\\" and i + 1 < n:
+            buf += c + span[i + 1]
+            i += 1
         elif c in "'\"":
             quote, buf = c, buf + c
         elif span[i:i + 2] in ("||", "&&"):
@@ -266,22 +278,6 @@ def _words(segment):
     return words
 
 
-def _shell_body_no_op(words, depth=0):
-    """True for a shell or interpreter one-liner whose body cannot fail (`sh -c true`, `cmd /c exit 0`, `python -c pass`)."""
-    if not words or _command_word(words[0]) not in _SHELLS:
-        return False
-    for i, w in enumerate(words[1:], 1):
-        if w.lower() in _RUN_FLAGS:
-            body = " ".join(words[i + 1:]).strip("\"' ")
-            inner = _words(body)
-            if not inner:
-                return False
-            if _command_word(inner[0]) in _NO_OP_BODIES or _command_word(inner[0]) in ("true", ":", "exit", "echo", "false"):
-                return True
-            return depth < 2 and _shell_body_no_op(inner, depth + 1)
-    return False
-
-
 def _known_command(word, root):
     """A runner of the documented list, or a script of the repository that exists. Never the PATH: lint must give the same
     answer on every device."""
@@ -291,36 +287,115 @@ def _known_command(word, root):
     return bool(root) and (Path(root) / word.replace("\\", "/")).is_file()
 
 
-def _command_problem(span, root):
+def _names_test(text):
+    tokens, _ = named_test_tokens(text)
+    return any(is_test_path(t) for t in tokens)
+
+
+def _is_info(words, first):
+    rest = [w.lower() if w.startswith("--") else w for w in words[1:]]
+    if any(w in INFO_FLAGS for w in rest):
+        return True
+    if first == "make" and "-n" in rest:
+        return True
+    sub = rest[0].lower() if rest else ""
+    return (first in ("npm", "pnpm", "yarn", "bun") and sub in ("ls", "list", "help")) or \
+        (first in ("pip", "pipx") and sub in ("list", "show", "freeze", "help"))
+
+
+def _test_invocation(words, first, root):
+    """True when the segment runs a test: a runner (or a repository script) with a test path among its words; `python -m` only
+    with a test module."""
+    if first in READ_ONLY or first in NO_FAIL:
+        return False
+    if first in _INTERPRETERS or first in ("python3", "py"):
+        if "-m" in words:
+            at = words.index("-m")
+            if at + 1 >= len(words) or words[at + 1].lower() not in _TEST_MODULES:
+                return False
+    return _names_test(" ".join(words[1:])) and _known_command(words[0], root)
+
+
+def _body_after(words, flags):
+    for i, w in enumerate(words[1:], 1):
+        if w.lower() in flags:
+            body = " ".join(words[i + 1:]).strip()
+            if len(body) > 1 and body[0] == body[-1] and body[0] in "'\"":
+                body = body[1:-1]
+            return body
+    return None
+
+
+def _analyse(span, root, depth=0, powershell=False):
+    """(problem or None, ran, names_test) for a command line: the exit status of a Gate must be the test's. Refused: a double
+    pipe, a pipe after the test (unless `set -o pipefail` in bash or sh; PowerShell has no such guard), a `;` or `&` chain whose
+    last command is not a test invocation naming a test path, an unconditional success after the test, info and listing
+    invocations, shell and interpreter one-liners that do not run a test. Shell bodies are analysed recursively."""
     chain = split_chain(span)
-    if any(op == "||" for op, _ in chain[1:]):
-        return f"'{span.strip()}': a command after a double pipe runs only when the test failed and hides the failure"
-    ran = False
-    for idx, (op, segment) in enumerate(chain):
-        words = _words(segment)
+    if any(op == "||" for op, _ in chain):
+        return f"'{span.strip()}': a command after a double pipe runs only when the test failed and hides the failure", False, False
+    heads = [(_words(seg), op) for op, seg in chain]
+    first_cmd = next((_command_word(w[0]) for w, _ in heads if w and _command_word(w[0]) not in PREFIX_COMMANDS), "")
+    powershell = powershell or first_cmd in _POWERSHELL
+    pipes = any(op == "|" for op, _ in chain)
+    pipefail = any(w[:1] and _command_word(w[0]) == "set" and any("pipefail" in x for x in w[1:]) for w, _ in heads)
+    if pipes and (powershell or not pipefail):
+        why = "PowerShell has no pipefail" if powershell else "start the Gate with `set -o pipefail` (bash, sh)"
+        return f"'{span.strip()}': a pipe after the test hides its exit status ({why}); the Gate's status must be the test's", False, False
+    ran, commands, mixed = False, [], False
+    for idx, (words, op) in enumerate(heads):
         if not words:
             continue
+        if op == "|":
+            continue                      # a filter after a pipe, covered by pipefail
+        if op in (";", "&"):
+            mixed = True
         first = _command_word(words[0])
         if first in PREFIX_COMMANDS:
             continue
-        if _shell_body_no_op(words):
-            return f"'{span.strip()}' cannot fail (a no-op command or an unconditional success), so it is no gate"
+        if first in _SHELL_WRAPPERS and depth < 3:
+            body = _body_after(words, _SHELL_RUN_FLAGS)
+            if body is not None:
+                problem, sub_ran, sub_test = _analyse(body, root, depth + 1, first in _POWERSHELL)
+                if problem:
+                    return problem, False, False
+                ran, commands = ran or sub_ran, commands + [sub_test]
+                continue
+        if first in _INTERPRETERS:
+            body = _body_after(words, _INTERPRETER_RUN_FLAGS)
+            if body is not None:
+                if _names_test(body) and re.search(r"pytest|unittest|jest|mocha", body):
+                    ran, commands = True, commands + [True]
+                    continue
+                return f"'{span.strip()}' cannot fail on a test (an inline script that runs no test runner), so it is no gate", False, False
         if first in NO_FAIL:
             # `x && echo done` still fails with x; anything else that succeeds unconditionally hides a failure
-            if idx == 0 or op in (";", "&", "|") or first == "exit":
-                return f"'{span.strip()}' cannot fail (a no-op command or an unconditional success), so it is no gate"
+            if idx == 0 or op in (";", "&") or first == "exit":
+                return f"'{span.strip()}' {_NO_FAIL_NOTE}", False, False
+            commands.append(False)
             continue
-        if first in READ_ONLY or (first == "git" and len(words) > 1 and words[1].lower() in GIT_READ_ONLY):
+        if first in READ_ONLY:
+            commands.append(False)
             continue
         if not _known_command(words[0], root):
             return (f"the first word '{words[0]}' of '{span.strip()}' is neither a runner of the documented list "
-                    "nor a script of the repository")
-        if any(w.lower() in LISTING_FLAGS for w in words[1:]):
-            return f"'{span.strip()}' only lists tests (a collect-only or dry-run flag), so it cannot fail on a test"
-        ran = True
+                    "nor a script of the repository"), False, False
+        if _is_info(words, first):
+            return f"'{span.strip()}' only prints information or lists tests, so it is not the test and cannot fail on one", False, False
+        is_test = _test_invocation(words, first, root)
+        python_other = first in _INTERPRETERS and "-m" in words and not is_test
+        ran = ran or not python_other
+        commands.append(is_test)
+    if mixed and not (commands and commands[-1]):
+        return (f"'{span.strip()}': the last command of a `;` or `&` chain decides the exit status, so it must run the test and "
+                "name a test path"), False, False
     if not ran:
-        return f"'{span.strip()}' runs no test (it only reads or lists), so it cannot fail on a test"
-    return None
+        return f"'{span.strip()}' runs no test (it only reads, lists or prepares), so it cannot fail on a test", False, False
+    return None, ran, bool(commands) and (commands[-1] if mixed else any(commands))
+
+
+def _command_problem(span, root):
+    return _analyse(span, root)[0]
 
 
 def check_gate(cell, root=None):
@@ -352,17 +427,19 @@ def check_gate(cell, root=None):
 CODE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs", ".fs", ".vb", ".rb",
                  ".php", ".swift", ".scala", ".sh", ".ps1", ".r", ".jl", ".ex", ".exs", ".c", ".cc", ".cpp", ".h", ".m",
                  ".csproj", ".fsproj", ".vbproj"}
+_JS_SUFFIXES = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 _SUPPORT_FILES = {"conftest.py", "__init__.py"}
 _TEST_DIRS = {"test", "tests", "__tests__"}
 _TEST_NAME_ENDS = ("_test.py", "_test.go", "_test.rs", "_spec.rb", "test.java", "tests.java", "test.kt", "tests.kt", "test.cs",
-                   "tests.cs", "test.scala", "spec.scala")
+                   "tests.cs", "test.scala", "spec.scala", ".tests.csproj", ".unittests.csproj", ".tests.fsproj", ".unittests.fsproj")
 
 
 def is_test_path(path):
-    """True for a path that is a test by the common conventions of the ecosystems: Python `test_*.py` and `*_test.py`, JavaScript
-    and TypeScript `*.test.*`, `*.spec.*` and `__tests__/`, Go `*_test.go`, Rust `tests/`, Ruby `*_spec.rb`, Java and Kotlin
-    `src/test/` and `*Test(s).java`, .NET `*.Tests` and `*.UnitTests` folders. A folder counts by its name. `conftest.py`,
-    `__init__.py` and files that are not code (data, configuration, documentation) never count, though they are hashed when named."""
+    """True for a path that is a test by the common naming conventions: Python `test_*.py` and `*_test.py`, JavaScript and
+    TypeScript `*.test.*` and `*.spec.*`, Go `*_test.go`, Ruby `*_spec.rb`, Java and Kotlin `*Test(s).java`, .NET `*Tests.cs` and
+    `*.Tests.csproj`; plus the two folder conventions that make every file a test (Rust `tests/*.rs`, Jest `__tests__/*.js`). A
+    folder counts by its name (`tests`, `*.Tests`). A helper, a fixture or a script under a test folder, `conftest.py`,
+    `__init__.py` and files that are not code never count as the test, though they are hashed when named."""
     parts = path.rstrip("/").split("/")
     name = parts[-1]
     low = name.lower()
@@ -372,8 +449,11 @@ def is_test_path(path):
     in_test_dir = any(p.lower() in _TEST_DIRS or p.endswith((".Tests", ".UnitTests")) for p in parts[:-1]) or \
         any(parts[i].lower() == "src" and parts[i + 1].lower() == "test" for i in range(len(parts) - 1))
     if suffix in CODE_SUFFIXES:
-        name_hit = low.startswith("test_") or ".test." in low or ".spec." in low or low.endswith(_TEST_NAME_ENDS)
-        return in_test_dir or name_hit
+        if low.startswith("test_") or ".test." in low or ".spec." in low or low.endswith(_TEST_NAME_ENDS):
+            return True
+        if suffix == ".rs" and "tests" in (p.lower() for p in parts[:-1]):
+            return True
+        return suffix in _JS_SUFFIXES and "__tests__" in parts[:-1]
     if not suffix or "." in name and low.endswith((".tests", ".unittests")):
         # a folder (or a folder-like token without an extension)
         return low in _TEST_DIRS or name.endswith((".Tests", ".UnitTests")) or in_test_dir

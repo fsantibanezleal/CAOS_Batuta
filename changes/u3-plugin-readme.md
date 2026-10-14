@@ -54,3 +54,10 @@ python scripts/batuta.py spec freeze --check ID
   and other read-only commands alone, and `--collect-only` or `--dry-run` listings are refused. Test files are recognized by
   the common conventions (`test_*.py`, `*_test.py`, `*.test.*`, `*.spec.*`, `__tests__/`, `*_test.go`, `tests/`, `src/test/`,
   `*.Tests` folders); `conftest.py`, `__init__.py` and non-code files never count as the test, though they are hashed when named.
+- A Gate's exit status must be the test's: a double pipe, a pipe after the test (unless the Gate starts with `set -o pipefail` in
+  bash or sh; PowerShell pipes are refused), a `;` or `&` chain that does not end with a test invocation naming a test path, an
+  inline `python -c` that runs no test runner, and info or listing invocations (`--version`, `-h`, `--help`, `--collect-only`,
+  `make -n`, `npm ls`, `pip list`) are refused; `bash -c`, `sh -c`, `cmd /c`, `pwsh -Command` bodies are analysed with the same
+  rules. Quoting follows POSIX (no escape inside single quotes). Under a test folder only test-named files count as the test
+  (`test_*.py`, `*_test.py`, `*.test.*`, `*.spec.*`, `*_test.go`, Rust `tests/*.rs`, Jest `__tests__/*`); helpers and fixtures
+  are hashed when named.
