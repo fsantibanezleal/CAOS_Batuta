@@ -14,6 +14,8 @@ The only exemption is a commit whose message carries `Test-Change-Approved: <id>
 `replay=True` each `[red]` commit is checked out in a temporary worktree (created and removed here) and the tests it
 adds must fail there.
 """
+import ast
+import contextlib
 import json
 import os
 import re
@@ -321,6 +323,101 @@ def judge_red(rc, output, paths, passes_paths):
     return out
 
 
+def static_test_ids(path, text):
+    """[(class or None, name)] of the tests a Python file defines: `test*` methods of its classes and `test*` functions."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    ids = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            ids += [(node.name, sub.name) for sub in node.body
+                    if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name.startswith("test")]
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+            ids.append((None, node.name))
+    return ids
+
+
+def compare_listing(path, base, listing):
+    """Problems of a runtime listing against the tests a locked file defined: one for each test that is not listed and one for each
+    that is listed only as skipped. `listing` is [{"id", "skipped"}] with unittest ids (`pkg.module.Class.test`) or pytest node ids
+    (`path::Class::test`)."""
+    stem = PurePosixPath(path).stem
+    problems = []
+    for cls, name in base:
+        hits = []
+        for entry in listing:
+            ident = entry["id"]
+            if "::" in ident:
+                parts = ident.split("::")
+                file_ok = PurePosixPath(parts[0]).stem == stem
+                names = parts[1:]
+                match = file_ok and names[-1] == name and (cls is None or (len(names) >= 2 and names[-2] == cls))
+            else:
+                parts = ident.split(".")
+                match = parts[-1] == name and stem in parts and (cls is None or (len(parts) >= 2 and parts[-2] == cls))
+            if match:
+                hits.append(entry)
+        label = f"{path}::{cls + '.' if cls else ''}{name}"
+        if not hits:
+            problems.append(f"locked test {label} disappears from the runtime listing")
+        elif all(h["skipped"] for h in hits):
+            problems.append(f"locked test {label} is skipped at runtime")
+    return problems
+
+
+def parse_pytest_listing(output):
+    """The node ids of `pytest --collect-only -q`."""
+    return [{"id": line.strip(), "skipped": False} for line in output.splitlines() if "::" in line and not line.startswith((" ", "="))]
+
+
+def parse_unittest_listing(output):
+    for line in reversed(output.splitlines()):
+        if line.startswith("["):
+            return json.loads(line)
+    raise ValueError("no listing in the output")
+
+
+# Lists, as JSON, the tests unittest discovery finds with the arguments given, and whether each is skipped by a decorator.
+LISTING_SCRIPT = (
+    "import json, sys, unittest\n"
+    "start, pattern, top = sys.argv[1:4]\n"
+    "suite = unittest.TestLoader().discover(start, pattern=pattern, top_level_dir=top or None)\n"
+    "out = []\n"
+    "def walk(s):\n"
+    "    for t in s:\n"
+    "        if isinstance(t, unittest.TestSuite):\n"
+    "            walk(t)\n"
+    "        else:\n"
+    "            m = getattr(t, getattr(t, '_testMethodName', ''), None)\n"
+    "            skipped = bool(getattr(type(t), '__unittest_skip__', False) or getattr(m, '__unittest_skip__', False))\n"
+    "            out.append({'id': t.id(), 'skipped': skipped})\n"
+    "walk(suite)\n"
+    "print(json.dumps(out))\n"
+)
+
+
+def listing_command(command, tests_is_package):
+    """(argv, parser) that lists the tests the configured test command would run, or None when it is neither pytest nor unittest
+    discovery. The default command gets `-t .` when `tests` is a package, as the replay gives it."""
+    tokens = shlex.split(command)
+    if not tokens:
+        return None
+    if "pytest" in tokens or Path(tokens[0]).stem.lower() in ("pytest", "py.test"):
+        argv = [t for t in tokens if t != "{tests}"] + ["--collect-only", "-q"]
+        argv[0] = _executable(argv[0])
+        return argv, parse_pytest_listing
+    if "unittest" in tokens and "discover" in tokens:
+        def option(flag, default):
+            return tokens[tokens.index(flag) + 1] if flag in tokens and tokens.index(flag) + 1 < len(tokens) else default
+        top = option("-t", "")
+        if command.strip() == DEFAULT_TEST_COMMAND and tests_is_package:
+            top = "."
+        return [sys.executable, "-c", LISTING_SCRIPT, option("-s", "."), option("-p", "test*.py"), top], parse_unittest_listing
+    return None
+
+
 def _force_remove(func, path, _exc):
     os.chmod(path, stat.S_IWRITE)
     func(path)
@@ -360,6 +457,8 @@ class Checker:
         self.pending_specs = []      # (sha, request file, request id): the spec must change in the range
         self.failed_locks = set()
         self.blobs = None
+        self._base_signature = None
+        self.task_commits = {}       # task id -> [(commit, kind)] of its tagged commits, oldest first
 
     # -- output
     def fail(self, message, path=None):
@@ -434,6 +533,8 @@ class Checker:
         reds, approved_removed, approved_renames = [], set(), []
         self.blobs = BatchReader(self.repo)
         try:
+            if self.base_sha:
+                self._base_signature = tdd_signature(self.blobs.show(self.base_sha, CONFIG_PATH))
             for commit in commits:
                 self._commit(commit, seen_red, reds, approved_removed, approved_renames)
             self._at_end(end_sha, bool(seen_red or reds), approved_removed, approved_renames)
@@ -442,6 +543,7 @@ class Checker:
         self._specs_changed()
         if replay:
             self._replay(reds)
+            self._runtime_compare(reds)
         if not any(i["tag"] in ("FAIL", "REFUSED") for i in self.items):
             self.ok(f"{len(commits)} commit(s) checked against the red and green rules")
         return self.items
@@ -460,6 +562,8 @@ class Checker:
             if m:
                 kind, task = m.group(1), m.group(2)
         label = f"[{kind}] {task}" if kind else "commit"
+        if kind and not merge:
+            self.task_commits.setdefault(task, []).append((c, kind))
         # a merge is judged on what it changes against every parent: a path that differs from all of them is the merge's own edit
         changes = self._merge_changes(c) if merge else c.changes
         self.changes_seen.append((c.sha, changes))
@@ -505,7 +609,7 @@ class Checker:
 
         ever_locked = locked_paths | {e["path"] for e in entries_c}
         for ch in changes:
-            self._test_file_rules(c, parent, ch, ever_locked, label)
+            self._test_file_rules(c, parent, ch, ever_locked, label, kind)
 
         if kind == "red":
             self._red_rules(c, task, changes, entries_c)
@@ -525,9 +629,12 @@ class Checker:
     def _settings_rule(self, c, parent, changes):
         """A commit that changes the tdd settings of the project configuration is reported: the check keeps using the
         settings of the base commit, so a commit in the range cannot steer its own check."""
-        if not any(CONFIG_PATH in (ch.path, ch.old) for ch in changes):
+        if c.sha == self.base_sha or not any(CONFIG_PATH in (ch.path, ch.old) for ch in changes):
             return
-        before = tdd_signature(self.blobs.show(parent, CONFIG_PATH)) if parent else None
+        if self.base_sha:   # compared with what the check uses, the base commit's settings
+            before = self._base_signature
+        else:
+            before = tdd_signature(self.blobs.show(parent, CONFIG_PATH)) if parent else None
         after = tdd_signature(self.blobs.show(c.sha, CONFIG_PATH))
         if before != after:
             base = f"the base commit {self.base_sha[:7]}" if self.base_sha else "the base commit of the range"
@@ -561,10 +668,18 @@ class Checker:
         rows_c, _ = self.requests_at(c.sha)
         rows_p, _ = self.requests_at(parent)
         decided = []
+        short = c.sha[:7]
         for rid, found in rows_c.items():
-            status = found[0][0].get("Status")
+            row = found[0][0]
+            status = row.get("Status")
             before = rows_p.get(rid)
-            if status in ("approved", "rejected") and status != (before[0][0].get("Status") if before else None):
+            before_row = before[0][0] if before else None
+            if before_row is None and status != "open":
+                self.fail(f"commit {short}: request {rid} is born {status}; a request is opened first (tdd change-request new) "
+                          f"and decided later, in a commit of its own")
+            elif before_row is not None and before_row.get("Status") in ("approved", "rejected") and row != before_row:
+                self.fail(f"commit {short}: decided request {rid} was edited; a decision is final")
+            if status in ("approved", "rejected") and status != (before_row.get("Status") if before_row else None):
                 decided.append(rid)
         if not decided:
             return
@@ -645,7 +760,7 @@ class Checker:
                           f"a red commit of its own", path)
         return entries_c
 
-    def _test_file_rules(self, c, parent, ch, ever_locked, label):
+    def _test_file_rules(self, c, parent, ch, ever_locked, label, kind=None):
         short = c.sha[:7]
         new_path = ch.path
         old_path = ch.old or ch.path
@@ -677,6 +792,12 @@ class Checker:
         except tm.UnparsableTestFile:
             markers_before = {}
         problems = []
+        if kind in ("green", "refactor") and (tm.is_test_config_file(new_path) or tm.is_test_config_file(old_path)):
+            config_before = tm.test_config_text(old_path, before_text) if before_text is not None else None
+            config_after = tm.test_config_text(new_path, after_text) if after_text is not None else None
+            if (config_before or "") != (config_after or ""):
+                problems.append(f"test configuration {new_path} changed by a [{kind}] commit: how tests are collected changes "
+                                f"only through an approved change request")
         if count_after < count_before:
             problems.append(f"assertion count dropped in {new_path}: from {count_before} to {count_after}")
         for name, n in sorted(markers_after.items()):
@@ -777,6 +898,88 @@ class Checker:
             self.fail(f"red commit {short} ({task}): cannot replay in a temporary worktree: {exc}")
         finally:
             self._cleanup(tree, work)
+
+    # -- the runtime comparison of the locked tests
+    @contextlib.contextmanager
+    def _worktree(self, sha):
+        temp_root = Path(self.s.temp_root)
+        temp_root.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="tdd-replay-", dir=temp_root))
+        tree = work / "tree"
+        try:
+            worktree_add(self.repo, tree, sha)
+            yield tree
+        finally:
+            self._cleanup(tree, work)
+
+    def _list_tests(self, sha, listing):
+        """The tests the runner lists at a commit, [{"id", "skipped"}], or an error text."""
+        argv, parse = listing
+        try:
+            with self._worktree(sha) as tree:
+                proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout,
+                                      env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), check=False)
+        except subprocess.TimeoutExpired:
+            return None, f"the listing timed out after {self.s.replay_timeout:g} s"
+        except (OSError, GitError) as exc:
+            return None, f"cannot list the tests: {exc}"
+        try:
+            return parse(proc.stdout.decode("utf-8", "replace") + "\n" + proc.stderr.decode("utf-8", "replace")), None
+        except ValueError as exc:
+            return None, f"cannot read the listing of the tests ({exc})"
+
+    def _runtime_compare(self, reds):
+        """The locked tests of a task must still be listed, and not skipped, at each later [green] and [refactor] commit of the
+        task, whatever configuration, hook or import did it. The ids come from the test file as the red commit has it."""
+        warned = False
+        for c, task, _changes in reds:
+            seq = self.task_commits.get(task, [])
+            later, after = [], False
+            for x, k in seq:
+                if x is c:
+                    after = True
+                elif after and k in ("green", "refactor"):
+                    later.append(x)
+            entries = self.lock_at(c.sha)[0] or []
+            base_live = {p: e for p, e in tdd_lock.live_entries(entries).items() if e["task_id"] == task and tm.language_of(p) == "python"}
+            base_ids = {}
+            for path in base_live:
+                data = self.blobs_for_replay(c.sha, path)
+                ids = static_test_ids(path, data.decode("utf-8-sig", "replace")) if data is not None else []
+                if ids:
+                    base_ids[path] = ids
+            if not later or not base_ids:
+                continue
+            for lc in later:
+                with_tree = tdd_lock.live_entries(self.lock_at(lc.sha)[0] or [])
+                same = {p: ids for p, ids in base_ids.items() if p in with_tree and with_tree[p]["sha256"] == base_live[p]["sha256"]}
+                if not same:
+                    continue
+                # a tests folder that is a package at this commit is discovered from the root, as the replay does
+                listing = self._listing_command(lc)
+                if listing is None:
+                    if not warned:
+                        self.warn("the runtime comparison of the locked tests needs a pytest or unittest discovery test command; "
+                                  "it was not run")
+                        warned = True
+                    break
+                found, error = self._list_tests(lc.sha, listing)
+                if error:
+                    self.fail(f"task {task} at {lc.sha[:7]}: {error}; the locked tests cannot be shown to run")
+                    continue
+                for path, ids in same.items():
+                    for problem in compare_listing(path, ids, found):
+                        self.fail(f"task {task} at {lc.sha[:7]}: {problem}", path)
+
+    def blobs_for_replay(self, sha, path):
+        """A file at a commit (the batch reader is closed by now, so one plain git read)."""
+        return show(self.repo, sha, path)
+
+    def _listing_command(self, commit):
+        """(argv, parser) that lists the tests at a commit, from the configured test command; None when it is not pytest or
+        unittest discovery. Whether `tests` is a package at that commit decides `-t .` for the default command."""
+        has_init = show(self.repo, commit.sha, "tests/__init__.py") is not None
+        return listing_command(self.s.test_command, has_init)
 
     def _cleanup(self, tree, work):
         try:

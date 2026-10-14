@@ -7,6 +7,7 @@ separate hook.
 ```
 python scripts/batuta.py tdd lock --task T-001 tests/test_x.py [--supersedes --change-request CR-001] [--apply]
 python scripts/batuta.py tdd change-request new --test tests/test_x.py --requirement REQ-X-001 --reason TEXT --proposed TEXT --feature NAME [--apply]
+python scripts/batuta.py tdd change-request show CR-001
 python scripts/batuta.py tdd change-request decide CR-001 approve|reject [--apply]
 python scripts/batuta.py tdd commit --red|--green|--refactor T-001 -m TITLE PATH... [--approved CR-001] [--apply]
 python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH]
@@ -18,10 +19,20 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   the test file; a file without one is locked with a `WARN`. The hash reads CRLF as LF.
 - A change request always belongs to a feature (`--feature` is required): it is written to
   `specs/<feature>/test-change-requests.md`; `check` reads every `specs/**/test-change-requests.md`. An agent opens a
-  request with `change-request new` (an `open` row, C33-validated, the file created when absent) and stops. Only
-  `change-request decide` approves or rejects: it asks the person on the console device itself (`CONIN$` on Windows,
-  `/dev/tty` elsewhere, never standard input), wants the exact phrase `approve CR-001` or `reject CR-001` and refuses
-  without a console. Request ids are `CR-NNN`, unique across features because the id is the commit trailer.
+  request with `change-request new` (an `open` row, C33-validated, the file created when absent) and stops. A request is
+  decided in one of two ways, both by a person. `change-request decide <id> approve|reject --apply` asks on the console
+  device itself (`CONIN$` on Windows, `/dev/tty` elsewhere, never standard input): on Windows `GetConsoleMode` must succeed on
+  the stdin handle (NUL, a pipe or a file fail it), on POSIX standard input must be a terminal and `/dev/tty` must open; it
+  wants the exact phrase `approve CR-001` or `reject CR-001`, waits 300 seconds at most (exit 1, nothing written) and records
+  the operating-system account, never an environment variable, as Decided by. Or `change-request show <id>` prints the
+  phrase `approve CR-001 <12 hex>` (the first 12 hex digits of the SHA-256 of that row's normalized text): the person types it
+  as a prompt, and the UserPromptSubmit handler `tdd-change-request` (`HOOKS` of this area) records the decision, Decided by
+  `typed prompt`, only when the prompt starts with the phrase and the row is still `open` with that hash; it never blocks and
+  never raises. Request ids are `CR-NNN`, unique across features because the id is the commit trailer. Waived: keystrokes
+  injected into a console by another process attached to it (the same class as F-02 of the spec unit); the guards unit
+  closes it by denying agents the command and every direct run of the hook launcher.
+- A request is opened, then decided in a commit of its own, then used: `check` fails a row that is born `approved` or
+  `rejected`, a decided row that is edited, and a commit that decides a row together with any other path.
 - Commit messages are C32: `[red] T-001 title`, `[green] T-001 title`, `[refactor] T-001 title`, a blank line, a body and
   a last paragraph of trailers. The only override is `Test-Change-Approved: <request id>`, honoured only when the row was
   `approved` with a Decided by in the commit's parent (decided in an earlier commit), for the changed path, with a
@@ -40,17 +51,23 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   `pytest.importorskip`, `getattr` on `unittest` or `pytest`, assignments to `unittest.TestCase` members; JavaScript and
   TypeScript `it.only`, `describe.only`, `test.only`, `it.skip`, `describe.skip`, `test.skip`, `xit`, `xdescribe`,
   `test.todo`, `describe.todo`, `it.todo`, `fit`, `fdescribe`, `xtest`, also through a member prefix, brackets and
-  destructuring. `conftest.py`, an `__init__.py` under a test folder and `pytest.ini`, `tox.ini`, `setup.cfg` are read
-  for the same markers (and for `--deselect`, `--ignore`). Python files are read with `ast`: a marker or assertion in
-  a string or comment never counts, a test file that stops parsing fails. Assertions: `assert` statements, `assert*`
-  methods, `assert*` functions imported from unittest, pytest and the like or defined in the file with an assertion in
-  their body; not counted: asserts under a constant false branch or inside a `try` that catches `AssertionError`,
-  `Exception` or everything. JavaScript counts `expect(` and `assert(` calls with comments, strings and regular-expression
-  literals removed.
+  destructuring and variable aliases (`const t = it; t.only(...)`). Python aliases are resolved through `import`,
+  `importlib.import_module('m')`, `__import__('m')` and name assignments (`u = unittest`, `s = unittest.skip`). `conftest.py`,
+  an `__init__.py` under a test folder and the runner settings (`pytest.ini`, `tox.ini`, `setup.cfg`, the pytest section of
+  `pyproject.toml`) are read for the same markers and for what deselects tests (`--deselect`, `--ignore`, `-k`, `-m "not"`,
+  `python_files`, `testpaths`, `norecursedirs`...), and a `load_tests` function, `pytest_collection_modifyitems` or
+  `collect_ignore` anywhere is a marker. A `[green]` or `[refactor]` commit that changes test configuration (a `conftest.py`
+  or the pytest part of a settings file) needs an approved change request. Python files are read with `ast`: a marker or
+  assertion in a string or comment never counts, a test file that stops parsing fails. Assertions: `assert` statements (not
+  `assert True`), `assert*` methods the file does not define as no-ops, `assert*` functions imported from unittest, pytest and
+  the like or defined in the file with an assertion on their parameters; not counted: asserts under a constant false
+  branch (`False`, `0`, `1 == 2`), after a `return`, `raise`, `continue` or `break`, inside a `try` that catches
+  `AssertionError`, `Exception` or everything, inside `contextlib.suppress(AssertionError)` and inside a nested function nothing
+  uses. JavaScript counts `expect(` and `assert(` calls with comments, strings and regular-expression literals removed.
 - Settings come from the range's base commit, never from the checked-out tree: the start of `A..B`, or the root commit for
-  a single revision. `--config` (or `BATUTA_CONFIG`) overrides, so CI should pass one from outside the repository. A commit
-  in the range that changes the `tdd` block or `roots.temp` of `.batuta/batuta.json` is reported as a `WARN` naming the
-  commit. A history without a red commit exits 2 with a `WARN`; without a lock file it warns that nothing is locked and
+  a single revision. `--config` (or `BATUTA_CONFIG`) overrides, so CI should pass one from outside the repository, or
+  `--range <base>..HEAD`. A commit in the range (not the base commit itself) that changes the `tdd` block or `roots.temp` of
+  `.batuta/batuta.json` from the base commit's is reported as a `WARN` naming the commit. A history without a red commit exits 2 with a `WARN`; without a lock file it warns that nothing is locked and
   still checks markers and assertions.
 - A locked test may be renamed or deleted only under an approved request; for a rename the new path must itself be locked
   (C07 supersedes entries are per path).
@@ -58,7 +75,11 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   own test command once: the configured `tdd.test_command` (the token `{tests}` stands for the red's test files), else
   `python -m unittest discover -s tests -p "test_*.py"` from the checkout root, with `-t .` when `tests` is a package. A red
   counts only when a test of its own failed or errored; exit 0, exit 5, `Ran 0 tests` and the failure of somebody else's
-  test do not. The worktree is removed on success, failure and timeout.
+  test do not. The worktree is removed on success, failure and timeout. `--replay` also compares, at runtime, the tests of each
+  locked file with the red commit's (read from the file as the red commit has it): at every later `[green]` and `[refactor]`
+  commit of the task, the unittest loader (or `pytest --collect-only -q` when the configured command is pytest) must still
+  list each locked test, not skipped by a decorator; a test that disappears or is skipped fails, whatever configuration, hook
+  or import did it. A test command that is neither pytest nor unittest discovery gets a `WARN` that the comparison was not run.
 - Optional `tdd` block of `batuta.json`: `test_command`, `replay_timeout_seconds` (default 300), `lock_file`, `markers`
   (`{"python": [...], "javascript": [...]}` replaces a language's default list). Git 2.30 or newer is required.
 - Exit codes: 0 ok, 1 a failure or refusal, 2 warnings only.

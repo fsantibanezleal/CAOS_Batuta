@@ -23,9 +23,15 @@ DEFAULT_MARKERS = {
     "javascript": ["it.only", "describe.only", "test.only", "it.skip", "describe.skip", "test.skip", "xit", "xdescribe",
                    "test.todo", "describe.todo", "it.todo", "fit", "fdescribe", "xtest"],
 }
-# Settings files that can deselect or ignore tests; read for these options.
-INI_NAMES = {"pytest.ini", "tox.ini", "setup.cfg"}
-INI_PATTERN = re.compile(r"--deselect|--ignore(?:-glob)?\b|-m\s+[\"']?not\b|xfail_strict\s*=\s*(?:false|0)\b", re.IGNORECASE)
+# Settings files that can deselect or ignore tests; read for these options (`pyproject.toml` and `setup.cfg` only in their
+# pytest sections).
+INI_NAMES = {"pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml"}
+INI_PATTERN = re.compile(r"--deselect|--ignore(?:-glob)?\b|(?<![\w-])-k\b|-m\s+[\"']?not\b|xfail_strict\s*=\s*(?:false|0)\b|"
+                         r"\b(?:python_files|python_classes|python_functions|testpaths|norecursedirs)\b\s*[=:]", re.IGNORECASE)
+_PYTEST_SECTIONS = {"pyproject.toml": ("[tool.pytest",), "setup.cfg": ("[tool:pytest]", "[pytest]")}
+# Names whose definition in a Python file changes what the runner collects.
+COLLECTION_FUNCTIONS = {"load_tests", "pytest_collection_modifyitems"}
+COLLECTION_VARIABLES = {"collect_ignore", "collect_ignore_glob"}
 SUPPORT_DIRS = {"tests", "test", "__tests__", "fixtures"}
 # Modules whose assert functions count when imported by name.
 ASSERT_MODULES = ("unittest", "pytest", "numpy.testing", "pandas.testing", "hypothesis", "nose", "testtools", "django.test")
@@ -95,6 +101,35 @@ def is_marker_file(path):
     return base == "__init__.py" and bool(set(p.split("/")[:-1]) & SUPPORT_DIRS)
 
 
+def is_test_config_file(path):
+    """A file that configures how the runner collects tests: `conftest.py` and the settings files of the runner."""
+    base = _base(path)
+    return base in INI_NAMES or base == "conftest.py"
+
+
+def _pytest_text(path, text):
+    """The part of a settings file that configures pytest: all of `pytest.ini` and `tox.ini`, the pytest sections of
+    `pyproject.toml` and `setup.cfg`."""
+    prefixes = _PYTEST_SECTIONS.get(_base(path))
+    if prefixes is None:
+        return text
+    kept, keep = [], False
+    for line in text.splitlines():
+        if line.lstrip().startswith("["):
+            keep = line.strip().lower().startswith(prefixes)
+        if keep:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def test_config_text(path, text):
+    """What of a file counts as test configuration: all of a `conftest.py`, the pytest part of a settings file; None for
+    any other file."""
+    if not is_test_config_file(path):
+        return None
+    return text if _base(path) == "conftest.py" else _pytest_text(path, text)
+
+
 # ------------------------------------------------------------------ JavaScript and TypeScript text
 
 _REGEX_AFTER_CHAR = set("(,=:[!&|?{};+-*%<>~^")
@@ -105,11 +140,14 @@ def strip_js(text, keep_strings=False):
     """The text with comments and regular-expression literals blanked out, and the content of string literals too
     (quotes, template literals) unless `keep_strings`. Newlines inside comments stay."""
     out, i, n = [], 0, len(text)
+    parens, closed_by_keyword = [], False   # was each open parenthesis opened by if, while, for or with
 
     def regex_allowed():
         tail = "".join(out[-24:]).rstrip()
         if not tail or tail[-1] in _REGEX_AFTER_CHAR:
             return True
+        if tail[-1] == ")":
+            return closed_by_keyword   # `if (x) /re/.test(y)` is a regular expression, `(a) / b` a division
         m = re.search(r"([A-Za-z_$][\w$]*)$", tail)
         return bool(m and m.group(1) in _REGEX_AFTER_WORD)
 
@@ -168,6 +206,11 @@ def strip_js(text, keep_strings=False):
                 while i < n and text[i].isalpha():
                     i += 1
         else:
+            if ch == "(":
+                m = re.search(r"([A-Za-z_$][\w$]*)$", "".join(out[-12:]).rstrip())
+                parens.append(bool(m and m.group(1) in ("if", "while", "for", "with")))
+            elif ch == ")":
+                closed_by_keyword = parens.pop() if parens else False
             out.append(ch)
             i += 1
     return "".join(out)
@@ -181,12 +224,22 @@ def _js_patterns(marker):
     base, member = (re.escape(part) for part in marker.split(".", 1))
     return [
         (re.compile(prefix + base + r"\s*\.\s*" + member + r"(?![\w$])"), False),
-        (re.compile(prefix + base + r"\s*\[\s*['\"]" + member + r"['\"]\s*\]"), True),
+        (re.compile(prefix + base + r"\s*\[\s*['\"`]" + member + r"['\"`]\s*\]"), True),
         (re.compile(r"\{[^{}]*\b" + member + r"\b[^{}]*\}\s*=\s*(?:[\w$]+\s*\.\s*)*" + base + r"(?![\w$])"), False),
     ]
 
 
 # ------------------------------------------------------------------ Python
+
+
+def _import_target(call):
+    """The module a call to `importlib.import_module('m')` or `__import__('m')` imports, else None."""
+    if isinstance(call, ast.Call) and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
+        func = call.func
+        name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+        if name in ("import_module", "__import__"):
+            return call.args[0].value
+    return None
 
 
 def _dotted(node):
@@ -197,12 +250,16 @@ def _dotted(node):
     if isinstance(node, ast.Name):
         parts.append(node.id)
         return ".".join(reversed(parts))
+    target = _import_target(node)
+    if target:   # `importlib.import_module('unittest').skip`
+        parts.append(target)
+        return ".".join(reversed(parts))
     return None
 
 
 def _aliases(tree):
     """{local name: what it stands for}: `import unittest as u` gives u -> unittest; `from unittest import skip as s`
-    gives s -> unittest.skip."""
+    gives s -> unittest.skip; `u = importlib.import_module('unittest')`, `u = unittest` and `s = unittest.skip` too."""
     out = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -211,6 +268,15 @@ def _aliases(tree):
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             for a in node.names:
                 out[a.asname or a.name] = f"{node.module}.{a.name}"
+    for _ in range(2):   # an alias of an alias
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                target = _import_target(node.value)
+                if target is None and isinstance(node.value, (ast.Name, ast.Attribute)):
+                    dotted = _dotted(node.value)
+                    target = _canonical(dotted, out) if dotted else None
+                if target:
+                    out[node.targets[0].id] = target
     return out
 
 
@@ -263,6 +329,8 @@ def _python_markers(path, text, markers):
                 found[f"getattr({module}, ...)"] += 1
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             candidates.extend(d for d in node.decorator_list if not isinstance(d, ast.Call))
+            if not isinstance(node, ast.ClassDef) and node.name in COLLECTION_FUNCTIONS:
+                found[node.name] += 1   # a hook that decides which tests the runner collects
         elif isinstance(node, ast.Raise) and isinstance(node.exc, (ast.Name, ast.Attribute)):
             candidates.append(node.exc)
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) and id(node) not in used:
@@ -270,6 +338,8 @@ def _python_markers(path, text, markers):
         elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
+                if isinstance(target, ast.Name) and target.id in COLLECTION_VARIABLES:
+                    found[target.id] += 1
                 dotted = _dotted(target) if isinstance(target, ast.Attribute) else None
                 if dotted:
                     canon = _canonical(dotted, aliases)
@@ -285,40 +355,87 @@ def _python_markers(path, text, markers):
     return found
 
 
+_PURE_NODES = (ast.Constant, ast.Compare, ast.BoolOp, ast.UnaryOp, ast.BinOp, ast.operator, ast.cmpop, ast.boolop, ast.unaryop)
+
+
 def _const_truth(node):
-    """True or False for a constant test, None when the test is not constant."""
-    if isinstance(node, ast.Constant):
-        return bool(node.value)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-        inner = _const_truth(node.operand)
-        return None if inner is None else not inner
-    return None
+    """True or False for a test made only of numbers, booleans and None (`False`, `0`, `1 == 2`), None when it is not constant."""
+    for sub in ast.walk(node):
+        if not isinstance(sub, _PURE_NODES) or isinstance(sub, (ast.Pow, ast.LShift)):
+            return None
+        if isinstance(sub, ast.Constant) and not (sub.value is None or isinstance(sub.value, (bool, int, float))):
+            return None
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, int) and abs(sub.value) > 10 ** 6:
+            return None
+    try:
+        return bool(eval(compile(ast.Expression(body=node), "<constant>", "eval"), {"__builtins__": {}}, {}))   # noqa: S307 (constants only)
+    except Exception:   # noqa: BLE001
+        return None
+
+
+_SWALLOWED = ("AssertionError", "Exception", "BaseException")
 
 
 def _catches_assertion(handler):
     if handler.type is None:
         return True
     types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-    return any((_dotted(t) or "").split(".")[-1] in ("AssertionError", "Exception", "BaseException") for t in types)
+    return any((_dotted(t) or "").split(".")[-1] in _SWALLOWED for t in types)
 
 
-def _asserts_in(node):
-    """Whether a function body holds an assertion of its own."""
-    for sub in ast.walk(node):
-        if isinstance(sub, ast.Assert):
+def _suppresses_assertions(item):
+    call = item.context_expr
+    if not (isinstance(call, ast.Call) and (_dotted(call.func) or "").split(".")[-1] == "suppress"):
+        return False
+    return any((_dotted(a) or "").split(".")[-1] in _SWALLOWED for a in call.args)
+
+
+def _asserts_in(fn):
+    """Whether a function holds an assertion that can fail on what it is given: an `assert` that mentions one of its
+    parameters, or a call of an `assert*` method."""
+    args = fn.args
+    params = {a.arg for a in args.posonlyargs + args.args + args.kwonlyargs}
+    params |= {a.arg for a in (args.vararg, args.kwarg) if a}
+    for sub in ast.walk(fn):
+        if isinstance(sub, ast.Assert) and any(isinstance(n, ast.Name) and n.id in params for n in ast.walk(sub.test)):
             return True
         if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr.startswith("assert"):
             return True
     return False
 
 
+_TERMINATORS = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+
 class _AssertionCounter(ast.NodeVisitor):
-    def __init__(self, trusted, asserting):
+    def __init__(self, trusted, local_defs, referenced):
         self.count = 0
         self.trusted = trusted
-        self.asserting = asserting
+        self.local_defs = local_defs   # {function name: whether it asserts}
+        self.referenced = referenced   # names read somewhere in the file
+        self.depth = 0                 # function nesting
+
+    def block(self, statements):
+        for child in statements:
+            self.visit(child)
+            if isinstance(child, _TERMINATORS):
+                break   # nothing after a return, raise, continue or break runs
+
+    def generic_visit(self, node):
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, list):
+                if value and all(isinstance(v, ast.stmt) for v in value):
+                    self.block(value)
+                else:
+                    for child in value:
+                        if isinstance(child, ast.AST):
+                            self.visit(child)
+            elif isinstance(value, ast.AST):
+                self.visit(value)
 
     def visit_Assert(self, node):
+        if isinstance(node.test, ast.Constant) and node.test.value:
+            return   # `assert True` says nothing
         self.count += 1
 
     def visit_If(self, node):
@@ -326,31 +443,53 @@ class _AssertionCounter(ast.NodeVisitor):
         if truth is None:
             self.generic_visit(node)
         else:
-            for child in (node.body if truth else node.orelse):
-                self.visit(child)
+            self.block(node.body if truth else node.orelse)
 
     def visit_While(self, node):
         if _const_truth(node.test) is False:
-            for child in node.orelse:
-                self.visit(child)
+            self.block(node.orelse)
         else:
             self.generic_visit(node)
 
     def visit_Try(self, node):
         if not any(_catches_assertion(h) for h in node.handlers):
-            for child in node.body:
-                self.visit(child)
-        for child in node.handlers + node.orelse + node.finalbody:
-            self.visit(child)
+            self.block(node.body)
+        for handler in node.handlers:
+            self.visit(handler)
+        self.block(node.orelse)
+        self.block(node.finalbody)
 
     visit_TryStar = visit_Try
+
+    def visit_With(self, node):
+        if any(_suppresses_assertions(i) for i in node.items):
+            return
+        self.generic_visit(node)
+
+    visit_AsyncWith = visit_With
+
+    def visit_ClassDef(self, node):
+        saved, self.depth = self.depth, 0
+        self.generic_visit(node)
+        self.depth = saved
+
+    def visit_FunctionDef(self, node):
+        if self.depth > 0 and node.name not in self.referenced:
+            return   # a nested function nobody uses runs nothing
+        self.depth += 1
+        self.generic_visit(node)
+        self.depth -= 1
+
+    visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_Call(self, node):
         func = node.func
         if isinstance(func, ast.Attribute) and func.attr.startswith("assert"):
-            self.count += 1
-        elif isinstance(func, ast.Name) and func.id.startswith("assert") and (func.id in self.trusted or func.id in self.asserting):
-            self.count += 1
+            if self.local_defs.get(func.attr, True):   # a method the file defines counts only when it asserts
+                self.count += 1
+        elif isinstance(func, ast.Name) and func.id.startswith("assert"):
+            if func.id in self.trusted or self.local_defs.get(func.id, False):
+                self.count += 1
         self.generic_visit(node)
 
 
@@ -359,8 +498,12 @@ def _python_assertions(path, text, extra_modules=()):
     modules = tuple(ASSERT_MODULES) + tuple(extra_modules)
     trusted = {name for name, target in _aliases(tree).items()
                if any(target.rsplit(".", 1)[0] == m or target.rsplit(".", 1)[0].startswith(m + ".") for m in modules)}
-    asserting = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _asserts_in(n)}
-    counter = _AssertionCounter(trusted, asserting)
+    local_defs = {}
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            local_defs[n.name] = local_defs.get(n.name, False) or _asserts_in(n)
+    referenced = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    counter = _AssertionCounter(trusted, local_defs, referenced)
     counter.visit(tree)
     return counter.count
 
@@ -374,7 +517,7 @@ def weakening_markers(path, text, markers=None):
     does not parse raises UnparsableTestFile. The settings files of the test runner are read for options that deselect
     tests."""
     if _base(path) in INI_NAMES:
-        return Counter(m.group(0).lower() for m in INI_PATTERN.finditer(text))
+        return Counter(m.group(0).strip().lower() for m in INI_PATTERN.finditer(_pytest_text(path, text)))
     lang = language_of(path)
     if lang is None:
         return Counter()
@@ -382,12 +525,20 @@ def weakening_markers(path, text, markers=None):
     if lang == "python":
         return _python_markers(path, text, names)
     code, with_strings = strip_js(text), strip_js(text, keep_strings=True)
+    aliases = {}   # `const t = it;` makes t another name of it
+    for m in re.finditer(r"\b(?:const|let|var)\s+([\w$]+)\s*=\s*([\w$]+)\s*(?:;|\n|$)", code):
+        aliases.setdefault(m.group(2), []).append(m.group(1))
     found = Counter()
     for marker in names:
-        for pattern, wants_strings in _js_patterns(marker):
-            n = len(pattern.findall(with_strings if wants_strings else code))
-            if n:
-                found[marker] += n
+        spellings = [marker]
+        if "." in marker:
+            base, member = marker.split(".", 1)
+            spellings += [f"{alias}.{member}" for alias in aliases.get(base, [])]
+        for spelling in spellings:
+            for pattern, wants_strings in _js_patterns(spelling):
+                n = len(pattern.findall(with_strings if wants_strings else code))
+                if n:
+                    found[marker] += n
     return found
 
 

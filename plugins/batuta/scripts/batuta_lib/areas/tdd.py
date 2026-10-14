@@ -11,9 +11,10 @@ Optional `tdd` block of batuta.json (C01 allows extra keys): `test_command` (def
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
-import getpass
 import os
+import re
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
@@ -254,20 +255,186 @@ def _change_request_new(args):
 
 
 class ConsoleUnavailable(Exception):
-    """There is no console device to ask a person on."""
+    """There is no interactive console to ask a person on, or nobody answered in time."""
 
 
-def read_console(prompt):
-    """Ask a person on the console device itself (CONIN$ on Windows, /dev/tty elsewhere), never on standard input, which an
-    agent can feed. Raises ConsoleUnavailable when the process has no console."""
-    names = ("CONIN$", "CONOUT$") if os.name == "nt" else ("/dev/tty", "/dev/tty")
+CONSOLE_TIMEOUT = 300.0
+
+
+def _console_interactive():
+    """(ok, why): an interactive console is attached to standard input. On Windows `GetConsoleMode` must succeed on the stdin
+    handle (NUL, a pipe or a file fail it); elsewhere standard input is a terminal and /dev/tty opens."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.windll.kernel32
+            kernel.GetStdHandle.restype = wintypes.HANDLE
+            handle = kernel.GetStdHandle(-10)
+            mode = wintypes.DWORD()
+            if handle in (None, 0, ctypes.c_void_p(-1).value) or not kernel.GetConsoleMode(handle, ctypes.byref(mode)):
+                return False, "standard input is not a console (it is NUL, a pipe or a file)"
+        except (OSError, AttributeError) as exc:
+            return False, f"the console cannot be queried ({exc})"
+        return True, ""
     try:
-        with open(names[1], "w", encoding="utf-8") as out, open(names[0], "r", encoding="utf-8") as source:
-            out.write(prompt)
-            out.flush()
-            return source.readline().strip()
+        if not os.isatty(0):
+            return False, "standard input is not a terminal"
+        os.close(os.open("/dev/tty", os.O_RDWR))
     except OSError as exc:
-        raise ConsoleUnavailable(f"no console device to ask on ({exc})") from exc
+        return False, f"/dev/tty cannot be opened ({exc})"
+    return True, ""
+
+
+def _ask_on_console(prompt):
+    names = ("CONIN$", "CONOUT$") if os.name == "nt" else ("/dev/tty", "/dev/tty")
+    with open(names[1], "w", encoding="utf-8") as out, open(names[0], "r", encoding="utf-8") as source:
+        out.write(prompt)
+        out.flush()
+        return source.readline().strip()
+
+
+def read_console(prompt, timeout=None):
+    """Ask a person on the console device itself, never on standard input, which an agent can feed. Refuses (ConsoleUnavailable)
+    unless an interactive console is attached, and gives up after `timeout` seconds (default 300) with nothing decided. A
+    process attached to the same console can type into it: that is waived here and closed by denying agents the command."""
+    ok, why = _console_interactive()
+    if not ok:
+        raise ConsoleUnavailable(why)
+    box = {}
+
+    def work():
+        try:
+            box["answer"] = _ask_on_console(prompt)
+        except BaseException as exc:   # noqa: BLE001 (reported to the caller)
+            box["error"] = exc
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    thread.join(CONSOLE_TIMEOUT if timeout is None else timeout)
+    if thread.is_alive():
+        raise ConsoleUnavailable(f"timed out waiting for an answer on the console; nothing was decided")
+    if "error" in box:
+        raise ConsoleUnavailable(f"no console device to ask on ({box['error']})") from box["error"]
+    return box["answer"]
+
+
+def account_name():
+    """The account the process runs as, from the operating system, never from an environment variable a caller can set."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            size = ctypes.c_ulong(256)
+            buf = ctypes.create_unicode_buffer(256)
+            if ctypes.windll.advapi32.GetUserNameW(buf, ctypes.byref(size)):
+                return buf.value
+        else:
+            import pwd
+            return pwd.getpwuid(os.getuid()).pw_name
+    except Exception:   # noqa: BLE001
+        pass
+    return "console"
+
+
+def _find_request(root, request_id):
+    """(file, text, row) of a request in the working tree, or None; files that break C33 are not read."""
+    for rel in lk.request_paths(root):
+        text = (root / rel).read_text(encoding="utf-8-sig")
+        rows, errors = lk.parse_requests(text)
+        if errors:
+            continue
+        for row in rows:
+            if row["Id"] == request_id:
+                return rel, text, row
+    return None
+
+
+def _write_decision(root, rel, text, request_id, status, by):
+    """The request file with one decision recorded, validated against C33 before it is written. Returns None or the problem."""
+    try:
+        new_text = lk.decide_text(text, request_id, status, by)
+    except ValueError as exc:
+        return f"{rel}: {exc}"
+    _rows, errors = lk.parse_requests(new_text)
+    if errors:
+        return f"{rel} would not satisfy C33: {'; '.join(errors[:3])}"
+    lk.atomic_write(root / rel, new_text)
+    return None
+
+
+def _hook_result(message=None):
+    out = None
+    if message:
+        out = {"systemMessage": message, "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": message}}
+    return {"contract_version": "1.0", "exit_code": 0, "output": out}
+
+
+_TYPED = re.compile(r"\s*(approve|reject) ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) ([0-9a-f]{12})(?![0-9a-f])")
+
+
+def typed_decision(payload):
+    """UserPromptSubmit handler `tdd-change-request` (C31): when the prompt the person typed starts with the phrase that
+    `change-request show` printed (`approve CR-001 <12 hex>`), record the decision of a request that is still open with that
+    row hash. Never blocks and never raises: anything else gives an empty result."""
+    try:
+        prompt = payload.get("prompt") if isinstance(payload, dict) else None
+        match = _TYPED.match(prompt) if isinstance(prompt, str) else None
+        if match is None:
+            return _hook_result()
+        decision, request_id, digest = match.groups()
+        cwd = payload.get("cwd")
+        folder = Path(cwd) if isinstance(cwd, str) and cwd else Path(".")
+        if not folder.is_dir():
+            return _hook_result()
+        try:
+            root = hist.toplevel(folder)
+        except hist.GitError:
+            root = folder.resolve()
+        found = _find_request(root, request_id)
+        if found is None:
+            return _hook_result(f"No request {request_id} was found; nothing was decided.")
+        rel, text, row = found
+        if row["Status"] != "open":
+            return _hook_result(f"Request {request_id} is already {row['Status']}; a decision is final.")
+        if lk.row_hash(row)[:12] != digest:
+            return _hook_result(f"The hash does not match request {request_id} as it is now (it changed, or the hash is wrong); "
+                                f"run 'tdd change-request show {request_id}' and type the phrase it prints.")
+        status = "approved" if decision == "approve" else "rejected"
+        problem = _write_decision(root, rel, text, request_id, status, "typed prompt")
+        if problem:
+            return _hook_result(f"Request {request_id} was not decided: {problem}")
+        return _hook_result(f"Request {request_id} is {status} (decided by typed prompt) in {rel}.")
+    except Exception:   # noqa: BLE001 (a hook never breaks the prompt)
+        return _hook_result()
+
+
+HOOKS = {"tdd-change-request": typed_decision}
+
+
+def _change_request_show(args):
+    as_json, items = getattr(args, "json", False), []
+    try:
+        hist.ensure_supported()
+        try:
+            root = hist.toplevel(getattr(args, "repo", None) or ".")
+        except hist.GitError:
+            root = Path(getattr(args, "repo", None) or ".").resolve()
+    except hist.GitError as exc:
+        return _fail("change-request show", items, as_json, str(exc))
+    found = _find_request(root, args.request_id)
+    if found is None:
+        items.append(item("REFUSED", f"no request {args.request_id} in specs/**/{lk.REQUEST_FILE}"))
+        return emit(AREA, "change-request show", items, "tdd change-request show: refused", as_json)
+    rel, _text, row = found
+    items.append(item("OK", f"request {args.request_id} ({row['Status']}) for {row['Test path']} in {rel}: {row['Reason']}; "
+                            f"proposed: {row['Proposed change']}", rel))
+    if row["Status"] != "open":
+        items.append(item("REFUSED", f"request {args.request_id} is already {row['Status']}; a decision is final"))
+        return emit(AREA, "change-request show", items, "tdd change-request show: nothing to decide", as_json)
+    digest = lk.row_hash(row)[:12]
+    items.append(item("OK", f"to approve, type this as your prompt: approve {args.request_id} {digest}"))
+    items.append(item("OK", f"to reject, type this as your prompt: reject {args.request_id} {digest}"))
+    return emit(AREA, "change-request show", items, "tdd change-request show: done", as_json)
 
 
 def _change_request_decide(args):
@@ -286,15 +453,7 @@ def _change_request_decide(args):
         return emit(AREA, "change-request decide", items, "tdd change-request decide: refused, nothing written", as_json)
 
     status = "approved" if args.decision == "approve" else "rejected"
-    found = None
-    for rel in lk.request_paths(root):
-        text = (root / rel).read_text(encoding="utf-8-sig")
-        rows, errors = lk.parse_requests(text)
-        if errors:
-            continue
-        for row in rows:
-            if row["Id"] == args.request_id:
-                found = (rel, text, row)
+    found = _find_request(root, args.request_id)
     if found is None:
         return refused(f"no request {args.request_id} in specs/**/{lk.REQUEST_FILE}")
     rel, text, row = found
@@ -312,18 +471,10 @@ def _change_request_decide(args):
         return refused(f"{exc}: a request is decided by a person at a console, never by a script or an agent")
     if typed != phrase:
         return refused(f"the console answer is not '{phrase}': the request stays open")
-    try:
-        by = getpass.getuser()
-    except (OSError, KeyError):
-        by = "console"
-    try:
-        new_text = lk.decide_text(text, args.request_id, status, by)
-    except ValueError as exc:
-        return _fail("change-request decide", items, as_json, f"{rel}: {exc}")
-    _rows, errors = lk.parse_requests(new_text)   # the contract test on the producing side
-    if errors:
-        return _fail("change-request decide", items, as_json, f"{rel} would not satisfy C33: {'; '.join(errors[:3])}")
-    lk.atomic_write(root / rel, new_text)
+    by = account_name()
+    problem = _write_decision(root, rel, text, args.request_id, status, by)
+    if problem:
+        return _fail("change-request decide", items, as_json, problem)
     items.append(item("CHANGED", f"request {args.request_id} is {status} (decided by {by}) in {rel}", rel))
     return emit(AREA, "change-request decide", items, "tdd change-request decide: done", as_json)
 
@@ -503,6 +654,10 @@ def register(subparsers):
     d.add_argument("decision", choices=("approve", "reject"), help="the decision; the person types '<decision> <CR-ID>' on the console")
     d.add_argument("--apply", action="store_true", help="ask on the console and write the decision (default: dry run)")
     d.set_defaults(func=_change_request_decide)
+    sh = crs.add_parser("show", help="Print the phrase that approves or rejects an open request when typed as a prompt.")
+    sh.add_argument("--repo", metavar="DIR", default=None, help="the repository (default: the current directory)")
+    sh.add_argument("request_id", metavar="CR-ID", help="the request to show")
+    sh.set_defaults(func=_change_request_show)
 
     c = subparsers.add_parser("commit", help="Stage and commit a [red], [green] or [refactor] step with a C32 message.")
     _common(c)

@@ -5,6 +5,7 @@ superseding entry that names the approved change request. A change request is a 
 `specs/<feature>/test-change-requests.md`; only a row with Status `approved` and a named decider authorises a change.
 """
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -175,6 +176,13 @@ def _cell(text):
 def request_row(rid, test_path, requirement, reason, proposed, date):
     cells = [rid, date, test_path, requirement, reason, proposed, "open", ""]
     return "| " + " | ".join(_cell(c) for c in cells) + " |"
+
+
+def row_hash(row):
+    """SHA-256 of the normalized text of a request row (every cell, whitespace collapsed): what a typed approval names, so a row
+    edited after the person read it no longer matches."""
+    text = "\n".join(f"{h}: {' '.join(str(row.get(h, '')).split())}" for h in HEADERS)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def decide_text(text, request_id, status, decided_by):
