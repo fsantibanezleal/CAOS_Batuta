@@ -84,8 +84,13 @@ def baseline_problems(doc, old):
         now = doc["values"].get(name)
         if now is None:
             problems.append(f"threshold '{name}' was removed (it was {was})")
-        elif now < was and not any(e["name"] == name and e["to"] < e["from"] and e["from"] <= was for e in doc["history"][len(old["history"]):]):
-            problems.append(f"threshold '{name}' was lowered from {was} to {now} with no history entry for the decrease")
+        elif now < was:
+            reached = was      # a chain of new history entries must lead from the base value to the current one
+            for e in doc["history"][len(old["history"]):]:
+                if e["name"] == name and e["from"] == reached:
+                    reached = e["to"]
+            if reached != now:
+                problems.append(f"threshold '{name}' was lowered from {was} to {now} with no chain of history entries from {was} to {now}")
     return problems
 
 

@@ -122,9 +122,12 @@ def _status(args):
             if repo is not None and not repo.ok:
                 refused.append(f"{gate}: cannot verify the evidence commit: not a git repository (use --no-commit-check)")
                 continue
-            found, _ = gate_model.gate_evidence_items(root, feature, gate, cfg, repo, args.today or gate_model.today_iso(),
-                                                      gate == "L9-promote", None)
+            found, full = gate_model.gate_evidence_items(root, feature, gate, cfg, repo, args.today or gate_model.today_iso(),
+                                                         gate == "L9-promote", None)
             refused.extend(f"{gate}: {i['message']}" for i in found if i["tag"] == "FAIL")
+            if repo is not None and repo.ok and full:       # passing a gate now: nothing it judges changed since its evidence
+                found = gate_model.predates_items(repo, feature, gate, full, repo.head, inclusive=True, label="the head")
+                refused.extend(f"{gate}: {i['message']}" for i in found)
             if gate == "L5-freeze" and not any(r.startswith("L5-freeze") for r in refused):
                 refused.extend(f"{gate}: {p}" for p in gate_model.approval_problems(root, feature, cfg))
         else:
@@ -254,10 +257,12 @@ def _tests_record(args):
     for text in args.result or []:
         key, sep, value = text.rpartition("=")
         if not sep or not key:
-            return refused(f"'{text}' is not <test path>=<pass|fail|skip>")
+            return refused(f"'{text}' is not <test path>=<fail|skip>")
+        if value == "pass":
+            return refused(f"'{text}': a pass is recorded only by --run, which ran the test; by hand only fail or skip can be recorded")
         results[key] = value
     if not results:
-        return refused("nothing to record: give --result <test path>=<pass|fail|skip> or --run")
+        return refused("nothing to record: give --run, or --result <test path>=<fail|skip>")
     out_rel = Path(args.output or gate_model.RECORD_PATH).as_posix()
     doc = {"contract_version": "1.0", "commit": commit, "generated": args.today or gate_model.today_iso(), "results": results}
     problems = readiness._validate("C34", doc)
@@ -417,6 +422,8 @@ def handler(payload):
         if root is None:
             return allow
         dirty = gate_model.GIT.dirty(root)
+        if dirty is None:
+            return {**allow, "message": "gate-stop: git is not available or this is not a repository, so no unit can be checked; the stop is allowed"}
         if not dirty:
             return allow
         resolved = config.load(project_root=root)
@@ -492,7 +499,7 @@ def register(subparsers):
     p.add_argument("--readiness", help="the readiness document (default: data/derived/readiness.json or docs/design/readiness.json)")
     p.add_argument("--catalog", help="the contract catalog (default: docs/contracts/catalog.md)")
     p.add_argument("--lag", type=int, default=0, help="commits the readiness document may be behind the head (default 0)")
-    p.add_argument("--against", metavar="REV", help="the base revision thresholds and routing are read from (default: the merge-base with the target branch)")
+    p.add_argument("--against", metavar="REV", help="the base revision thresholds and routing are read from; an ancestor of HEAD (default: the merge-base with the target branch; CI passes the pull-request base)")
     p.add_argument("--today", help="today's date YYYY-MM-DD (tests)")
     p.set_defaults(func=_check)
 
@@ -524,7 +531,7 @@ def register(subparsers):
     p.add_argument("--root", help="the project folder (default: the current folder)")
     p.add_argument("--output", help=f"the record file (default {gate_model.RECORD_PATH})")
     p.add_argument("--commit", help="the commit the tests ran at (default: HEAD)")
-    p.add_argument("--result", action="append", metavar="TEST=RESULT", help="a result: <test path>[::name]=pass|fail|skip; repeatable")
+    p.add_argument("--result", action="append", metavar="TEST=RESULT", help="a result by hand: <test path>[::name]=fail|skip (a pass comes only from --run); repeatable")
     p.add_argument("--run", action="store_true", help="run the python test files the catalog names and record each")
     p.add_argument("--catalog", help="the contract catalog for --run (default: docs/contracts/catalog.md)")
     p.add_argument("--timeout", type=int, default=600, help="seconds allowed per test file with --run (default 600)")

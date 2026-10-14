@@ -45,15 +45,23 @@ python scripts/batuta.py lessons check [--lessons FILE]
   date and a history entry cover it) and the `gates` block of `.batuta/batuta.json` (critical gates, critical units, adversary models)
   from the merge-base with the target branch (`origin/develop`, `develop`, `origin/main` or `main`), or from `--against REV`. A change to
   the gates block inside the range is a WARN naming the commit; the check keeps routing by the base revision's settings. A
-  configuration named by `--config` or the environment is used as given.
-- Evidence must not predate the change it certifies: for each gate the newest commit that changed a path the gate judges (L0 and L5 the
-  spec, tasks and trace of the feature; L1 also the sizing; L2 the ADRs and technology decisions; L3 the contracts and catalog; L4 also
-  the models; L5 also the decisions; L6 and L8 the code and the readiness documents; L7 the code and tests) must be the evidence's
-  commit or an ancestor of it; otherwise `gate check` fails with `evidence ... predates the change`. L9 evidence must describe the head
-  until L10 passes.
+  configuration named by `--config` or the environment is used as given. The target branch is the remote's default branch
+  (`origin/HEAD`), else `origin/develop`, `develop`, `origin/main`, `main`, `origin/master` or `master`. When none shares history
+  with HEAD, `gate check` says `no base revision: thresholds and routing were not compared` (WARN, exit 2); when HEAD is the
+  target itself it warns that the range is empty (a change committed directly on the target branch is not compared). `--against`
+  must be an ancestor of HEAD, and CI passes the pull-request base explicitly with --against. A lowering made in several steps
+  passes when a chain of history entries leads from the base value to the final one and every decrease has a human waiver.
+- Evidence must not predate the change it certifies: each phase is checked at its own gate, so for each passed gate a path the gate
+  judges must not change between its evidence commit and the next passed gate's evidence commit (the last passed gate is bound by
+  the head only while it is being passed with `gate status --set`; L9 evidence must describe the head until L10 passes). The paths
+  a gate judges: L0 the spec, tasks and trace of the feature; L1 also the sizing; L2 the ADRs and technology decisions; L3 the
+  contracts and catalog; L4 also the models; L5 the spec, contracts and decisions; L6 and L8 the code and the readiness documents;
+  L7 the code and tests. Otherwise `gate check` fails with `evidence ... predates the change`. The coordination folder `.batuta/`
+  never counts as a change.
 - `gate tests-record` writes the contract-tests record (C34, `docs/design/contract-tests.json`), validated before it is written:
-  `--result <test path>=pass|fail|skip` (repeatable) and `--run` (runs the python test files the catalog names, one unittest
-  discovery each; no test run is a skip). It records HEAD and refuses a working tree with uncommitted changes outside `specs/`.
+  `--run` (runs the python test files the catalog names, one unittest discovery each; no test run is a skip) and `--result
+  <test path>=fail|skip` (repeatable; a pass is recorded only by `--run`, never typed in). It records HEAD and refuses a working
+  tree with uncommitted changes outside `specs/`.
   `skeleton check` reads the record (the default path, or `--tests-record`): a failed or skipped test fails, a record for a commit
   with later code or contract changes fails, and no record is a WARN. `gate check` reads it at the release gate.
 - Tool scope of the `adversary` agent: the agent definition cannot scope `Write` or `Bash` to a path, so the limit to

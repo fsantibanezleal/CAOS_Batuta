@@ -107,6 +107,11 @@ class Git:
         rc, out = self._run(root, "merge-base", ref, "HEAD")
         return out.strip() or None if rc == 0 else None
 
+    def remote_head(self, root):
+        """The remote's default branch as a local ref name (`origin/main`), or None when it is not recorded."""
+        rc, out = self._run(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+        return out.strip() or None if rc == 0 else None
+
     def log_files(self, root, head, limit):
         """[(sha, [paths])], newest first, for at most `limit` commits ending at `head`."""
         rc, out = self._run(root, "log", "--name-only", "--format=%x01%H", "--relative", "-n", str(limit), head)
@@ -427,21 +432,26 @@ def judged(gate, feature):
 class Repo:
     """What one `gate check` knows of the repository, gathered once."""
 
-    def __init__(self, root, head=None):
+    def __init__(self, root, head=None, info=False):
         self.root = root
-        info = GIT.info(root)
+        info = GIT.info(root) if info is False else info
         self.ok = info is not None
         self.head = head or (info[1] if info else None)
         self.history = GIT.history(root, self.head) if self.ok and self.head else []
         self._anc = {}
         self._log = None
 
-    def newest_change(self, predicate):
-        """(commit, path) of the newest commit that changed a path the predicate accepts, or None."""
+    def judged_change_between(self, older, newer, predicate, *, inclusive=False):
+        """(commit, path) of the newest commit after `older` and before `newer` (up to and including it when `inclusive`)
+        that changed a path the predicate accepts, or None. Positions are read from the history list, so no git call."""
         if self._log is None:
-            self._log = GIT.log_files(self.root, self.head, LOG_LIMIT) if self.ok and self.head else []
-        for sha, paths in self._log:
-            for p in paths:
+            self._log = dict(GIT.log_files(self.root, self.head, LOG_LIMIT)) if self.ok and self.head else {}
+        try:
+            i_old, i_new = self.history.index(older), self.history.index(newer)
+        except ValueError:
+            return None
+        for sha in self.history[i_new if inclusive else i_new + 1:i_old]:
+            for p in self._log.get(sha, []):
                 if predicate(p):
                     return sha, p
         return None
@@ -464,8 +474,9 @@ def commit_items(repo, root, feature, gate, meta_commit, path, *, current):
         return [item("FAIL", f"evidence for {gate} names commit {meta_commit!r}, which is not in the history of "
                              f"{repo.head[:12] if repo.head else 'head'} (evidence for the wrong commit)", path)], None
     if current:
-        changed = [p for p in GIT.changed(root, full, repo.head) if not p.startswith(f"specs/{feature}/")]
-        dirty = [p for p in (GIT.dirty(root) or []) if not p.startswith(f"specs/{feature}/")]
+        own = (f"specs/{feature}/", f"{config.PROJECT_DIR}/", RECORD_PATH)     # the unit's records, the coordination folder (the Stop state lives there) and the tests record
+        changed = [p for p in GIT.changed(root, full, repo.head) if not p.startswith(own)]
+        dirty = [p for p in (GIT.dirty(root) or []) if not p.startswith(own)]
         if changed or dirty:
             sample = ", ".join((changed + dirty)[:3])
             out.append(item("FAIL", f"evidence for {gate} is for {full[:12]} but files changed since outside specs/{feature}/ "
@@ -493,12 +504,6 @@ def gate_evidence_items(root, feature, g, cfg, repo, today, current, prev):
     if repo is not None and repo.ok:
         c_items, full = commit_items(repo, root, feature, g, meta.get("commit", ""), prel, current=current)
         out.extend(c_items)
-        predicate = judged(g, feature)
-        if full and predicate:
-            newest = repo.newest_change(predicate)
-            if newest and not repo.ancestor(newest[0], full):
-                out.append(item("FAIL", f"evidence for {g} predates the change: {newest[1]} changed in {newest[0][:12]}, after the "
-                                        f"evidence commit {full[:12]}; the gate judges it, so its evidence must be for that commit or later", prel))
         if full and prev and not repo.ancestor(prev[1], full):
             out.append(item("FAIL", f"evidence for {g} is for {full[:12]}, which is earlier than the evidence for {prev[0]} "
                                     f"({prev[1][:12]}): evidence commits never go backwards", prel))
@@ -507,25 +512,54 @@ def gate_evidence_items(root, feature, g, cfg, repo, today, current, prev):
     return out, full
 
 
+def predates_items(repo, feature, gate, full, upper, *, inclusive, label):
+    """FAIL items when a path the gate judges changed after the gate's evidence commit `full` and before `upper` (the next
+    passed gate's evidence commit, exclusive; or the head, inclusive, when a gate is being passed now)."""
+    predicate = judged(gate, feature)
+    if not (full and upper and predicate):
+        return []
+    hit = repo.judged_change_between(full, upper, predicate, inclusive=inclusive)
+    if hit is None:
+        return []
+    return [item("FAIL", f"evidence for {gate} predates the change: {hit[1]} changed in {hit[0][:12]}, after the evidence commit "
+                         f"{full[:12]} and before {label}; the gate judges that path, so its evidence must be for that change or later",
+                 f"specs/{feature}/evidence/{gate}.md")]
+
+
 # ------------------------------------------------------------------ settings that can weaken a gate
 
-TARGET_CANDIDATES = ("origin/develop", "develop", "origin/main", "main")
+TARGET_CANDIDATES = ("origin/develop", "develop", "origin/main", "main", "origin/master", "master")
+NO_BASE = "no base revision: thresholds and routing were not compared"
 PROJECT_CONFIG = f"{config.PROJECT_DIR}/{config.FILE_NAME}"
 
 
-def base_revision(root, against=None):
-    """(base sha or None, problem or None): the revision that thresholds and routing are read from. `against` names it;
-    otherwise it is the merge-base of HEAD with the target branch (the first of TARGET_CANDIDATES that exists), which is
-    HEAD itself when HEAD is on the target, so an uncommitted edit is still compared with what was committed."""
+def target_candidates(root):
+    """The remote's default branch first, then the usual names of a target branch."""
+    out = []
+    remote = GIT.remote_head(root)
+    if remote:
+        out.append(remote)
+    out.extend(c for c in TARGET_CANDIDATES if c not in out)
+    return out
+
+
+def base_revision(root, against=None, head=None):
+    """(base sha or None, problem or None): the revision that thresholds and routing are read from. `against` names it and
+    must be an ancestor of HEAD; otherwise it is the merge-base of HEAD with the target branch (the remote's default branch, or
+    the first of TARGET_CANDIDATES that shares history with HEAD). It is HEAD itself when HEAD is on the target, so an
+    uncommitted edit is still compared with what was committed."""
     if against:
         sha = GIT.rev(root, against)
-        return (sha, None) if sha else (None, f"cannot resolve the base revision {against!r}")
-    for ref in TARGET_CANDIDATES:
+        if not sha:
+            return None, f"cannot resolve the base revision {against!r}"
+        if head and sha != head and not GIT.is_ancestor(root, sha, head):
+            return None, f"the base revision {against!r} is not an ancestor of HEAD: a baseline must be history the change builds on"
+        return sha, None
+    for ref in target_candidates(root):
         sha = GIT.merge_base(root, ref)
         if sha:
             return sha, None
     return None, None
-
 
 def settings_from_base(root, cfg, base, from_project):
     """(cfg whose `gates` block is the base revision's, items). A change to the routing inside the range is a WARN naming the
@@ -565,9 +599,15 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
     status, items = load_status(root, feature)
     if status is None:
         return items
-    base, problem = base_revision(root, against)
+    info = GIT.info(root)
+    base, problem = base_revision(root, against, info[1] if info else None)
     if problem:
         items.append(item("FAIL", problem))
+    elif base is None:
+        items.append(item("WARN", NO_BASE))
+    elif info and base == info[1]:
+        items.append(item("WARN", f"the base revision is HEAD ({base[:12]}): the range is empty, so a change committed directly on the "
+                                  f"target branch is not compared; CI passes the pull-request base with --against"))
     cfg, base_items = settings_from_base(root, cfg, base, project_config)
     items.extend(base_items)
     rel = status.path.relative_to(root).as_posix()
@@ -591,13 +631,13 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
         items.append(item("WARN", "the unit is blocked and states no blocked_reason", rel))
 
     passed = [g for g in GATES if gates[g] == "passed"]
-    repo = Repo(root, head) if commit_check and (passed or release) else None
+    repo = Repo(root, head, info) if commit_check and (passed or release) else None
     if passed and commit_check and not repo.ok:
         items.append(item("FAIL", "cannot verify the evidence commits: the project is not a git repository with a commit "
                                   "(use --no-commit-check to skip the check, reported as a WARN)"))
     elif passed and not commit_check:
         items.append(item("WARN", "evidence commits were not verified (--no-commit-check)"))
-    prev = None
+    prev, evid = None, []
     for g in passed:
         # the release evidence describes the head being promoted; once L10 is done the head has moved on legitimately
         current = strict_commits or (g == "L9-promote" and gates["L10-lessons"] not in COMPLETE)
@@ -605,6 +645,9 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
         items.extend(found)
         if full:
             prev = (g, full)
+            evid.append((g, full))
+    for (g, full), (g_next, next_full) in zip(evid, evid[1:]):     # each phase is checked at its own gate
+        items.extend(predates_items(repo, feature, g, full, next_full, inclusive=False, label=f"the evidence for {g_next}"))
 
     if gates["L5-freeze"] == "passed":
         problems = approval_problems(root, feature, cfg)
