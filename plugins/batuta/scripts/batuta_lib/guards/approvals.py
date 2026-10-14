@@ -14,7 +14,7 @@ import os
 import re
 from pathlib import Path
 
-from . import (FILE_TOOLS, allow, candidate_roots, command_of, deny, file_path_of, has_glob, norm_path,
+from . import (FILE_TOOLS, allow, candidate_roots, command_of, deny, file_path_of, has_glob, maybe_target_exists, norm_path,
                project_root, spellings, tool_name)
 from . import shell
 from . import text as textlib
@@ -116,6 +116,8 @@ def decide(payload) -> dict:
     pairs = shell.write_pairs(normal)
     for root in candidate_roots(payload, [t for _, t in pairs]):
         for _name, token in pairs:
+            if _name.endswith("-maybe") and not maybe_target_exists(token, root, cwd):
+                continue
             for sp in spellings(token, root, cwd):
                 if APPROVALS.search(sp) or (has_glob(sp) and _glob_hits(sp, root)):
                     return _deny(token)

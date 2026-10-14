@@ -249,6 +249,16 @@ def _basename(token: str) -> str:
     return re.split(r"[\\/]", token.rstrip("\\/"))[-1]
 
 
+def _join_items(dest: str, source: str) -> list[tuple[str, str]]:
+    """[(where `source` lands, tag)]: under a destination with a trailing separator or a name without an extension it is a
+    folder (tag empty); under a dotted name it may be a folder or a file, which only the filesystem knows, so the joined
+    path carries the tag `maybe` and the guard keeps it only when the destination exists as a folder."""
+    joined = dest.rstrip("\\/") + "/" + _basename(source)
+    if dest.endswith(("/", "\\")) or "." not in _basename(dest)[1:]:
+        return [(joined, "")]
+    return [(joined, "maybe")]
+
+
 def _join_dest(dest: str, source: str) -> str:
     """Where `source` lands when `dest` is a folder; a destination that looks like a file (its name has an extension and
     no trailing slash) is not joined, so `cp a.md /tmp/copy.md` is not read as `/tmp/copy.md/a.md`."""
@@ -310,7 +320,7 @@ def write_items(seg: Segment) -> list[tuple[str, str]]:
     if name in WRITE_ANY and name in MOVERS and len(pos) >= 2:
         items += [(t, "") for t in pos[:-1]]
         items.append((pos[-1], "dest"))
-        items += [(_join_dest(pos[-1], s), "") for s in pos[:-1]]
+        items += [it for s in pos[:-1] for it in _join_items(pos[-1], s)]
     elif name in WRITE_ANY:
         targets += pos
     elif name in INPLACE:
@@ -322,10 +332,10 @@ def write_items(seg: Segment) -> list[tuple[str, str]]:
             sources = [p for p in pos if p not in dests]
             for d in dests:
                 items.append((d, _dest_tag(name)))
-                items += [(_join_dest(d, s), "") for s in sources]
+                items += [it for s in sources for it in _join_items(d, s)]
         elif pos:
             items.append((pos[-1], _dest_tag(name)))
-            items += [(_join_dest(pos[-1], s), "") for s in pos[:-1]]
+            items += [it for s in pos[:-1] for it in _join_items(pos[-1], s)]
     elif name == "git":
         sub, rest = _git_sub(args)
         if sub in GIT_WRITES:
@@ -535,7 +545,7 @@ def write_pairs(command: str) -> list[tuple[str, str]]:
             if target:
                 prefix = _join(prefix, target) if target != ".." else posixpath.normpath((prefix or ".") + "/..")
             continue
-        picked = [(name if tag == "" else name + "-dest", t) for t, tag in write_items(seg)]
+        picked = [(name if tag == "" else f"{name}-{tag}", t) for t, tag in write_items(seg)]
         if is_link_command(seg):
             picked = [("mklink", t) for t in link_operands(seg)] + picked
         if name == "xargs":

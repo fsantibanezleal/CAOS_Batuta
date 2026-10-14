@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 from . import (FILE_TOOLS, allow, ask, candidate_roots, command_of, deny, existing_paths, file_path_of, guard_config,
-               has_glob, norm_path, section, spellings, tool_name)
+               has_glob, maybe_target_exists, norm_path, section, spellings, tool_name)
 from . import shell
 from . import text as textlib
 
@@ -158,6 +158,8 @@ def _check_root(root: Path, cwd: str, pairs, inline: bool, command: str):
     abs_locked = [(root / p, p, t) for p, t in locked.items()]
 
     def hit(cmd_name: str, token: str):
+        if cmd_name.endswith("-maybe") and not maybe_target_exists(token, root, cwd or None):
+            return None
         recursive = cmd_name in RECURSIVE
         for sp in spellings(token, root, cwd or None):
             if not sp:

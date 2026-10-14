@@ -32,7 +32,11 @@ _STARTUP = r"(?:Copy-Item|Move-Item|New-Item|Out-File|Set-Content|CreateShortcut
 _WSLCONFIG = (r"(?:Set-Content|Add-Content|Out-File|WriteAll\w+|AppendAll\w+|Copy-Item|Move-Item|New-Item|Tee-Object"
               r"|\bac\b|\bni\b|\bsc\b|\btee\b|\bcp\b|\bmv\b)")
 _WSLCONF = r"(?:\btee\b|sed\s+-i|\bcp\b|\bmv\b)"
-_CLAUDE = r"claude(?:\.exe|\.cmd)?"
+# `claude` as the COMMAND word: at the start of a segment (after wrappers and a path), never inside an argument such as
+# `--model claude-sonnet-4-5`; the gap after it stays inside one segment and bounded by what starts a nested command
+_CONTINUATION = re.compile(r"\\\r?\n|`\r?\n")
+_CLAUDE_CMD = (r"(?:^|[;&|(`{\n])[ \t]*(?:&[ \t]*)?(?:(?:\[[\w.]{1,40}\])?\$[\w:]{1,40}[ \t]*[+\-*/%]?=[ \t]*(?:&[ \t]*)?)?(?:(?:[\w.-]+=[^\s;&|(){}`]*|sudo|env|command|nohup|time|exec|call|start-process|saps)\s+)*"
+               r"[\"']?(?:\"[^\"\n;&|]{0,260}[\\/]|'[^'\n;&|]{0,260}[\\/]|[^\s\"';&|(){}`]*[\\/])?claude(?:\.exe|\.cmd)?[\"']?(?=\s)")
 _IEX = r"(?:iex|Invoke-Expression)\b"
 
 RULES = [
@@ -59,7 +63,7 @@ RULES = [
                                    r"|crontab\s+(?!-l\b)\S|>>?\s*/etc/cron|systemd-run\b" + _gap("systemd-run") + r"--on-\w+"
                                    r"|(?:^|[;&|(\n])[ \t]*at(?:\.exe)?\s+(?:now|\d{1,2}:\d{2}|noon|midnight|tomorrow)\b", I),
      "installs a Linux autostart (systemd enable, linger, cron or at)"),
-    ("headless-claude", re.compile(_CLAUDE + r"[\"']?\s+(?:" + _gap(_CLAUDE, r"[^\n|;&]") + r"\s)?(-p|--print)\b|claude-code\b"
+    ("headless-claude", re.compile(_CLAUDE_CMD + r"\s+(?:[^\n|;&(`]*\s)?(-p|--print)\b|claude-code\b"
                                    + _gap("claude-code", r"[^\n|;&]") + r"\s(-p|--print)\b|dangerously-skip-permissions|bypassPermissions", I),
      "launches a headless Claude session (spends the subscription with nobody watching)"),
     ("detach", re.compile(r"\bnohup\b|\bsetsid\b|\bdisown\b|\s-w(?:i\w*)?\s+hidden\b|\s-wi\w*\s+1\b|\bpythonw(\.exe)?\b"
@@ -118,7 +122,7 @@ def self_calling_function(text: str) -> bool:
 
 def _variants(command: str) -> tuple[list[str], list[tuple[str, str]]]:
     """(texts to match the rules against, hits found while decoding)."""
-    base = textlib.normalize(command)
+    base = _CONTINUATION.sub(" ", textlib.normalize(command))
     texts: list[str] = []
     hits: list[tuple[str, str]] = []
     pending = [base]
@@ -147,7 +151,7 @@ def scan_hits(command: str) -> list[tuple[str, str]]:
         for rid, pattern, why in RULES:
             if pattern.search(text) and (rid, why) not in hits:
                 hits.append((rid, why))
-    normal = textlib.normalize(command)
+    normal = _CONTINUATION.sub(" ", textlib.normalize(command))
     for target in shell.write_targets_of(normal):
         spelled = norm_path(target)
         for rid, pattern, why in PATH_RULES:

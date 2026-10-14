@@ -8,6 +8,7 @@ lookup or run) may go without a brief when the prompt ends with a `BRIEF: none` 
 """
 from __future__ import annotations
 
+import bisect
 import re
 from pathlib import Path
 
@@ -48,15 +49,18 @@ def brief_paths(prompt: str) -> list[str]:
     linear in its length (a lazy pattern over a long run without spaces backtracked quadratically)."""
     seen: list[str] = []
     for token in BRIEF_SPLIT.split(prompt):
+        cuts = [m.end() for m in BRACKETS.finditer(token)]     # where a path of the field can start (after , ; ( [ { =)
         pos = token.find(BRIEF_SUFFIX)
         while pos >= 0:
             end = pos + len(BRIEF_SUFFIX)
             if end == len(token) or not (token[end].isalnum() or token[end] == "_"):
-                candidate = BRACKETS.split(token[:end])[-1]
+                index = bisect.bisect_right(cuts, pos)
+                candidate = token[cuts[index - 1] if index else 0:end]
                 if candidate not in seen:
                     seen.append(candidate)
-                break
-            pos = token.find(BRIEF_SUFFIX, pos + 1)
+                pos = token.find(BRIEF_SUFFIX, end)
+            else:
+                pos = token.find(BRIEF_SUFFIX, pos + 1)
     return seen
 
 

@@ -180,6 +180,12 @@ def has_glob(norm: str) -> bool:
     return any(c in norm for c in GLOB_CHARS)
 
 
+def maybe_target_exists(token: str, root: Path, cwd=None) -> bool:
+    """A joined path under a dotted destination counts only when that destination exists as a folder."""
+    parent = cleaned(token).replace("\\", "/").rsplit("/", 1)[0]
+    return any(p.is_dir() for p in existing_paths(parent, root, cwd))
+
+
 def cleaned(token: str) -> str:
     return textlib.normalize(token).strip().strip("\"'")
 

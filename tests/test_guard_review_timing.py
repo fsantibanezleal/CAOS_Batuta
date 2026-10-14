@@ -49,6 +49,12 @@ INPUTS = {
     "timeout-flags": "timeout -a " * (N // 11),
     "claude-flags": "claude -x " * (N // 10),
     "function-heads": "function f { " * (N // 13),
+    "claude-models": "claude --model claude-sonnet-4-5 " * (N // 31),
+    "claude-segments": "; claude --model claude-opus-4-1 -x " * (N // 35),
+    "claude-subshells": "(claude --model claude-x " * (N // 24),
+    "backtick-run": "`a" * (N // 2),
+    "brace-run": "{a" * (N // 2),
+    "assign-run": "$a=1 " * (N // 5),
     "spaces": " " * N,
     "tabs-and-ats": "&" + " " * N,
 }
