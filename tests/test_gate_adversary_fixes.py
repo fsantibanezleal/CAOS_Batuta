@@ -168,7 +168,7 @@ class F2EvidencePredatesTheChange(Check):
         proj.write("data/derived/readiness.json", (proj.root / "data/derived/readiness.json").read_text(encoding="utf-8") + "\n")
         ready = proj.commit("readiness after the build")      # the readiness age and the test record follow the build too
         proj.tests_record(ready)
-        for g in ("L6-skeleton", "L7-build", "L8-integrate", "L9-promote"):
+        for g in ("L6-skeleton", "L7-build", "L8-integrate", "L9-promote", "L10-lessons"):
             proj.evidence(g, commit=ready)
         proj.commit("evidence at the newest change")
         code, out = self.check(proj)
@@ -329,10 +329,11 @@ class F6ModelMatching(unittest.TestCase):
 
 class F7Lessons(Case):
     def lessons(self, text):
-        proj = self.project(git=False)
-        proj.status({g: "passed" for g in GATES[:8]})
-        proj.write("LESSONS.md", text)
-        return run("lessons", "check", "--root", str(proj.root), "--today", TODAY)
+        if not hasattr(self, "proj"):
+            self.proj = self.project(git=False)
+            self.proj.status({g: "passed" for g in GATES[:8]})
+        self.proj.write("LESSONS.md", text)
+        return run("lessons", "check", "--root", str(self.proj.root), "--today", TODAY)
 
     LINE = f"- 2026-10-12 | {FEATURE} | a lesson | an action"
 
