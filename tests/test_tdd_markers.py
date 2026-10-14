@@ -136,5 +136,113 @@ class AssertionCounts(unittest.TestCase):
         self.assertIsNone(tm.assertion_count("notes.md", "assert(1)"))
 
 
+class ReviewPythonMarkers(unittest.TestCase):
+    """C-06 and M-02: aliases, renamed imports and skip equivalents."""
+
+    def count(self, src, markers=None):
+        return sum(tm.weakening_markers("tests/test_x.py", src, markers).values())
+
+    def test_an_aliased_module_or_a_renamed_import_is_resolved(self):
+        cases = [
+            "import unittest as u\n@u.skip('x')\ndef test_a(): pass\n",
+            "from unittest import skip as s\n@s('x')\ndef test_a(): pass\n",
+            "import pytest as p\n@p.mark.skip\ndef test_a(): pass\n",
+            "from pytest import mark\n@mark.skip\ndef test_a(): pass\n",
+            "from pytest import mark as m\n@m.xfail\ndef test_a(): pass\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertEqual(self.count(src), 1)
+
+    def test_skip_equivalents_are_markers(self):
+        cases = [
+            "import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.skipTest('x')\n",
+            "import unittest\ndef test_a():\n    raise unittest.SkipTest('x')\n",
+            "from unittest import SkipTest\ndef test_a():\n    raise SkipTest('x')\n",
+            "import unittest\n@getattr(unittest, 'skip')('x')\ndef test_a(): pass\n",
+            "import pytest\ndef test_a():\n    pytest.importorskip('nope_xyz')\n",
+            "import unittest\nunittest.TestCase.run = lambda self, result=None: None\n",
+            "import pytest\ndef pytest_collection_modifyitems(items):\n    for item in items:\n        item.add_marker(pytest.mark.skip(reason='x'))\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_ordinary_names_are_not_markers(self):
+        self.assertEqual(self.count("skipped = 3\nskip_count = skipped + 1\ndef test_a():\n    assert skipped == 3\n"), 0)
+
+
+class ReviewJavascriptMarkers(unittest.TestCase):
+    """C-06, m-04: member chains, bracket access, destructuring, regex literals, focus forms."""
+
+    def count(self, src):
+        return sum(tm.weakening_markers("web/a.test.js", src).values())
+
+    def test_member_chains_brackets_and_destructuring_are_markers(self):
+        cases = [
+            "it['only']('a', () => {});\n",
+            "globalThis.it.only('a', () => {});\n",
+            "const { only } = it;\nonly('a', () => {});\n",
+            "window . test . skip('a', () => {});\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertGreaterEqual(self.count(src), 1)
+
+    def test_a_regex_literal_holding_a_quote_does_not_hide_a_marker(self):
+        for quote in ("`", "'", '"'):
+            with self.subTest(quote=quote):
+                src = f"const r = /{quote}/;\nit.only('a', () => {{}});\nconst q = /{quote}/;\n"
+                self.assertEqual(self.count(src), 1)
+
+    def test_more_focus_and_skip_forms_are_markers(self):
+        for marker in ("fit", "fdescribe", "xtest", "describe.todo", "it.todo"):
+            with self.subTest(marker=marker):
+                self.assertEqual(self.count(f"{marker}('works', () => {{ expect(1).toBe(1); }});\n"), 1)
+
+    def test_a_division_is_not_a_regex_and_exit_is_not_xit(self):
+        self.assertEqual(self.count("const a = b / c;\nconst exit = 1; it('ok', () => {});\nconst d = e / f;\n"), 0)
+
+
+class ReviewAssertionCounts(unittest.TestCase):
+    """C-07: evasions that keep the number but not the assertions."""
+
+    def count(self, src, path="tests/test_x.py"):
+        return tm.assertion_count(path, src)
+
+    def test_a_local_no_op_helper_named_assert_does_not_count(self):
+        src = "def assert_same(*a):\n    pass\n\n\ndef test_a():\n    assert_same(1, 1)\n    assert_same(2, 2)\n"
+        self.assertEqual(self.count(src), 0)
+
+    def test_a_local_helper_that_asserts_counts_in_its_body_and_at_its_calls(self):
+        src = "def assert_same(a, b):\n    assert a == b\n\n\ndef test_a():\n    assert_same(1, 1)\n"
+        self.assertEqual(self.count(src), 2)
+
+    def test_an_imported_assert_function_counts_and_an_unknown_one_does_not(self):
+        self.assertEqual(self.count("from numpy.testing import assert_allclose\ndef test_a():\n    assert_allclose(1, 1)\n"), 1)
+        self.assertEqual(self.count("from helpers import assert_same\ndef test_a():\n    assert_same(1, 1)\n"), 0)
+
+    def test_asserts_under_a_constant_false_branch_do_not_count(self):
+        for test in ("False", "0", "None"):
+            with self.subTest(test=test):
+                self.assertEqual(self.count(f"def test_a():\n    if {test}:\n        assert 1 == 1\n        assert 2 == 2\n"), 0)
+        self.assertEqual(self.count("def test_a():\n    if True:\n        assert 1 == 1\n"), 1)
+
+    def test_asserts_inside_a_try_that_swallows_assertion_errors_do_not_count(self):
+        swallow = ("AssertionError", "Exception", "BaseException")
+        for name in swallow:
+            with self.subTest(name=name):
+                src = f"def test_a():\n    try:\n        assert 1 == 2\n    except {name}:\n        pass\n"
+                self.assertEqual(self.count(src), 0)
+        self.assertEqual(self.count("def test_a():\n    try:\n        assert 1 == 2\n    except:\n        pass\n"), 0)
+        self.assertEqual(self.count("def test_a():\n    try:\n        assert 1 == 1\n    except ValueError:\n        pass\n"), 1)
+
+    def test_javascript_regex_literals_do_not_blank_the_expect_calls(self):
+        for quote in ("`", "'", '"'):
+            with self.subTest(quote=quote):
+                self.assertEqual(self.count(f"const r = /{quote}/;\nexpect(1).toBe(1);\nconst q = /{quote}/;\n", "web/a.test.js"), 1)
+        self.assertEqual(self.count("const a = b / c;\nexpect(1).toBe(1);\nconst d = e / f;\n", "web/a.test.js"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
