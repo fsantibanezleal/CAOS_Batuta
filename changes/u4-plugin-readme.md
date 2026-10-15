@@ -89,15 +89,24 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   `replay_timeout_seconds`, so the time grows with the number of those commits times the length of the suite (at most that many
   timeouts); a range with many test-changing commits is expensive, and CI should replay `<base>..HEAD` of a branch, not the whole
   history.
-- The head check point of `--replay` is the project's own run: it runs the locked tests in the repository's own checkout (the
-  working tree `check` was started in) with the configured test command and recorded outcomes, never in a replay worktree, so
-  product code cannot tell it from CI. When that working tree has uncommitted changes to tracked files the head check point fails
+- The head check point of `--replay` is the project's own run, one and the same process: it runs the configured `tdd.test_command`
+  VERBATIM (exactly the string the project and CI run: no wrapper, no `-c`, no added module, argument or environment) in the
+  repository's own checkout (the working tree `check` was started in), and reads each test's outcome from that command's own
+  output: unittest's verbose lines (`test_x (module.Class.test_x) ... ok|FAIL|ERROR|skipped|expected failure|unexpected
+  success`), a JUnit XML file the command writes (`--junitxml=<path>`) or the summary of `pytest -rA`. A command that does not
+  report each test (unittest without `-v`, pytest without `-rA` or `--junitxml`, a template with `{tests}`, any other runner) fails
+  the head check: `configure tdd.test_command to report each test (for example python -m unittest discover -v or pytest -rA
+  --junitxml=<path>)`. The default command, when none is configured, is `python -m unittest discover -s tests -p "test_*.py" -v`
+  (with `-t .` added when `tests` is a package: unittest cannot start from a folder that is not importable with it). The CI
+  workflow must call the same `tdd.test_command` string as its test step, then `tdd check --replay`. Product code cannot tell
+  the head run from CI. When that working tree has uncommitted changes to tracked files the head check point fails
   (`the working tree differs from HEAD; commit or run from a clean checkout`; CI checkouts are clean); untracked files are
-  fine. A range that ends before the checked-out HEAD runs its end in a temporary worktree. Intermediate check points and the
-  red replays run in temporary worktrees whose names are random and contain no `tdd`, `replay` or `batuta`, with the caller's
-  environment unchanged (no variable is added). Residual: code that recognises a worktree by other signals (a `.git` file in
-  place of a folder, the temp root's own path, which is the configured `roots.temp`) can hide intermediate states only; the
-  head run and the CI run are the project's real runs.
+  fine. A range that ends before the checked-out HEAD runs its end in a temporary worktree and gets a `WARN` naming both commits.
+  Intermediate check points keep a recording runner (a result class that records each test id's outcome) and the red replays
+  run in temporary worktrees whose names are random and contain no `tdd`, `replay` or `batuta`, with the caller's environment
+  unchanged (no variable is added). Known limit: an intermediate worktree is detectable (by its `.git` file, the temp root's own
+  path, which is the configured `roots.temp`, or the recording runner); code that does so can hide intermediate states only,
+  and nothing it hides ships, because the head runs in place and the CI run is the project's real run.
 - Known limits of the static rules: a skip built from a name made at run time in a test that is not locked is not seen, except
   `import_module` or `__import__` with a computed name, which is itself flagged; the runtime run above is the control for
   locked tests. A skip raised inside a test body at run time is seen by the run only as `skipped`.

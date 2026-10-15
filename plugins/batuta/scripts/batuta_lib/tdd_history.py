@@ -36,7 +36,11 @@ from batuta_lib import test_markers as tm
 from batuta_lib.output import item
 
 MIN_GIT = (2, 30)
-DEFAULT_TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py"'
+# The default reports each test (-v). `-t .` is added when `tests` is a package (unittest cannot start from a folder that is not
+# importable with it), so a repository whose tests are not a package runs it without.
+DEFAULT_TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
+NEEDS_REPORT = ("configure tdd.test_command to report each test (for example `python -m unittest discover -v` or "
+                "`pytest -rA --junitxml=<path>`)")
 DEFAULT_REPLAY_TIMEOUT = 300.0
 OVERRIDE_TRAILER = core.RESERVED_TRAILER
 NEUTRAL_PREFIX = "w"   # temporary worktrees get random names that contain no `tdd`, `replay` or `batuta`
@@ -433,6 +437,90 @@ RUN_SCRIPT = (
     "    out = [{'id': i, 'outcome': o} for i, o in res.rec]\n"
     "sys.stdout.write('\\n' + json.dumps(out) + '\\n')\n"
 )
+
+
+_VERBOSE_LINE = re.compile(r"^(\w+) \(([\w.]+)\)(?: \([^()\n]*\))*(?:\n[^\n]*?)? \.\.\. (.*?)\s*$", re.MULTILINE)
+_PYTEST_LINE = re.compile(r"^(PASSED|FAILED|ERROR|XFAIL|XPASS|SKIPPED)(?: \[\d+\])? (\S+::\S+)", re.MULTILINE)
+_PYTEST_WORD = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "XFAIL": "expected failure", "XPASS": "unexpected success",
+                "SKIPPED": "skipped"}
+
+
+def parse_unittest_verbose(text):
+    """[{"id", "outcome"}] from the output of a verbose unittest run (`test_x (module.Class.test_x) ... ok|FAIL|ERROR|skipped
+    '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between)."""
+    out = []
+    for match in _VERBOSE_LINE.finditer(text):
+        result = match.group(3)
+        if result == "ok":
+            outcome = "passed"
+        elif result == "FAIL":
+            outcome = "failed"
+        elif result == "ERROR":
+            outcome = "error"
+        elif result.startswith("skipped"):
+            outcome = "skipped"
+        elif result.startswith("expected failure"):
+            outcome = "expected failure"
+        elif result.startswith("unexpected success"):
+            outcome = "unexpected success"
+        else:
+            continue
+        out.append({"id": match.group(2), "outcome": outcome})
+    return out
+
+
+def parse_pytest_summary(text):
+    """[{"id", "outcome"}] from the short test summary of `pytest -rA`; a skipped test without a node id is not listed."""
+    return [{"id": m.group(2), "outcome": _PYTEST_WORD[m.group(1)]} for m in _PYTEST_LINE.finditer(text)]
+
+
+def _exe(token):
+    """The command as written; `python` or `python3` only when the machine has no such name on its path."""
+    return sys.executable if token in ("python", "python3") and shutil.which(token) is None else token
+
+
+def head_run(command, tests_is_package, repo):
+    """(argv, parser) for the head check: the configured test command VERBATIM (no wrapper, no `-c`, no added module, argument or
+    environment), run in the repository's own checkout, and the parser of the per-test outcomes that command prints itself: a verbose
+    unittest run, a JUnit XML file the command writes (`--junitxml=<path>`, read from `repo`) or `pytest -rA`. Raises ValueError with
+    the instruction to configure the command when it would not report each test. The default command gets `-t .` when `tests` is a
+    package."""
+    tokens = shlex.split(command)
+    if command.strip() == DEFAULT_TEST_COMMAND and tests_is_package:
+        tokens += ["-t", "."]
+    if not tokens or any("{tests}" in t for t in tokens):
+        raise ValueError(f"the test command is a template or empty, but the head runs the project's own command as it is; {NEEDS_REPORT}")
+    if "pytest" in tokens or Path(tokens[0]).stem.lower() in ("pytest", "py.test"):
+        junit = None
+        for i, t in enumerate(tokens):
+            if t.startswith(("--junitxml=", "--junit-xml=")):
+                junit = t.split("=", 1)[1]
+            elif t in ("--junitxml", "--junit-xml") and i + 1 < len(tokens):
+                junit = tokens[i + 1]
+        report_all = any(re.fullmatch(r"-r[a-zA-Z]*A[a-zA-Z]*", t) for t in tokens) or any(
+            t == "-r" and i + 1 < len(tokens) and "A" in tokens[i + 1] for i, t in enumerate(tokens))
+        if junit:
+            path = Path(junit) if Path(junit).is_absolute() else Path(repo) / junit
+
+            def parse(_output):
+                try:
+                    return parse_junit(path.read_text(encoding="utf-8"))
+                except (OSError, ElementTree.ParseError) as exc:
+                    raise ValueError(f"no JUnit report at {junit} ({exc})") from exc
+
+            parse.report = path
+        elif report_all:
+            parse = parse_pytest_summary
+        else:
+            raise ValueError(f"the pytest command reports no per-test outcome; {NEEDS_REPORT}")
+    elif "unittest" in tokens:
+        if not any(t in ("-v", "--verbose") or re.fullmatch(r"-v+", t) for t in tokens):
+            raise ValueError(f"the unittest command reports no per-test outcome (no -v); {NEEDS_REPORT}")
+        parse = parse_unittest_verbose
+    else:
+        raise ValueError(f"the test command is neither unittest nor pytest and reports no per-test outcome I can read; {NEEDS_REPORT}")
+    tokens[0] = _exe(tokens[0])
+    return tokens, parse
 
 
 def listing_command(command, tests_is_package, junit_dir=None):
@@ -978,12 +1066,38 @@ class Checker:
         finally:
             self._cleanup(tree, work)
 
+    def _run_head(self, sha):
+        """(found, error) of the head check point. The configured test command runs verbatim in the repository's own checkout, as
+        the project and CI run it, and the outcome of each test is read from the command's own output (a verbose unittest run, a
+        JUnit report it writes, or pytest -rA): one process, the real one, so nothing in it can tell a check from a run. (None, None)
+        when the point failed here already: a working tree that differs from HEAD, or a command that reports no per-test outcome."""
+        dirty = run(self.repo, "status", "--porcelain", "--untracked-files=no").stdout.decode("utf-8", "replace").strip()
+        if dirty:
+            self.fail(f"commit {sha[:7]}: the working tree differs from HEAD; commit or run from a clean checkout "
+                      f"(the head is run in the checkout, so it must be the head's content)")
+            return None, None
+        has_init = (self.repo / "tests" / "__init__.py").is_file()
+        try:
+            argv, parse = head_run(self.s.test_command, has_init, self.repo)
+        except ValueError as exc:
+            self.fail(f"commit {sha[:7]}: {exc}")
+            return None, None
+        found, error = self._list_tests(sha, (argv, parse), in_place=True)
+        if error is None and not found:
+            self.fail(f"commit {sha[:7]}: the test command printed no per-test outcome; {NEEDS_REPORT}")
+            return None, None
+        return found, error
+
     def _list_tests(self, sha, listing, in_place=False):
-        """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text. `in_place` runs it in the
-        repository's own checkout (the head), otherwise in a temporary worktree of neutral name; the environment is never touched."""
+        """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text. `in_place` runs the command
+        as it is in the repository's own checkout (the head), otherwise in a temporary worktree of neutral name; the environment is
+        never touched."""
         argv, parse = listing
+        report = getattr(parse, "report", None)
         try:
             if in_place:
+                if report is not None:
+                    Path(report).unlink(missing_ok=True)   # a stale report of an earlier run must not be read as this run's
                 proc = subprocess.run(argv, cwd=str(self.repo), capture_output=True, timeout=self.s.replay_timeout, check=False)
             else:
                 with self._worktree(sha) as tree:
@@ -1021,7 +1135,7 @@ class Checker:
         points = [sha for sha, kind, changes in self.walked if kind in ("green", "refactor") or self._touches_tests(changes)]
         if end_sha not in points:
             points.append(end_sha)
-        warned, reported = False, set()
+        warned, head_warned, reported = False, False, set()
         for sha in points:
             pos = self.commit_pos.get(sha, len(self.commit_pos))
             live = tdd_lock.live_entries(self.lock_at(sha)[0] or [])
@@ -1048,23 +1162,25 @@ class Checker:
                     checks[path] = (task, source, ids)
             if not checks:
                 continue
-            # a tests folder that is a package at this commit is discovered from the root, as the replay does
-            listing = self._listing_command(sha)
-            if listing is None:
-                if not warned:
-                    self.warn("the runtime comparison of the locked tests needs a pytest or unittest discovery test command; it was not run")
-                    warned = True
-                break
-            in_place = False
-            if sha == end_sha and head(self.repo) == end_sha:
-                # the head is the project's own run, in the checkout `check` was started in: product code cannot tell it from CI
-                dirty = run(self.repo, "status", "--porcelain", "--untracked-files=no").stdout.decode("utf-8", "replace").strip()
-                if dirty:
-                    self.fail(f"commit {sha[:7]}: the working tree differs from HEAD; commit or run from a clean checkout "
-                              f"(the head is run in the checkout, so it must be the head's content)")
+            checked_out = head(self.repo)
+            if sha == end_sha and checked_out == end_sha:
+                found, error = self._run_head(sha)
+                if found is None and error is None:
+                    continue   # the working tree differs from HEAD, or the command reports no per-test outcome: already failed
+            else:
+                if sha == end_sha and checked_out and not head_warned:
+                    head_warned = True
+                    self.warn(f"the range ends at {end_sha[:7]} but the checked-out HEAD is {checked_out[:7]}: the end of the range was "
+                              f"run in a temporary worktree, not in the project's own checkout")
+                # a tests folder that is a package at this commit is discovered from the root, as the replay does
+                listing = self._listing_command(sha)
+                if listing is None:
+                    if not warned:
+                        self.warn("the runtime comparison of the locked tests needs a pytest or unittest discovery test command; "
+                                  "it was not run at the intermediate commits")
+                        warned = True
                     continue
-                in_place = True
-            found, error = self._list_tests(sha, listing, in_place)
+                found, error = self._list_tests(sha, listing)
             if error:
                 self.fail(f"commit {sha[:7]}: {error}; the locked tests cannot be shown to run")
                 continue
