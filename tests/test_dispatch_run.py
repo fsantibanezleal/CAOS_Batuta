@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _dispatch_support import (ENV, MODELS, REPLIES, DispatchCase, FakeResponse, FakeTransport, fake_key, good_report,  # noqa: E402
-                               make_fake_sdk, openai_reply)
+                               make_fake_sdk, openai_reply, partial_report)
 from test_brief_support import CONTRACTS, run, run_json  # noqa: E402
 
 from batuta_lib import contract, delegation  # noqa: E402
@@ -33,6 +33,9 @@ class Base(DispatchCase):
         patcher = mock.patch("time.sleep")
         patcher.start()
         self.addCleanup(patcher.stop)
+        checks = mock.patch.object(area, "_run_command", return_value=(0, "ok"))   # a brief's checks never run for real here
+        checks.start()
+        self.addCleanup(checks.stop)
 
     def ids(self, brief):
         return delegation.deliverable_ids(brief.read_text(encoding="utf-8"))
@@ -383,12 +386,12 @@ class SdkLane(Base):
         steps = [("init", "sess-1"), ("tool", "Bash", {"command": "ls"}), ("tool", "Read", {"file_path": "a"}),
                  ("write", str(self.report_path(brief)), good_report(self.ids(brief))), ("result", {})]
         sdk = make_fake_sdk([steps])
-        answers = iter([(0, "", ""), (2, "", "blocked by a guard"), (0, "", ""), (0, "", "")] * 4)
         calls = []
 
         def launcher(guard_id, payload_text, env):
             calls.append(guard_id)
-            return next(answers)
+            denied = guard_id == "guard-secrets" and json.loads(payload_text)["tool_name"] == "Read"
+            return (2, "", "blocked by a guard") if denied else (0, "", "")
 
         with mock.patch.object(area, "_launch_guard", side_effect=launcher):
             code, out, err = self.go(req, "--apply", sdk=sdk)
@@ -422,13 +425,28 @@ class SdkLane(Base):
         self.assertEqual(sdk.calls[0]["options"].max_budget_usd, 0.4)
         self.assertEqual(self.result_of(req)["status"], "over-budget")
 
-    def test_the_turn_limit_is_incomplete_with_the_reason(self):
+    def partial_steps(self, brief, **result):
+        return [("init", "sess-1"), ("write", str(self.report_path(brief)), partial_report(self.ids(brief))), ("result", result)]
+
+    def test_the_turn_limit_is_incomplete_with_the_reason_when_a_report_exists(self):
         brief, req = self.brief_and_request()
-        sdk = make_fake_sdk([[("init", "sess-1"), ("result", {"subtype": "error_max_turns", "is_error": True, "result": ""})]])
+        sdk = make_fake_sdk([self.partial_steps(brief, subtype="error_max_turns", is_error=True, result="")])
         code, out, _ = self.go(req, "--apply", sdk=sdk)
+        self.assertEqual(code, 2)
         result = self.result_of(req)
         self.assertEqual(result["status"], "incomplete")
         self.assertIn("turn limit", result["error"])
+
+    def test_a_run_that_ends_without_any_report_is_an_error_never_incomplete(self):
+        # C30: incomplete and defective are verdicts on a report, so no report means the run did not produce one
+        brief, req = self.brief_and_request()
+        sdk = make_fake_sdk([[("init", "sess-1"), ("result", {"subtype": "error_max_turns", "is_error": True, "result": ""})]])
+        code, out, _ = self.go(req, "--apply", sdk=sdk)
+        self.assertEqual(code, 1)
+        result = self.result_of(req)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("turn limit", result["error"])
+        self.assertNotIn("report", result)
 
     def test_the_briefs_checks_run_before_the_result_is_complete(self):
         brief, req = self.brief_and_request(checks=["python -m unittest", "git status --short"])
@@ -465,7 +483,7 @@ class SdkLane(Base):
 
     def test_an_agent_that_ends_blocked_is_reported_as_incomplete(self):
         brief, req = self.brief_and_request()
-        sdk = make_fake_sdk([[("init", "sess-1"), ("result", {"result": "BLOCKED: need a decision"})]])
+        sdk = make_fake_sdk([self.partial_steps(brief, result="BLOCKED: need a decision")])
         code, out, _ = self.go(req, "--apply", sdk=sdk)
         self.assertEqual(self.result_of(req)["status"], "incomplete")
         self.assertIn("need a decision", self.result_of(req)["error"])
@@ -498,7 +516,8 @@ class SdkLane(Base):
 
     def test_resume_continues_the_saved_session_within_the_remaining_cap(self):
         brief, req = self.brief_and_request(max_cost_usd=2.0)
-        first = [("init", "sess-9"), ("result", {"subtype": "error_max_turns", "is_error": True, "total_cost_usd": 1.5, "session_id": "sess-9", "result": ""})]
+        first = [("init", "sess-9"), ("write", str(self.report_path(brief)), partial_report(self.ids(brief))),
+                 ("result", {"subtype": "error_max_turns", "is_error": True, "total_cost_usd": 1.5, "session_id": "sess-9", "result": ""})]
         self.go(req, "--apply", sdk=make_fake_sdk([first]))
         res = req.with_name(req.name.replace("-request", "-result"))
         self.assertEqual(self.result_of(req)["status"], "incomplete")
@@ -518,7 +537,8 @@ class SdkLane(Base):
 
     def test_resume_with_the_cap_already_spent_is_refused(self):
         brief, req = self.brief_and_request(max_cost_usd=1.0)
-        first = [("init", "sess-9"), ("result", {"subtype": "error_max_turns", "is_error": True, "total_cost_usd": 1.0, "session_id": "sess-9", "result": ""})]
+        first = [("init", "sess-9"), ("write", str(self.report_path(brief)), partial_report(self.ids(brief))),
+                 ("result", {"subtype": "error_max_turns", "is_error": True, "total_cost_usd": 1.0, "session_id": "sess-9", "result": ""})]
         self.go(req, "--apply", sdk=make_fake_sdk([first]))
         res = req.with_name(req.name.replace("-request", "-result"))
         code, out, _ = run("dispatch", "resume", "--result", res, "--root", self.root, "--apply", env=ENV)

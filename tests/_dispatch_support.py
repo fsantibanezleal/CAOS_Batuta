@@ -68,7 +68,13 @@ REPLIES = {"openai": openai_reply, "gemini": gemini_reply, "bedrock": bedrock_re
 
 
 def good_report(ids=("D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8")):
-    return report_text([(i, "DONE", "`a`") for i in ids])
+    extra = ("\n## Red run\n`python -m unittest` exit 1\n\n## Green run\n`python -m unittest` exit 0\n\n"
+             "## Production path\n`python run.py` exit 0, output attached\n")
+    return report_text([(i, "DONE", "`a`") for i in ids], extra=extra)
+
+
+def partial_report(ids=("D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8")):
+    return report_text([(i, "PARTIAL", "half done") for i in ids])
 
 
 def make_fake_sdk(calls):
@@ -168,7 +174,8 @@ class DispatchCase(TempCase):
         if kind:
             text = re.sub(r"^- kind: .*$", f"- kind: {kind}", text, count=1, flags=re.M)
         if checks:
-            text += "\n## Checks\n" + "\n".join(f"- C{n}: `{c}` exits 0" for n, c in enumerate(checks, 1)) + "\n"
+            body = chr(10).join(f"- C{n}: `{c}` exits 0" for n, c in enumerate(checks, 1))
+            text = re.sub(r"^## Checks.*?(?=^## |\Z)", lambda _m: "## Checks" + chr(10) + body + chr(10) + chr(10), text, count=1, flags=re.M | re.S)
         path.write_text(text, encoding="utf-8", newline="\n")
         return path
 

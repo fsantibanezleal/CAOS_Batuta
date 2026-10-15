@@ -123,10 +123,10 @@ class Plan(DispatchCase):
 
     def test_an_unpriced_model_refuses_the_paid_lane_unless_allowed(self):
         self.config()
-        code, out, _ = self.plan(self.brief(), "--lane", "provider:openai", "--model", "mystery-1")
+        code, out, _ = self.plan(self.brief(agent="searcher"), "--lane", "provider:openai", "--model", "mystery-1")
         self.assertEqual(code, 1)
         self.assertRegex(out, r"REFUSED.*no verified price.*mystery-1")
-        code, out, _ = self.plan(self.brief("beta"), "--lane", "provider:openai", "--model", "mystery-1", "--allow-unpriced")
+        code, out, _ = self.plan(self.brief("beta", "searcher"), "--lane", "provider:openai", "--model", "mystery-1", "--allow-unpriced")
         self.assertIn(code, (0, 2), out)
         self.assertIn("WARN", out)
 
