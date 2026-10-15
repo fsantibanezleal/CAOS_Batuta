@@ -456,6 +456,15 @@ class Repo:
                     return sha, p
         return None
 
+    def beyond_limit(self, older, newer, *, inclusive=False):
+        """True when part of the range between two commits is older than the LOG_LIMIT commits whose files were read."""
+        try:
+            i_old, i_new = self.history.index(older), self.history.index(newer)
+        except ValueError:
+            return False
+        lo = i_new if inclusive else i_new + 1
+        return lo < i_old and i_old - 1 >= LOG_LIMIT
+
     def full(self, text):
         return resolve_commit(self.history, text)
 
@@ -512,6 +521,11 @@ def gate_evidence_items(root, feature, g, cfg, repo, today, current, prev):
     return out, full
 
 
+def limit_warning():
+    return item("WARN", f"older changes to judged paths were not compared: the range holds more commits than the limit of {LOG_LIMIT} "
+                        f"whose files are read, so evidence older than that is not checked against them")
+
+
 def predates_items(repo, feature, gate, full, upper, *, inclusive, label):
     """FAIL items when a path the gate judges changed after the gate's evidence commit `full` and before `upper` (the next
     passed gate's evidence commit, exclusive; or the head, inclusive, when a gate is being passed now)."""
@@ -520,7 +534,7 @@ def predates_items(repo, feature, gate, full, upper, *, inclusive, label):
         return []
     hit = repo.judged_change_between(full, upper, predicate, inclusive=inclusive)
     if hit is None:
-        return []
+        return [limit_warning()] if repo.beyond_limit(full, upper, inclusive=inclusive) else []
     return [item("FAIL", f"evidence for {gate} predates the change: {hit[1]} changed in {hit[0][:12]}, after the evidence commit "
                          f"{full[:12]} and before {label}; the gate judges that path, so its evidence must be for that change or later",
                  f"specs/{feature}/evidence/{gate}.md")]
@@ -648,6 +662,24 @@ def check_feature(root, feature, cfg, *, head=None, today=None, release=False, s
             evid.append((g, full))
     for (g, full), (g_next, next_full) in zip(evid, evid[1:]):     # each phase is checked at its own gate
         items.extend(predates_items(repo, feature, g, full, next_full, inclusive=False, label=f"the evidence for {g_next}"))
+    if evid and repo is not None and repo.ok:      # the change after the last passed gate is not reviewed yet: said, not failed
+        g, full = evid[-1]
+        predicate = judged(g, feature)
+        hit = repo.judged_change_between(full, repo.head, predicate, inclusive=True) if predicate else None
+        if hit:
+            items.append(item("WARN", f"{hit[1]} changed in {hit[0][:12]} after the evidence for {g} ({full[:12]}): the change after the "
+                                      f"last passed gate has not been reviewed", f"specs/{feature}/evidence/{g}.md"))
+        elif predicate and repo.beyond_limit(full, repo.head, inclusive=True):
+            items.append(limit_warning())
+    seen, unique = set(), []
+    for it in items:                                  # the same warning from several gates is said once
+        key = (it["tag"], it["message"]) if it["tag"] == "WARN" and "not compared" in it["message"] else None
+        if key in seen:
+            continue
+        if key:
+            seen.add(key)
+        unique.append(it)
+    items = unique
 
     if gates["L5-freeze"] == "passed":
         problems = approval_problems(root, feature, cfg)

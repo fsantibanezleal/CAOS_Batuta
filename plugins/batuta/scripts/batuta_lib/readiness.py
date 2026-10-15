@@ -345,7 +345,7 @@ def check_readiness(root, path, *, catalog=None, head=None, lag=0, release=False
             if asof is None:
                 items.append(item("WARN", f"{rel} is not committed: its age was not checked", rel))
             else:
-                behind = gate_model.GIT.count_since(root, asof, head or info[1], ["specs", gate_model.RECORD_PATH])
+                behind = gate_model.GIT.count_since(root, asof, head or info[1], ["specs", gate_model.RECORD_PATH, config.PROJECT_DIR])
                 if behind > lag:
                     items.append(item("FAIL", f"{rel} is {behind} commit(s) behind the head (as of {asof[:12]}) that changed files outside "
                                               f"specs/; allowed {lag}: regenerate it", rel))

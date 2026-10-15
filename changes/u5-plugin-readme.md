@@ -57,7 +57,10 @@ python scripts/batuta.py lessons check [--lessons FILE]
   a gate judges: L0 the spec, tasks and trace of the feature; L1 also the sizing; L2 the ADRs and technology decisions; L3 the
   contracts and catalog; L4 also the models; L5 the spec, contracts and decisions; L6 and L8 the code and the readiness documents;
   L7 the code and tests. Otherwise `gate check` fails with `evidence ... predates the change`. The coordination folder `.batuta/`
-  never counts as a change.
+  never counts as a change, and never ages the readiness document. A change to a path the newest passed gate judges, made after
+  its evidence, is a WARN (`the change after the last passed gate has not been reviewed`, exit 2), so a unit stopped at L7 with
+  later code is never green. Only the newest 500 commits of the history have their files read: when a range is longer, a WARN says
+  older judged changes were not compared and names the limit.
 - `gate tests-record` writes the contract-tests record (C34, `docs/design/contract-tests.json`), validated before it is written:
   `--run` (runs the python test files the catalog names, one unittest discovery each; no test run is a skip) and `--result
   <test path>=fail|skip` (repeatable; a pass is recorded only by `--run`, never typed in). It records HEAD and refuses a working
