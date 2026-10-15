@@ -264,5 +264,46 @@ class N6GuardDiscoveryAndLaunch(unittest.TestCase):
         self.assertIn("timed out", err)
 
 
+class RealLocalCall(unittest.TestCase):
+    """The standard-library path end to end against a local server (loopback only, no outside network)."""
+
+    def test_a_post_and_an_error_status_round_trip_through_http_client(self):
+        import http.server
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                data = self.rfile.read(length)
+                code = 503 if self.path.startswith("/fail") else 200
+                body = json.dumps({"echo": data.decode("utf-8"), "path": self.path}).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                return None
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=server.serve_forever)
+        worker.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            ok = transport.UrllibTransport().send("POST", base + "/v1/x?a=1", {"Content-Type": "application/json"}, b'{"k": 1}', 10)
+            self.assertEqual(ok.status, 200)
+            self.assertEqual(json.loads(ok.body), {"echo": '{"k": 1}', "path": "/v1/x?a=1"})
+            bad = transport.UrllibTransport().send("POST", base + "/fail", {}, b"{}", 10)
+            self.assertEqual(bad.status, 503)
+            with self.assertRaises(transport.TransportError) as cm:
+                transport.UrllibTransport().send("POST", "http://127.0.0.1:9/x", {}, b"{}", 5)     # nothing listens on port 9
+            self.assertFalse(cm.exception.sent)
+        finally:
+            server.shutdown()
+            worker.join(10)
+            server.server_close()
+
+
+
 if __name__ == "__main__":
     unittest.main()

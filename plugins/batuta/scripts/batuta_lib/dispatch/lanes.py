@@ -10,9 +10,9 @@ budget, an upper bound, never 0.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import functools
-import importlib.util
 import json
 import random
 import re
@@ -24,6 +24,7 @@ from batuta_lib import delegation
 from batuta_lib.dispatch import adapters, prices
 from batuta_lib.dispatch import transport as tr
 from batuta_lib.dispatch.redact import redact
+from batuta_lib.guards import shell as guardshell
 from batuta_lib.guards import text as guardtext
 
 MAX_RESUMES = 3                 # resumes of one session after an API error, then BLOCKED
@@ -37,7 +38,6 @@ TOOL_LESS_BLOCKED_KINDS = ("implement", "job", "skeleton", "run")   # kinds that
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 SHELL_TOOLS = ("Bash", "PowerShell", "Monitor")
 SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)", re.IGNORECASE)
-HOOK_LAUNCHER = Path(__file__).resolve().parents[2] / "hook.py"
 AREAS_DIR = Path(__file__).resolve().parents[1] / "areas"
 
 PROVIDER_SYSTEM = """You are executing a delegated brief WITHOUT tools: you cannot read files, run commands or write files.
@@ -260,46 +260,81 @@ def allowed_budget_cost(price, est_in, max_out):
     return prices.cost_usd(price, est_in, max_out) if price else 0.0
 
 
+class _Budget:
+    """What the attempts of one provider call have been charged so far (a running upper bound, never below the truth)."""
+
+    def __init__(self):
+        self.charged = 0.0
+        self.tokens_in = 0
+        self.tokens_out = 0
+        self.max_out = 0
+
+
 def run_provider(request, brief_text, *, kind, endpoint, credential, transport, price, max_cost, deadline,
                  report_only=False, clock=time.monotonic):
-    """One tool-less call to a provider. Returns an Outcome whose status is `ran` (the area runs the gates on the report),
-    `over-budget`, `error` or `timeout`. `max_cost` is what is left of the task's cap. The error text is redacted here
-    with the credential. A call that may have billed without usage figures is charged its allowed budget."""
+    """One tool-less call to a provider, with its bounded retries. Returns an Outcome whose status is `ran` (the area runs the
+    gates on the report), `over-budget`, `error` or `timeout`. `max_cost` is what is left of the task's cap.
+
+    Every attempt that may have billed (an error after the request was sent, a 5xx or 408 answer) is charged its full allowed
+    budget, and the next attempt is sized to what is left of the cap; when that cannot cover an attempt the call stops BLOCKED
+    (`over-budget`). A 429 answer and an error before the send retry without a charge. The error text is redacted here."""
     system, prompt = provider_messages(request, brief_text)
     est_in = estimate_tokens(system + prompt)
-    max_out = plan_output_budget(price, est_in, max_cost)
-    if max_out == 0:
+    if plan_output_budget(price, est_in, max_cost) == 0:
         return Outcome("over-budget", f"the projected cost of this call exceeds what is left of the cap ({max_cost} USD); nothing was sent")
     if clock() >= deadline:
         return Outcome("timeout", "the time limit ended before the call was made")
-    charged = allowed_budget_cost(price, est_in, max_out)
+    budget = _Budget()
+
+    def prepare(attempt):
+        max_out = plan_output_budget(price, est_in, max_cost - budget.charged)
+        if max_out == 0:
+            raise tr.StopRetries(f"what is left of the cap ({round(max_cost - budget.charged, 6)} USD) cannot cover another attempt")
+        budget.max_out = max_out
+        return max_out
+
+    def charge(attempt, why):
+        budget.charged += allowed_budget_cost(price, est_in, budget.max_out)
+        budget.tokens_in += est_in
+        budget.tokens_out += budget.max_out
+
+    def outcome(status, error, extra_cost=0.0, extra_in=0, extra_out=0):
+        out = Outcome(status, redact(error, [credential]))
+        out.cost_usd = round(budget.charged + extra_cost, 6)
+        out.tokens_in, out.tokens_out = budget.tokens_in + extra_in, budget.tokens_out + extra_out
+        return out
+
     try:
-        done = adapters.complete(kind, transport, model=request["model"], system=system, prompt=prompt, max_tokens=max_out,
-                                 credential=credential, endpoint=endpoint, timeout=request["timeout_s"], deadline=deadline, clock=clock)
+        done = adapters.complete(kind, transport, model=request["model"], system=system, prompt=prompt, max_tokens=None,
+                                 credential=credential, endpoint=endpoint, timeout=request["timeout_s"], deadline=deadline, clock=clock,
+                                 prepare=prepare, charge=charge)
+    except tr.StopRetries as exc:
+        out = outcome("over-budget", f"{exc}; the attempts already made were charged their allowed budgets ({round(budget.charged, 6)} USD)")
+        return out
     except tr.TransportFailure as exc:
-        out = Outcome("timeout" if "time limit" in str(exc) else "error", redact(str(exc), [credential]))
-        if exc.ambiguous:
-            out.tokens_in, out.tokens_out, out.cost_usd = est_in, max_out, charged
-            out.error += f" (the call may have billed without usage figures: its allowed budget of {charged} USD is charged)"
+        out = outcome("timeout" if "time limit" in str(exc) else "error", str(exc))
+        if budget.charged or budget.tokens_in:
+            out.error += f" (attempts that may have billed were charged their allowed budgets: {round(budget.charged, 6)} USD)"
         return out
     except adapters.AdapterError as exc:
-        out = Outcome("error", redact(str(exc), [credential]))
-        if exc.billed:
-            if exc.usage:
-                out.tokens_in, out.tokens_out = exc.usage
-                out.cost_usd = prices.cost_usd(price, *exc.usage) if price else 0.0
-                out.error += " (the cost is that of the usage the answer carries)"
-            else:
-                out.tokens_in, out.tokens_out, out.cost_usd = est_in, max_out, charged
-                out.error += f" (the answer carries no usage figures: the upper bound of {charged} USD is charged)"
+        if not exc.billed:
+            return outcome("error", str(exc))
+        if exc.usage:
+            cost = prices.cost_usd(price, *exc.usage) if price else 0.0
+            out = outcome("error", str(exc) + " (the cost of that attempt is that of the usage the answer carries)", cost, *exc.usage)
+        else:
+            cost = allowed_budget_cost(price, est_in, budget.max_out)
+            out = outcome("error", str(exc) + f" (the answer carries no usage figures: the upper bound of {cost} USD is charged for that attempt)",
+                          cost, est_in, budget.max_out)
         return out
     cost = prices.cost_usd(price, done.tokens_in, done.tokens_out) if price else 0.0
-    out = Outcome("ran", tokens_in=done.tokens_in, tokens_out=done.tokens_out, cost_usd=cost)
+    out = Outcome("ran", cost_usd=round(budget.charged + cost, 6), tokens_in=budget.tokens_in + done.tokens_in,
+                  tokens_out=budget.tokens_out + done.tokens_out)
     if price is None:
         out.notes.append("unpriced: the cost is recorded as 0 and the cap could not be enforced on it")
-    if cost > max_cost + 1e-12:
+    if out.cost_usd > max_cost + 1e-12:
         out.status = "over-budget"
-        out.error = f"the call cost {cost} USD, over what was left of the cap ({max_cost} USD; partial cost recorded, the answer is discarded)"
+        out.error = f"the call cost {out.cost_usd} USD, over what was left of the cap ({max_cost} USD; partial cost recorded, the answer is discarded)"
         return out
     report, patch = split_reply(done.text)
     if report_only:
@@ -316,23 +351,26 @@ def run_provider(request, brief_text, *, kind, endpoint, credential, transport, 
 # ------------------------------------------------------------------ sdk lane: guards and the policy
 
 
-_HOOK_MODULE = []
-
-
-def _launcher_module():
-    if not _HOOK_MODULE:
-        spec = importlib.util.spec_from_file_location("batuta_hook_launcher_for_dispatch", HOOK_LAUNCHER)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _HOOK_MODULE.append(module)
-    return _HOOK_MODULE[0]
-
-
 def default_guards():
-    """The guard handler ids of the guard area, found as the launcher finds them (the literal HOOKS dict, read with ast):
-    every id that starts with `guard-`, in declaration order."""
-    found, _problems = _launcher_module().discover(AREAS_DIR)
-    return [ident for ident in found if ident.startswith("guard-")]
+    """The guard handler ids of the guard area, read the way the launcher reads them (the literal `HOOKS` dict of each area
+    module, parsed with `ast`, nothing imported or executed): every id that starts with `guard-`, in declaration order."""
+    ids = []
+    for path in sorted(AREAS_DIR.glob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8-sig")
+            if "HOOKS" not in source:
+                continue
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)] if isinstance(node, ast.Assign) else []
+            if "HOOKS" in targets and isinstance(node.value, ast.Dict):
+                for key in node.value.keys:
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.startswith("guard-") \
+                            and key.value not in ids:
+                        ids.append(key.value)
+    return ids
 
 
 def guard_entries_from_registry(path):
@@ -443,7 +481,27 @@ def _write_allowed(target, root, allowed, extra_roots):
 
 
 def _matches(matcher, tool_name):
+    """Does an entry's matcher select the tool (as Claude Code applies it)? Raises re.error for an invalid pattern."""
     return not matcher or matcher == "*" or re.fullmatch(matcher, tool_name) is not None
+
+
+NO_WRITE = ("/dev/null", "/dev/stdout", "/dev/stderr", "nul", "$null", "-")
+
+
+def shell_write_violations(command, root, allowed, extra_roots):
+    """The write targets of a shell command that fall outside the write scope, the report and the extra roots. The targets come
+    from the guards' own shell parser (redirects, tee, cp, mv, rm, touch, sed -i, PowerShell cmdlets, nested commands); a target
+    that cannot be resolved (a variable, `~`, a wildcard) counts as outside."""
+    folded = guardtext.deobfuscate(guardtext.normalize(command))
+    bad = []
+    for target in guardshell.write_targets_of(folded):
+        target = target.strip().strip("'\"")
+        if not target or target.lower() in NO_WRITE:
+            continue
+        if any(ch in target for ch in "$%*?~") or not _write_allowed(target, root, allowed, extra_roots):
+            if target not in bad:
+                bad.append(target)
+    return bad
 
 
 def make_policy(guard_ids, launcher, *, cwd, fail_closed=(), env=None, scope=None, entries=None):
@@ -477,12 +535,23 @@ def make_policy(guard_ids, launcher, *, cwd, fail_closed=(), env=None, scope=Non
             target = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
             if not _write_allowed(target, root, allowed, extra_roots):
                 return _deny(f"dispatch policy: {name} on {target or '(no path)'} is outside the write scope of the brief")
+        if scope is not None and name in SHELL_TOOLS:
+            root, allowed, extra_roots = scope
+            outside = shell_write_violations(str(tool_input.get("command", "")), root, allowed, extra_roots)
+            if outside:
+                return _deny("dispatch policy: the command writes outside the write scope of the brief: " + ", ".join(outside[:5]))
         payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": name, "tool_input": tool_input, "cwd": str(cwd)})
         denied, asked = None, None
         for entry in plan:
-            if not _matches(entry.get("matcher"), name):
-                continue
             gid = entry["id"]
+            try:
+                selected = _matches(entry.get("matcher"), name)
+            except re.error:
+                denied = denied or _deny(f"guard {gid} has a matcher that is not a valid regular expression ({entry.get('matcher')!r}): "
+                                         "the call is denied, failing closed")
+                continue
+            if not selected:
+                continue
             code, out, err = await asyncio.to_thread(run_guard, gid, payload, entry.get("timeout"))
             decision = None
             if code == 2:

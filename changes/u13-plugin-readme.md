@@ -46,3 +46,7 @@ python scripts/batuta.py dispatch resume --result FILE [--apply] [--hours H] [--
 - Bedrock: name the inference profile id in `--model`, for example `global.anthropic.claude-sonnet-5-5`; Bedrock and Vertex rows of the
   price table are unknown, so those lanes need `--allow-unpriced` (the cost cap then cannot be enforced and the cost is recorded as 0
   and for a call that may have billed without usage figures only the token estimates are recorded, because an unpriced model has no rate to charge).
+- Retries and cost: a retry is charged when the first attempt may have billed (an error after the send, a 5xx answer) and is sized to
+  what is left of the cap; a 429 answer and a connection error before the send are free. A run of read timeouts therefore ends
+  `over-budget` once the cap cannot cover another attempt. The shell-write check of the sdk policy cannot see writes made by code
+  inside an interpreter (`python -c "open(...)"`): that stays with the brief's scope and the guards.

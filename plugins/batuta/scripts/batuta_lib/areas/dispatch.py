@@ -154,9 +154,16 @@ def _result_path(request_path):
     return Path(request_path).with_name(Path(name).stem + ".dispatch-result.json")
 
 
-def _state_path(result_path):
-    name = Path(result_path).name
-    return Path(result_path).with_name(name.replace("-result.json", "-state.json") if "-result.json" in name else name + ".state")
+def _state_path(root, cfg, run_id):
+    """The spend state of a task, keyed by the task (the brief id) under the coordination root, never by where a request or
+    a result file happens to lie: a request written elsewhere still sees what the task has spent."""
+    return delegation.delegation_dir(root, cfg) / f"{run_id}.dispatch-state.json"
+
+
+def _request_ref(root, request_path):
+    """How the state names the request file: relative to the project root when it lies inside, else as given."""
+    rel = _rel(root, request_path)
+    return rel if rel is not None else str(Path(request_path))
 
 
 def _ledger_path(root, cfg):
@@ -517,7 +524,7 @@ def _run_provider(args, root, cfg, request, ctx, brief_text, items, kind, state_
                 status, failures = _run_checks(lanes.extract_checks(brief_text), root, deadline, ctx.secrets)
                 if status != "complete":
                     error = failures
-    _write_atomic(state_file, json.dumps({"request": Path(args.request_path).name, "cost_usd": outcome.cost_usd,
+    _write_atomic(state_file, json.dumps({"request": _request_ref(root, args.request_path), "cost_usd": outcome.cost_usd,
                                           "tokens_in": outcome.tokens_in, "tokens_out": outcome.tokens_out}, indent=2) + "\n")
     return _result_doc(request, status, ctx.provider, report=report_rel, patch=patch_rel, outcome=outcome,
                        duration=_monotonic() - started, error=error or (None if status == "complete" else "the run did not complete"))
@@ -554,7 +561,7 @@ def _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state, stat
 
     def save(st):
         st["elapsed_s"] = round(base_elapsed + (_monotonic() - started), 3)
-        _write_atomic(state_file, json.dumps({"request": Path(args.request_path).name, **st}, indent=2) + "\n")
+        _write_atomic(state_file, json.dumps({"request": _request_ref(root, args.request_path), **st}, indent=2) + "\n")
 
     def verify(_outcome):
         status, failures = _run_checks(checks, root, deadline, ctx.secrets)
@@ -611,10 +618,10 @@ def _run(args, resume=None):
                                         "run a provider or subagent lane again")], "dispatch resume refused")
         if prior["status"] == "complete":
             return out([item("REFUSED", f"{prior['run_id']} is complete: there is nothing to resume")], "dispatch resume refused")
-        state_path = _state_path(result_path)
+        state_path = _state_path(root, cfg, prior["run_id"])
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            request_path = result_path.with_name(state["request"])
+            request_path = Path(state["request"]) if Path(state["request"]).is_absolute() else root / state["request"]
         except (OSError, ValueError, KeyError) as exc:
             return out([item("FAIL", f"the saved session state is missing or unreadable ({exc.__class__.__name__}): "
                                      "run the request again", state_path.as_posix())], "dispatch resume failed")
@@ -657,7 +664,7 @@ def _run(args, resume=None):
     if any(i["tag"] == "REFUSED" for i in items):
         return out([dict(i, message=redact(i["message"], secrets)) for i in items], f"dispatch {args.verb_name} refused")
     result_path = result_path if resume else _result_path(request_path)
-    state_file = _state_path(result_path)
+    state_file = _state_path(root, cfg, request["run_id"])
     lane = request["lane"]
     if lane == "subagent":
         spec = lanes.subagent_spec(request)

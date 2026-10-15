@@ -201,14 +201,23 @@ def _error_text(resp):
     return text[:ERROR_TEXT_LIMIT]
 
 
-def complete(kind, transport, *, model, system, prompt, max_tokens, credential, endpoint, timeout, deadline=None, **retry):
+def complete(kind, transport, *, model, system, prompt, max_tokens, credential, endpoint, timeout, deadline=None,
+             prepare=None, charge=None, **retry):
     """Send one call through `transport` (with the bounded retries) and return a Completion.
 
     Raises AdapterError (provider answer unusable or a client error status) or transport.TransportFailure (retries
     ended). Messages may echo what the provider sent, so the caller redacts them."""
-    url, headers, body = request_for(kind, model=model, system=system, prompt=prompt, max_tokens=max_tokens,
+    url, headers, body = request_for(kind, model=model, system=system, prompt=prompt, max_tokens=max_tokens or 1,
                                      credential=credential, endpoint=endpoint)
-    resp = tr.send_with_retries(transport, "POST", url, headers, body, timeout=timeout, deadline=deadline, **retry)
+    rebuild = None
+    if prepare is not None:
+        def rebuild(attempt):
+            # the caller sizes every attempt (`prepare` returns its max tokens), so a retry never asks for more than is left
+            _url, h, b = request_for(kind, model=model, system=system, prompt=prompt, max_tokens=prepare(attempt),
+                                     credential=credential, endpoint=endpoint)
+            return h, b
+    resp = tr.send_with_retries(transport, "POST", url, headers, body, timeout=timeout, deadline=deadline,
+                                prepare=rebuild, charge=charge, **retry)
     if resp.status < 200 or resp.status >= 300:
         raise AdapterError(f"the provider answered HTTP {resp.status}: {_error_text(resp)}")
     try:
