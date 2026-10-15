@@ -527,6 +527,96 @@ def _python_assertions(path, text, extra_modules=()):
     return counter.count
 
 
+# ------------------------------------------------------------------ forgery of a run from the inside
+
+_RUNNER_PREFIXES = ("unittest.TestCase", "unittest.TestResult", "unittest.TextTestResult", "unittest.TextTestRunner", "unittest.TestSuite",
+                    "unittest.TestLoader", "unittest.main", "unittest.runner", "unittest.result", "unittest.loader", "unittest.suite",
+                    "unittest.signals")
+_STD_STREAMS = ("sys.stdout", "sys.stderr", "sys.__stdout__", "sys.__stderr__")
+_HOOK_NAMES = {"pytest_collection_modifyitems", "pytest_collection_finish", "pytest_report_teststatus", "pytest_terminal_summary",
+               "pytest_sessionfinish"}
+_PARENT_STRINGS = ("wmic", "Win32_Process", "Get-CimInstance", "Get-WmiObject", "ParentProcessId")
+
+
+def _touches_runner(canon):
+    return any(canon == p or canon.startswith(p + ".") for p in _RUNNER_PREFIXES)
+
+
+def _docstring_ids(tree):
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                ids.add(id(first.value))
+    return ids
+
+
+def forgery_findings(path, text):
+    """Sorted descriptions of what in a Python file could forge a test run from the inside: assignments to or patches of the test
+    runner's own classes and functions, pytest hooks that change collection or reporting, a replacement of sys.stdout or sys.stderr,
+    and reads of the parent process. Empty for another language or a file that does not parse."""
+    if language_of(path) != "python":
+        return []
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    aliases = _aliases(tree)
+    docstrings = _docstring_ids(tree)
+    found = set()
+    psutil_used = any(v == "psutil" or v.startswith("psutil.") for v in aliases.values())
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+            targets = node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
+            for target in targets:
+                dotted = _dotted(target) if isinstance(target, ast.Attribute) else None
+                if not dotted:
+                    continue
+                canon = _canonical(dotted, aliases)
+                if _touches_runner(canon):
+                    found.add(f"patch of {canon}")
+                if any(canon == s or canon.startswith(s + ".") for s in _STD_STREAMS):
+                    found.add(f"replacement of {canon}" if canon.count(".") == 1 else f"patch of {canon}")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name in _HOOK_NAMES or node.name.startswith("pytest_runtest"):
+                found.add(f"pytest hook {node.name}")
+        elif isinstance(node, ast.Call):
+            func = _dotted(node.func)
+            canon = _canonical(func, aliases) if func else ""
+            if canon in ("setattr", "delattr") and node.args:
+                first = _dotted(node.args[0]) if isinstance(node.args[0], (ast.Name, ast.Attribute)) else None
+                if first:
+                    target = _canonical(first, aliases)
+                    if _touches_runner(target):
+                        found.add(f"patch of {target}")
+                    if target == "sys" and len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and node.args[1].value in ("stdout", "stderr"):
+                        found.add(f"replacement of sys.{node.args[1].value}")
+            if canon.endswith(("patch", "patch.object", "patch.dict")) and node.args:
+                first = node.args[0]
+                name = first.value if isinstance(first, ast.Constant) and isinstance(first.value, str) else None
+                if name is None and isinstance(first, (ast.Name, ast.Attribute)) and _dotted(first):
+                    name = _canonical(_dotted(first), aliases)
+                if name and (_touches_runner(name) or name in _STD_STREAMS):
+                    found.add(f"patch of {name}")
+            if canon in ("os.getppid", "posix.getppid", "nt.getppid"):
+                found.add("read of the parent process (os.getppid)")
+        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            if psutil_used and node.attr in ("parent", "parents", "ppid"):
+                found.add(f"read of the parent process (psutil .{node.attr})")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            value = node.value
+            if "/proc/" in value and any(w in value for w in ("cmdline", "/stat", "status")):
+                found.add("read of /proc for a process command line or parent")
+            if any(w in value for w in _PARENT_STRINGS):
+                found.add("query of the process table for a parent")
+    if any(v == "os.getppid" for v in aliases.values()):   # from os import getppid
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and aliases.get(node.func.id) == "os.getppid":
+                found.add("read of the parent process (os.getppid)")
+    return sorted(found)
+
+
 # ------------------------------------------------------------------ public
 
 

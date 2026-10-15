@@ -234,6 +234,12 @@ def tree_paths(cwd, rev, prefix):
     return [p for p in out.split("\0") if p]
 
 
+def all_paths(cwd, rev):
+    """Every file path of a commit's tree."""
+    out = run(cwd, "ls-tree", "-r", "--name-only", "-z", rev).stdout.decode("utf-8", "replace")
+    return [p for p in out.split("\0") if p]
+
+
 def staged_paths(cwd):
     out = run(cwd, "diff", "--cached", "--name-only", "-z").stdout.decode("utf-8", "replace")
     return {p for p in out.split("\0") if p}
@@ -371,11 +377,14 @@ def compare_listing(path, base, listing):
         states = [h.get("outcome") or ("skipped" if h.get("skipped") else "passed") for h in hits]
         if not hits:
             problems.append(f"locked test {label} disappears from the runtime listing")
-        elif not any(s in ("passed", "failed", "error", "unexpected success") for s in states):
-            if "expected failure" in states:
-                problems.append(f"locked test {label} is reported as an expected failure at runtime")
-            else:
-                problems.append(f"locked test {label} is skipped at runtime")
+        elif "skipped" in states:
+            problems.append(f"locked test {label} is skipped at runtime")
+        elif "expected failure" in states:
+            problems.append(f"locked test {label} is reported as an expected failure at runtime")
+        elif "unexpected success" in states:
+            problems.append(f"locked test {label} is reported as an unexpected success at runtime")
+        elif len(hits) > 1 and not any("[" in h["id"] or "::" in h["id"] for h in hits):
+            problems.append(f"locked test {label} is reported more than once ({len(hits)} result lines): duplicate lines are forgery")
     return problems
 
 
@@ -439,7 +448,7 @@ RUN_SCRIPT = (
 )
 
 
-_VERBOSE_LINE = re.compile(r"^(\w+) \(([\w.]+)\)(?: \([^()\n]*\))*(?:\n[^\n]*?)? \.\.\. (.*?)\s*$", re.MULTILINE)
+_VERBOSE_LINE = re.compile(r"^(\w+) \(([\w.]+)\)((?: \([^()\n]*\))*)(?:\n[^\n]*?)? \.\.\. (.*?)\s*$", re.MULTILINE)
 _PYTEST_LINE = re.compile(r"^(PASSED|FAILED|ERROR|XFAIL|XPASS|SKIPPED)(?: \[\d+\])? (\S+::\S+)", re.MULTILINE)
 _PYTEST_WORD = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "XFAIL": "expected failure", "XPASS": "unexpected success",
                 "SKIPPED": "skipped"}
@@ -450,7 +459,7 @@ def parse_unittest_verbose(text):
     '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between)."""
     out = []
     for match in _VERBOSE_LINE.finditer(text):
-        result = match.group(3)
+        result = match.group(4)
         if result == "ok":
             outcome = "passed"
         elif result == "FAIL":
@@ -465,8 +474,66 @@ def parse_unittest_verbose(text):
             outcome = "unexpected success"
         else:
             continue
-        out.append({"id": match.group(2), "outcome": outcome})
+        out.append({"id": match.group(2), "outcome": outcome, "sub": bool(match.group(3))})
     return out
+
+
+_RAN = re.compile(r"^Ran (\d+) tests?\b", re.MULTILINE)
+_SUMMARY = re.compile(r"^(?:OK|FAILED)(?: \(([^)\n]*)\))?\s*$", re.MULTILINE)
+_TALLY_KEYS = (("failed", "failures"), ("error", "errors"), ("skipped", "skipped"), ("expected failure", "expected failures"),
+               ("unexpected success", "unexpected successes"))
+
+
+def check_unittest_run(text):
+    """The per-test lines of a verbose unittest run, checked against the runner's own summary: the number of result lines must equal
+    `Ran N tests` and the counts of failures, errors, skips, expected failures and unexpected successes must equal the tally after
+    it, so lines added, removed or rewritten by the code under test do not match. Raises ValueError on a mismatch."""
+    entries = parse_unittest_verbose(text)
+    ran, summary = _RAN.findall(text), _SUMMARY.findall(text)
+    if not ran or not summary:
+        raise ValueError("the output has no `Ran N tests` summary and result line of the runner")
+    lines = [e for e in entries if not e["sub"]]
+    if len(lines) != int(ran[-1]):
+        raise ValueError(f"{len(lines)} result lines but the runner reports `Ran {ran[-1]} tests`: lines were added or are missing")
+    tally = {}
+    for pair in summary[-1].split(","):
+        if "=" in pair:
+            key, _, number = pair.partition("=")
+            tally[key.strip()] = int(number) if number.strip().isdigit() else 0
+    counted = {}
+    for e in entries:
+        counted[e["outcome"]] = counted.get(e["outcome"], 0) + 1
+    for outcome, key in _TALLY_KEYS:
+        if counted.get(outcome, 0) != tally.get(key, 0):
+            raise ValueError(f"{counted.get(outcome, 0)} result lines say {outcome} but the runner's summary counts {key}={tally.get(key, 0)}")
+    return entries
+
+
+def check_junit(text):
+    """A JUnit report checked against its own counts: each testsuite's `tests` attribute against its testcase elements."""
+    root = ElementTree.fromstring(text)
+    declared = sum(int(s.get("tests", "0")) for s in root.iter("testsuite"))
+    entries = parse_junit(text)
+    if declared != len(entries):
+        raise ValueError(f"{len(entries)} result lines but the report declares tests={declared}")
+    return entries
+
+
+_PYTEST_ANY = re.compile(r"^(PASSED|FAILED|ERROR|XFAIL|XPASS|SKIPPED)\b", re.MULTILINE)
+_PYTEST_COUNT = re.compile(r"(\d+) (passed|failed|errors?|xfailed|xpassed|skipped)\b")
+
+
+def check_pytest_summary(text):
+    """`pytest -rA` lines checked against the final tally (`N passed, M failed, ...`)."""
+    entries = parse_pytest_summary(text)
+    lines = len(_PYTEST_ANY.findall(text))
+    finals = [ln for ln in text.splitlines() if re.search(r"\b(passed|failed|error|errors|skipped|xfailed|xpassed)\b.* in [\d.]+s", ln)]
+    if not finals:
+        raise ValueError("the output has no final tally of the runner")
+    declared = sum(int(n) for n, _ in _PYTEST_COUNT.findall(finals[-1]))
+    if lines != declared:
+        raise ValueError(f"{lines} result lines but the runner's final tally counts {declared}: lines were added or are missing")
+    return entries
 
 
 def parse_pytest_summary(text):
@@ -504,19 +571,19 @@ def head_run(command, tests_is_package, repo):
 
             def parse(_output):
                 try:
-                    return parse_junit(path.read_text(encoding="utf-8"))
+                    return check_junit(path.read_text(encoding="utf-8"))
                 except (OSError, ElementTree.ParseError) as exc:
                     raise ValueError(f"no JUnit report at {junit} ({exc})") from exc
 
             parse.report = path
         elif report_all:
-            parse = parse_pytest_summary
+            parse = check_pytest_summary
         else:
             raise ValueError(f"the pytest command reports no per-test outcome; {NEEDS_REPORT}")
     elif "unittest" in tokens:
         if not any(t in ("-v", "--verbose") or re.fullmatch(r"-v+", t) for t in tokens):
             raise ValueError(f"the unittest command reports no per-test outcome (no -v); {NEEDS_REPORT}")
-        parse = parse_unittest_verbose
+        parse = check_unittest_run
     else:
         raise ValueError(f"the test command is neither unittest nor pytest and reports no per-test outcome I can read; {NEEDS_REPORT}")
     tokens[0] = _exe(tokens[0])
@@ -684,6 +751,7 @@ class Checker:
         try:
             if self.base_sha:
                 self._base_signature = tdd_signature(self.blobs.show(self.base_sha, CONFIG_PATH))
+                self._scan_base()
             for commit in commits:
                 self._commit(commit, seen_red, reds, approved_removed, approved_renames)
             self._at_end(end_sha, bool(seen_red or reds), approved_removed, approved_renames)
@@ -765,11 +833,52 @@ class Checker:
         ever_locked = locked_paths | {e["path"] for e in entries_c}
         for ch in changes:
             self._test_file_rules(c, parent, ch, ever_locked, label, kind)
+        self._forgery_rules(c, parent, changes, label)
 
         if kind == "red":
             self._red_rules(c, task, changes, entries_c)
             seen_red.add(task)
             reds.append((c, task, changes))
+
+    def _scan_base(self):
+        """Warn about every Python file that already holds, at the base commit, a construct that could forge a test run."""
+        if not self.base_sha:
+            return
+        for path in all_paths(self.repo, self.base_sha):
+            if not path.endswith(".py"):
+                continue
+            data = self.blobs.show(self.base_sha, path)
+            findings = tm.forgery_findings(path, data.decode("utf-8-sig", "replace")) if data is not None else []
+            if findings:
+                self.warn(f"{path} already holds {', '.join(findings)} at the base commit {self.base_sha[:7]}: it could forge a test run; "
+                          f"the diff review is its control", path)
+
+    def _forgery_rules(self, c, parent, changes, label):
+        """A Python file (any, not only tests) that introduces, inside the range, a construct that patches the test runner, replaces
+        sys.stdout or sys.stderr or reads the parent process fails unless an approved change request names the file."""
+        if c.sha == self.base_sha:
+            return
+        for ch in changes:
+            if ch.status not in ("A", "M", "R") or not ch.path.endswith(".py"):
+                continue
+            data = self.blobs.show(c.sha, ch.path)
+            if data is None:
+                continue
+            findings = set(tm.forgery_findings(ch.path, data.decode("utf-8-sig", "replace")))
+            if not findings:
+                continue
+            old_path = ch.old or ch.path
+            before = set()
+            if parent is not None and ch.status != "A":
+                old = self.blobs.show(parent, old_path)
+                before = set(tm.forgery_findings(old_path, old.decode("utf-8-sig", "replace"))) if old is not None else set()
+            introduced = sorted(findings - before)
+            if not introduced:
+                continue
+            ok, why = self.exemption(c, ch)
+            if not ok:
+                self.fail(f"{label} at {c.sha[:7]}: {ch.path} introduces {', '.join(introduced)}: code that patches the test runner, "
+                          f"replaces sys.stdout or sys.stderr or reads its parent process cannot be told from a forged run ({why})", ch.path)
 
     def _same_content(self, c, parent, path):
         old, new = self.blobs.show(parent, path), self.blobs.show(c.sha, path)

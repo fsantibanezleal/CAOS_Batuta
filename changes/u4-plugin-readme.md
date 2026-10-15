@@ -107,6 +107,20 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   unchanged (no variable is added). Known limit: an intermediate worktree is detectable (by its `.git` file, the temp root's own
   path, which is the configured `roots.temp`, or the recording runner); code that does so can hide intermediate states only,
   and nothing it hides ships, because the head runs in place and the CI run is the project's real run.
+- Forgery from inside the run. A locked test passes at the head only with exactly one result line that is `ok`: any skip, expected
+  failure or unexpected success line fails it, and so does a second result line for the same test (a parametrized pytest case may
+  appear once per case). The result lines must match the runner's own summary: the number of lines equals `Ran N tests`, the
+  failures, errors, skips, expected failures and unexpected successes equal the tally after it (unittest); the JUnit `tests`
+  attribute equals its `testcase` elements; the `pytest -rA` lines equal its final tally. A line added, removed or rewritten by the
+  code under test breaks one of these. A static scan of EVERY Python file of the repository (not only tests) finds assignments to
+  or patches of the runner's own classes and functions (`unittest.TestCase` methods, `unittest.main`, `TextTestRunner`,
+  `TextTestResult`), pytest hooks that change collection or reporting (`pytest_collection_modifyitems`, `pytest_runtest_*`), a
+  replacement of `sys.stdout` or `sys.stderr`, and reads of the parent process (`os.getppid`, a psutil parent, `/proc/<pid>/cmdline`,
+  `wmic` or `Get-CimInstance` on a parent). A finding introduced inside the checked range fails unless an approved change request
+  names the file; one that already exists at the base commit is a `WARN`. Residual (accepted, plan decision 37): in-process forgery
+  that none of these sees (for example a result stream rewritten by means the scan does not know) is controlled by the static
+  scan and by the human review of the diff; CI must run exactly `tdd.test_command`, and the guards and distribution unit adds a
+  doctor check that the workflow's test step equals it.
 - Known limits of the static rules: a skip built from a name made at run time in a test that is not locked is not seen, except
   `import_module` or `__import__` with a computed name, which is itself flagged; the runtime run above is the control for
   locked tests. A skip raised inside a test body at run time is seen by the run only as `skipped`.
