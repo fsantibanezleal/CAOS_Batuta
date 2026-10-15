@@ -89,6 +89,15 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   `replay_timeout_seconds`, so the time grows with the number of those commits times the length of the suite (at most that many
   timeouts); a range with many test-changing commits is expensive, and CI should replay `<base>..HEAD` of a branch, not the whole
   history.
+- The head check point of `--replay` is the project's own run: it runs the locked tests in the repository's own checkout (the
+  working tree `check` was started in) with the configured test command and recorded outcomes, never in a replay worktree, so
+  product code cannot tell it from CI. When that working tree has uncommitted changes to tracked files the head check point fails
+  (`the working tree differs from HEAD; commit or run from a clean checkout`; CI checkouts are clean); untracked files are
+  fine. A range that ends before the checked-out HEAD runs its end in a temporary worktree. Intermediate check points and the
+  red replays run in temporary worktrees whose names are random and contain no `tdd`, `replay` or `batuta`, with the caller's
+  environment unchanged (no variable is added). Residual: code that recognises a worktree by other signals (a `.git` file in
+  place of a folder, the temp root's own path, which is the configured `roots.temp`) can hide intermediate states only; the
+  head run and the CI run are the project's real runs.
 - Known limits of the static rules: a skip built from a name made at run time in a test that is not locked is not seen, except
   `import_module` or `__import__` with a computed name, which is itself flagged; the runtime run above is the control for
   locked tests. A skip raised inside a test body at run time is seen by the run only as `skipped`.

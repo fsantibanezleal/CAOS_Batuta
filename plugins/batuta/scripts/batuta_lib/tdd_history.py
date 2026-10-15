@@ -39,6 +39,7 @@ MIN_GIT = (2, 30)
 DEFAULT_TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py"'
 DEFAULT_REPLAY_TIMEOUT = 300.0
 OVERRIDE_TRAILER = core.RESERVED_TRAILER
+NEUTRAL_PREFIX = "w"   # temporary worktrees get random names that contain no `tdd`, `replay` or `batuta`
 TAGGED = re.compile(r"\[(red|green|refactor)\]", re.ASCII)
 SUBJECT = re.compile(r"\[(red|green|refactor)\] (T-\d{3}) \S", re.ASCII)
 
@@ -463,6 +464,15 @@ def listing_command(command, tests_is_package, junit_dir=None):
             top = "."
         return [sys.executable, "-c", RUN_SCRIPT, option("-s", "."), option("-p", "test*.py"), top], parse_unittest_listing
     return None
+
+
+def neutral_dir(parent):
+    """A new folder under `parent` with a random name that contains none of `tdd`, `replay` and `batuta`."""
+    while True:
+        path = Path(tempfile.mkdtemp(prefix=NEUTRAL_PREFIX, dir=parent))
+        if not any(word in path.name.lower() for word in ("tdd", "replay", "batuta")):
+            return path
+        path.rmdir()
 
 
 def _force_remove(func, path, _exc):
@@ -925,7 +935,7 @@ class Checker:
         short = c.sha[:7]
         temp_root = Path(self.s.temp_root)
         temp_root.mkdir(parents=True, exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="tdd-replay-", dir=temp_root))
+        work = neutral_dir(temp_root)   # a name that says nothing about what it is for
         tree = work / "tree"
         try:
             worktree_add(self.repo, tree, c.sha)
@@ -935,9 +945,8 @@ class Checker:
                 self.fail(f"red commit {short} ({task}): {exc}")
                 return
             label = ", ".join(tests)
-            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-            try:
-                proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout, env=env, check=False)
+            try:   # the environment is the caller's own: nothing is added that a product could key on
+                proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout, check=False)
             except subprocess.TimeoutExpired:
                 self.fail(f"red commit {short} ({task}): {label} timed out after {self.s.replay_timeout:g} s; "
                           f"a red test fails fast", label)
@@ -961,7 +970,7 @@ class Checker:
     def _worktree(self, sha):
         temp_root = Path(self.s.temp_root)
         temp_root.mkdir(parents=True, exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="tdd-replay-", dir=temp_root))
+        work = neutral_dir(temp_root)
         tree = work / "tree"
         try:
             worktree_add(self.repo, tree, sha)
@@ -969,13 +978,16 @@ class Checker:
         finally:
             self._cleanup(tree, work)
 
-    def _list_tests(self, sha, listing):
-        """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text."""
+    def _list_tests(self, sha, listing, in_place=False):
+        """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text. `in_place` runs it in the
+        repository's own checkout (the head), otherwise in a temporary worktree of neutral name; the environment is never touched."""
         argv, parse = listing
         try:
-            with self._worktree(sha) as tree:
-                proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout,
-                                      env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), check=False)
+            if in_place:
+                proc = subprocess.run(argv, cwd=str(self.repo), capture_output=True, timeout=self.s.replay_timeout, check=False)
+            else:
+                with self._worktree(sha) as tree:
+                    proc = subprocess.run(argv, cwd=str(tree), capture_output=True, timeout=self.s.replay_timeout, check=False)
         except subprocess.TimeoutExpired:
             return None, f"the listing timed out after {self.s.replay_timeout:g} s"
         except (OSError, GitError) as exc:
@@ -1043,7 +1055,16 @@ class Checker:
                     self.warn("the runtime comparison of the locked tests needs a pytest or unittest discovery test command; it was not run")
                     warned = True
                 break
-            found, error = self._list_tests(sha, listing)
+            in_place = False
+            if sha == end_sha and head(self.repo) == end_sha:
+                # the head is the project's own run, in the checkout `check` was started in: product code cannot tell it from CI
+                dirty = run(self.repo, "status", "--porcelain", "--untracked-files=no").stdout.decode("utf-8", "replace").strip()
+                if dirty:
+                    self.fail(f"commit {sha[:7]}: the working tree differs from HEAD; commit or run from a clean checkout "
+                              f"(the head is run in the checkout, so it must be the head's content)")
+                    continue
+                in_place = True
+            found, error = self._list_tests(sha, listing, in_place)
             if error:
                 self.fail(f"commit {sha[:7]}: {error}; the locked tests cannot be shown to run")
                 continue
