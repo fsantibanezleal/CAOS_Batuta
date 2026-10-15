@@ -34,7 +34,7 @@ from batuta_lib.areas import report as report_area
 from batuta_lib.dispatch import adapters, lanes, prices
 from batuta_lib.dispatch import ledger as dledger
 from batuta_lib.dispatch import transport as tr
-from batuta_lib.dispatch.redact import redact
+from batuta_lib.dispatch.redact import redact, redact_obj
 from batuta_lib.output import emit, item
 
 AREA = "dispatch"
@@ -181,14 +181,13 @@ def _sdk_key(cfg, env):
     key_file = (cfg.get("dispatch", {}).get("sdk") or {}).get("key_file")
     if key_file:
         try:
-            text = Path(key_file).read_text(encoding="utf-8-sig")
+            text = Path(os.path.expandvars(key_file)).read_text(encoding="utf-8-sig")
         except OSError:
-            return name, None, "key file"
+            return name, None, "key file unreadable"
         found = KEY_PATTERN.search(text)
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-        key = found.group(0) if found else (lines[-1] if lines else "")
-        if key:
-            return name, key, "the key file named in the configuration"
+        if found:
+            return name, found.group(0), "the key file named in the configuration"
+        return name, None, "key file without an Anthropic key"
     return name, None, "none"
 
 
@@ -236,7 +235,8 @@ def _preflight(cfg, request, env, *, kind_of_brief, allow_unpriced, report_only)
         name, key, source = _sdk_key(cfg, env)
         ctx.credential_env, ctx.credential = name, key
         if not key:
-            items.append(item("REFUSED", f"the sdk lane has no key: set the environment variable {name} (or dispatch.sdk.key_file)"))
+            items.append(item("REFUSED", f"the sdk lane has no key ({source}): set the environment variable {name}, or name a key file "
+                                         "that holds an Anthropic key in dispatch.sdk.key_file"))
     else:
         pname = lane.split(":", 1)[1]
         pcfg = (disp.get("providers") or {}).get(pname)
@@ -354,11 +354,26 @@ def _read_request(path):
     return doc, None
 
 
-def _deadline(request, args, clock=time.monotonic):
-    limit = float(request["timeout_s"])
+def _monotonic():
+    """The monotonic clock of every limit of a run (one seam, so a test can move time)."""
+    return time.monotonic()
+
+
+def _deadline(request, args, used=0.0):
+    """The monotonic deadline of a run: the request's time limit minus what earlier runs of the task already used, never
+    above `--hours`."""
+    limit = float(request["timeout_s"]) - float(used)
     if getattr(args, "hours", None) is not None:
         limit = min(limit, max(0.0, float(args.hours)) * 3600.0)
-    return clock() + limit
+    return _monotonic() + max(0.0, limit)
+
+
+def _read_state(path):
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _result_doc(request, status, ctx_provider, *, report=None, patch=None, outcome=None, duration=0.0, error=None):
@@ -375,8 +390,10 @@ def _result_doc(request, status, ctx_provider, *, report=None, patch=None, outco
     return doc
 
 
-def _finish(args, root, cfg, request, result_path, doc, items, secrets, state_path=None):
-    """Validate and write the result, record the ledger row, print. Returns the exit code."""
+def _finish(args, root, cfg, request, result_path, doc, items, secrets):
+    """Redact, validate and write the result, record the ledger row, print. Returns the exit code. Nothing a run writes or
+    prints leaves here without passing the redactor."""
+    doc = redact_obj(doc, secrets)
     problems = _c30_problems(doc)
     if problems:
         items.append(item("FAIL", "the result does not satisfy C30: " + "; ".join(problems)))
@@ -386,7 +403,7 @@ def _finish(args, root, cfg, request, result_path, doc, items, secrets, state_pa
         items.append(item("CHANGED" if existed else "NEW", "dispatch result written", Path(result_path).as_posix()))
     status = doc["status"]
     try:
-        values = {"Model": request["model"], "Status": status}
+        values = redact_obj({"Model": request["model"], "Status": status}, secrets)
         if _is_billed(request["lane"]):
             values.update({"Provider": doc["provider"], "Tokens in": doc.get("tokens_in", 0), "Tokens out": doc.get("tokens_out", 0),
                            "Cost USD": doc.get("cost_usd", 0.0)})
@@ -402,7 +419,8 @@ def _finish(args, root, cfg, request, result_path, doc, items, secrets, state_pa
     if status == "pending":
         pass
     elif status == "complete":
-        items.append(item("OK", f"{request['run_id']} complete: the report passes the gates"))
+        items.append(item("OK", f"{request['run_id']} complete: the report passes the gates"
+                                + (" and the brief's checks" if request["lane"] != "subagent" else "")))
     elif status == "incomplete":
         items.append(item("WARN", f"{request['run_id']} incomplete: {doc.get('error', '')}"))
     else:
@@ -434,26 +452,52 @@ def _dry_provider(request, ctx, system_prompt, max_out):
     return items
 
 
-def _run_provider(args, root, cfg, request, ctx, brief_text, items, kind):
+def _run_checks(checks, root, deadline, secrets):
+    """Run the brief's checks inside the time limit. Returns (status, failure text): `complete`, `incomplete` (a check failed) or
+    `timeout` (the limit ended before or while a check ran). The remaining time bounds every check."""
+    failures = []
+    for cid, command in checks:
+        left = deadline - _monotonic()
+        if left <= 0:
+            return "timeout", f"the time limit ended before the check {cid} could run"
+        code, output = _run_command(command, str(root), min(CHECK_TIMEOUT_S, left))
+        if code != 0:
+            if code == 124 and _monotonic() >= deadline:
+                return "timeout", f"the time limit ended while the check {cid} ran"
+            failures.append(f"### {cid}: `{command}` (exit {code})\n{redact(output, secrets)[-4000:]}")
+    return ("incomplete", "\n\n".join(failures)) if failures else ("complete", "")
+
+
+def _run_provider(args, root, cfg, request, ctx, brief_text, items, kind, state_file):
+    """The tool-less lane. Cost and tokens are cumulative per task: what earlier runs of the request spent (the state file)
+    is deducted from the cap before this call and added to its figures."""
+    prior = _read_state(state_file)
+    spent = float(prior.get("cost_usd", 0.0))
+    remaining = ctx.max_cost - spent
     system_prompt = lanes.provider_messages(request, brief_text)
     est_in = lanes.estimate_tokens("".join(system_prompt))
-    max_out = lanes.plan_output_budget(ctx.price, est_in, ctx.max_cost)
+    max_out = lanes.plan_output_budget(ctx.price, est_in, remaining) if remaining > 1e-9 else 0
     if not args.apply:
         items.extend(_dry_provider(request, ctx, system_prompt, max_out or lanes.MIN_OUT))
         if max_out == 0:
-            items.append(item("WARN", "the projected cost already exceeds the cap: an --apply run would stop before sending"))
-        items.append(item("OK", f"dry run: nothing was sent; cap {ctx.max_cost} USD, time limit {request['timeout_s']} s; add --apply to run"))
+            items.append(item("WARN", "the projected cost already exceeds what is left of the cap: an --apply run would stop before sending"))
+        items.append(item("OK", f"dry run: nothing was sent; cap {ctx.max_cost} USD ({round(spent, 6)} spent), time limit {request['timeout_s']} s; add --apply to run"))
         return None
-    started = time.monotonic()
+    started = _monotonic()
+    deadline = _deadline(request, args)
     outcome = lanes.run_provider(request, brief_text, kind=ctx.kind, endpoint=ctx.endpoint, credential=ctx.credential,
-                                 transport=_transport(args), price=ctx.price, max_cost=ctx.max_cost,
-                                 deadline=_deadline(request, args), report_only=args.report_only)
+                                 transport=_transport(args), price=ctx.price, max_cost=max(remaining, 0.0),
+                                 deadline=deadline, report_only=args.report_only, clock=_monotonic)
     status, error, report_rel, patch_rel = outcome.status, outcome.error, None, None
+    outcome.cost_usd = round(spent + outcome.cost_usd, 6)
+    outcome.tokens_in += int(prior.get("tokens_in", 0))
+    outcome.tokens_out += int(prior.get("tokens_out", 0))
     for note in outcome.notes:
         items.append(item("WARN", note))
     if status == "ran":
         report_path = root / request["report"]
-        _write_atomic(report_path, outcome.report_text if outcome.report_text.endswith("\n") else outcome.report_text + "\n")
+        text = redact(outcome.report_text, ctx.secrets)
+        _write_atomic(report_path, text if text.endswith("\n") else text + "\n")
         report_rel = request["report"]
         items.append(item("NEW", "report written from the provider answer", report_path.as_posix()))
         verdict = report_area.check(brief_text, delegation.read_text(report_path))
@@ -462,15 +506,29 @@ def _run_provider(args, root, cfg, request, ctx, brief_text, items, kind):
             error = "; ".join(verdict.problems + verdict.open_items)[:1500]
         if outcome.patch_text and status != "defective":
             patch_path = report_path.with_suffix(".patch")
-            _write_atomic(patch_path, outcome.patch_text)
+            _write_atomic(patch_path, redact(outcome.patch_text, ctx.secrets))
             patch_rel = _rel(root, patch_path)
             items.append(item("NEW", "patch written next to the report: apply it only after the gates pass, never before", patch_path.as_posix()))
-    doc = _result_doc(request, status, ctx.provider, report=report_rel, patch=patch_rel, outcome=outcome,
-                      duration=time.monotonic() - started, error=error or (None if status == "complete" else "the run did not complete"))
-    return doc
+        if status == "complete":
+            if outcome.patch_text:
+                status = "incomplete"
+                error = "the brief's checks wait for the patch: apply it after review, then run them (the report gates passed)"
+            else:
+                status, failures = _run_checks(lanes.extract_checks(brief_text), root, deadline, ctx.secrets)
+                if status != "complete":
+                    error = failures
+    _write_atomic(state_file, json.dumps({"request": Path(args.request_path).name, "cost_usd": outcome.cost_usd,
+                                          "tokens_in": outcome.tokens_in, "tokens_out": outcome.tokens_out}, indent=2) + "\n")
+    return _result_doc(request, status, ctx.provider, report=report_rel, patch=patch_rel, outcome=outcome,
+                       duration=_monotonic() - started, error=error or (None if status == "complete" else "the run did not complete"))
 
 
-def _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state=None, state_path=None):
+def _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state, state_file, base_elapsed):
+    registry = delegation.PLUGIN_ROOT / "hooks" / "hooks.json"
+    guard_ids, closed = lanes.guard_ids_from_registry(registry)
+    if not guard_ids:
+        items.append(item("REFUSED", f"no guard to run: {registry.name} names no PreToolUse guard and the sdk lane never runs unguarded"))
+        return None
     try:
         sdk = _load_sdk()
     except SdkMissing as exc:
@@ -478,34 +536,31 @@ def _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state=None,
         if args.apply:
             return None
         sdk = None
-    registry = delegation.PLUGIN_ROOT / "hooks" / "hooks.json"
-    guard_ids, closed = lanes.guard_ids_from_registry(registry)
+    entries = lanes.guard_entries_from_registry(registry)
     if not args.apply:
         items.append(item("OK", f"would start an Agent SDK session: model {request['model']}, up to {request['max_turns']} turns, "
-                                f"cost cap {ctx.max_cost} USD, directory {root.as_posix()}"))
+                                f"cost cap {ctx.max_cost} USD ({round(state.get('cost_usd', 0.0), 6)} spent), directory {root.as_posix()}"))
         items.append(item("OK", f"allowed tools: {', '.join(lanes.tools_for(kind))}; PreToolUse guards: {', '.join(guard_ids)}"))
         items.append(item("OK", "the key goes only into the session's own environment; it is never written or printed"))
         items.append(item("OK", f"dry run: nothing was started; time limit {request['timeout_s']} s; add --apply to run"))
         return None
-    state = state or {"session_id": None, "cost_usd": 0.0, "tokens_in": 0, "tokens_out": 0, "resumes": 0}
     temp_root = (cfg.get("roots") or {}).get("temp")
     scope = (root, list(request["write_scope"]) + [request["report"]], [temp_root] if temp_root else [])
-    policy = lanes.make_policy(guard_ids, _launch_guard, cwd=root, fail_closed=closed, env=dict(os.environ), scope=scope)
+    policy = lanes.make_policy(guard_ids, _launch_guard, cwd=root, fail_closed=closed, env=dict(os.environ), scope=scope, entries=entries)
     checks = lanes.extract_checks(brief_text)
     report_path = root / request["report"]
-    state_file = state_path or _state_path(_result_path(Path(args.request_path)))
+    started = _monotonic()
+    deadline = _deadline(request, args, used=base_elapsed)
 
     def save(st):
+        st["elapsed_s"] = round(base_elapsed + (_monotonic() - started), 3)
         _write_atomic(state_file, json.dumps({"request": Path(args.request_path).name, **st}, indent=2) + "\n")
 
     def verify(_outcome):
-        failures, status = [], "complete"
-        for cid, command in checks:
-            code, output = _run_command(command, str(root), CHECK_TIMEOUT_S)
-            if code != 0:
-                failures.append(f"### {cid}: `{command}` (exit {code})\n{redact(output, ctx.secrets)[-4000:]}")
-        if failures:
-            status = "incomplete"
+        status, failures = _run_checks(checks, root, deadline, ctx.secrets)
+        if status == "timeout":
+            return status, failures
+        failures = [failures] if failures else []
         try:
             verdict = report_area.check(brief_text, delegation.read_text(report_path))
         except OSError:
@@ -519,16 +574,15 @@ def _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state=None,
                 status = "incomplete"
         return status, "\n\n".join(failures)
 
-    started = time.monotonic()
-    outcome = lanes.run_sdk(request, brief_text, sdk=sdk, key=ctx.credential, root=root, policy=policy,
-                            deadline=_deadline(request, args), max_cost=ctx.max_cost, state=state, verify=verify, save=save,
-                            kind=kind)
+    outcome = lanes.run_sdk(request, brief_text, sdk=sdk, key=ctx.credential, root=root, policy=policy, deadline=deadline,
+                            max_cost=ctx.max_cost, state=state, verify=verify, save=save, kind=kind, clock=_monotonic)
+    save(state)
     report_rel = request["report"] if report_path.is_file() else None
     status, error = outcome.status, outcome.error
     if status in ("incomplete", "defective") and report_rel is None:
         # C30: these two are verdicts on a report; without one the run did not produce it
         status, error = "error", f"no report was written ({error or status})"
-    return _result_doc(request, status, "anthropic", report=report_rel, outcome=outcome, duration=time.monotonic() - started,
+    return _result_doc(request, status, "anthropic", report=report_rel, outcome=outcome, duration=_monotonic() - started,
                        error=error or (None if status == "complete" else "the run did not complete"))
 
 
@@ -579,18 +633,31 @@ def _run(args, resume=None):
         if cap is not None and spent >= cap - 1e-9:
             return out([item("REFUSED", f"the cost cap of {cap} USD is already spent ({spent} USD): resume would exceed the cap")],
                        "dispatch resume refused")
+        used = float(state.get("elapsed_s", 0.0))
+        if used >= float(request["timeout_s"]):
+            return out([item("REFUSED", f"the time limit of {request['timeout_s']} s is already used up ({used} s over the earlier runs)")],
+                       "dispatch resume refused")
     try:
         brief_text = delegation.read_text(root / request["brief"])
     except OSError as exc:
         return out([item("FAIL", f"brief unreadable: {exc}", request["brief"])], f"dispatch {args.verb_name} failed")
     head = delegation.header_fields(brief_text)
     kind = head.get("kind", "")
+    mismatch = []
+    if list(request["write_scope"]) != delegation.scope_paths(head.get("write scope", "")):
+        mismatch.append("write_scope")
+    if request["report"] != _rel(root, head.get("report", "")):
+        mismatch.append("report")
+    if mismatch:
+        return out([item("REFUSED", f"the request's {' and '.join(mismatch)} differ from the brief's own: the brief decides, run "
+                                    "`dispatch plan` again")], f"dispatch {args.verb_name} refused")
     env = dict(os.environ)
     items, ctx = _preflight(cfg, request, env, kind_of_brief=kind, allow_unpriced=args.allow_unpriced, report_only=args.report_only)
     secrets = list(ctx.secrets)
     if any(i["tag"] == "REFUSED" for i in items):
         return out([dict(i, message=redact(i["message"], secrets)) for i in items], f"dispatch {args.verb_name} refused")
     result_path = result_path if resume else _result_path(request_path)
+    state_file = _state_path(result_path)
     lane = request["lane"]
     if lane == "subagent":
         spec = lanes.subagent_spec(request)
@@ -600,11 +667,17 @@ def _run(args, resume=None):
             return emit(AREA, args.verb_name, items, f"{request['run_id']} on subagent: specification only", _wants_json(args))
         doc = _result_doc(request, "pending", "anthropic")
     elif lane == "sdk":
-        doc = _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state=state, state_path=state_path)
+        if state is None:    # a fresh run of the task starts a new session but keeps what the task has already spent
+            earlier = _read_state(state_file)
+            state = {"session_id": None, "cost_usd": float(earlier.get("cost_usd", 0.0)), "tokens_in": int(earlier.get("tokens_in", 0)),
+                     "tokens_out": int(earlier.get("tokens_out", 0)), "resumes": 0}
+            base_elapsed = 0.0
+        else:
+            base_elapsed = float(state.get("elapsed_s", 0.0))
+        doc = _run_sdk(args, root, cfg, request, ctx, brief_text, items, kind, state, state_file, base_elapsed)
     else:
-        doc = _run_provider(args, root, cfg, request, ctx, brief_text, items, kind)
+        doc = _run_provider(args, root, cfg, request, ctx, brief_text, items, kind, state_file)
     if doc is None:
-        secrets = list(ctx.secrets)
         tag_refused = any(i["tag"] == "REFUSED" for i in items)
         return emit(AREA, args.verb_name, [dict(i, message=redact(i["message"], secrets)) for i in items],
                     f"{request['run_id']} on {lane}: " + ("refused" if tag_refused else "dry run"), _wants_json(args))

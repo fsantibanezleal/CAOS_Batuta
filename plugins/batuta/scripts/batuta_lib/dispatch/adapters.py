@@ -4,6 +4,13 @@ Kinds: `openai-compatible` (chat completions: OpenAI, Azure OpenAI, vLLM, a Lite
 (generateContent), `bedrock` (Converse, with an API key as bearer token) and `vertex` (Claude `rawPredict`, with an access
 token as bearer token). The credential goes only into a header, never into a URL, and an adapter never prints it.
 Every adapter is tool-less: it returns text and token counts, nothing else.
+
+Provider facts (read on 2026-10-15): Azure OpenAI takes the key in the `api-key` header (Microsoft Learn, "Azure OpenAI REST API
+reference", Authentication: https://learn.microsoft.com/en-us/azure/ai-services/openai/reference); the Gemini key goes in
+`x-goog-api-key` (https://ai.google.dev/gemini-api/docs/api-key); a Bedrock API key goes in `Authorization: Bearer`
+(https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html). The Bedrock model in the request is the id of an
+inference profile, `global.anthropic.claude-<model>` or `us.anthropic.claude-<model>` (the bare `anthropic.claude-...` id is not
+shown working on the model cards); the configuration names the profile id and the adapter sends it unchanged.
 """
 from __future__ import annotations
 
@@ -20,7 +27,13 @@ ERROR_TEXT_LIMIT = 600
 
 
 class AdapterError(Exception):
-    """The provider refused the call or answered in a shape this adapter cannot use; the message is not yet redacted."""
+    """The provider refused the call or answered in a shape this adapter cannot use; the message is not yet redacted.
+
+    `billed` is True when the provider accepted the call (a 2xx answer) and the answer was unusable: the call may have billed.
+    `usage` is then the (tokens in, tokens out) the answer carries, or None when it carries none."""
+
+    billed = False
+    usage = None
 
 
 @dataclass
@@ -141,6 +154,32 @@ def parse_vertex(data):
     return Completion(text, _int(usage.get("input_tokens"), "input_tokens"), _int(usage.get("output_tokens"), "output_tokens"))
 
 
+def _salvage_pair(usage, in_key, out_key, extra_out=()):
+    if not isinstance(usage, dict):
+        return None
+    try:
+        tin = _int(usage.get(in_key), in_key)
+        tout = _int(usage.get(out_key, 0), out_key) + sum(_int(usage.get(k, 0), k) for k in extra_out)
+    except AdapterError:
+        return None
+    return tin, tout
+
+
+def salvage_usage(kind, data):
+    """(tokens in, tokens out) of an answer that could not be parsed otherwise, or None when it carries no usage figures."""
+    if not isinstance(data, dict):
+        return None
+    if kind == "openai-compatible":
+        return _salvage_pair(data.get("usage"), "prompt_tokens", "completion_tokens")
+    if kind == "gemini":
+        return _salvage_pair(data.get("usageMetadata"), "promptTokenCount", "candidatesTokenCount", ("thoughtsTokenCount",))
+    if kind == "bedrock":
+        return _salvage_pair(data.get("usage"), "inputTokens", "outputTokens")
+    if kind == "vertex":
+        return _salvage_pair(data.get("usage"), "input_tokens", "output_tokens")
+    return None
+
+
 ADAPTERS = {
     "openai-compatible": (build_openai, parse_openai),
     "gemini": (build_gemini, parse_gemini),
@@ -175,7 +214,13 @@ def complete(kind, transport, *, model, system, prompt, max_tokens, credential, 
     try:
         data = json.loads(resp.body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as exc:
-        raise AdapterError("the provider answer is not JSON") from exc
-    if not isinstance(data, dict):
-        raise AdapterError("the provider answer is not a JSON object")
-    return ADAPTERS[kind][1](data)
+        err = AdapterError("the provider answer is not JSON")
+        err.billed = True
+        raise err from exc
+    try:
+        if not isinstance(data, dict):
+            raise AdapterError("the provider answer is not a JSON object")
+        return ADAPTERS[kind][1](data)
+    except AdapterError as exc:
+        exc.billed, exc.usage = True, salvage_usage(kind, data)
+        raise

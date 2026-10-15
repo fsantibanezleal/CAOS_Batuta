@@ -26,7 +26,15 @@ class TransportError(Exception):
 
 
 class TransportFailure(Exception):
-    """Retries ended without a usable answer; the message says why and after how many attempts."""
+    """Retries ended without a usable answer; the message says why and after how many attempts.
+
+    `ambiguous` is True when a request may have reached the provider without an answer (a timeout, a cut connection): such a
+    call may have billed, so the caller charges its allowed budget. False when the provider refused every attempt with a
+    status (429, 5xx), which bills nothing."""
+
+    def __init__(self, message, ambiguous=False):
+        super().__init__(message)
+        self.ambiguous = ambiguous
 
 
 @dataclass
@@ -44,17 +52,33 @@ class UrllibTransport:
         if parts.scheme != "https" and not (parts.scheme == "http" and (parts.hostname or "") in LOCAL_HOSTS):
             raise TransportError("only https URLs are allowed (plain http only for the local host)")
         req = urllib.request.Request(url, data=body, method=method, headers=dict(headers))
+        started = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:   # noqa: S310 (scheme checked above)
-                return Response(resp.status, dict(resp.headers.items()), resp.read())
+                return Response(resp.status, dict(resp.headers.items()), _read_bounded(resp, started, timeout))
         except urllib.error.HTTPError as exc:
             try:
-                data = exc.read()
+                data = _read_bounded(exc, started, timeout)
+            except TransportError:
+                raise
             except Exception:  # noqa: BLE001
                 data = b""
             return Response(exc.code, dict(exc.headers.items()) if exc.headers else {}, data)
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise TransportError(f"{type(exc).__name__}: {exc}") from exc
+
+
+def _read_bounded(resp, started, budget):
+    """Read the whole body in chunks, checking the call's time budget between reads: the socket timeout bounds one read, so a
+    server that trickles bytes could otherwise hold the call past its deadline."""
+    chunks = []
+    while True:
+        if time.monotonic() - started > budget:
+            raise TransportError("the call exceeded its time budget while reading the answer")
+        chunk = resp.read(65536)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
 
 
 class ReplayTransport:
@@ -91,9 +115,10 @@ def send_with_retries(tr, method, url, headers, body, *, timeout, max_retries=MA
     """The final Response (any status that is not retryable, including 4xx). Raises TransportFailure after the retries
     or when the deadline (a `clock()` value) would be passed."""
     last = "no attempt was made"
+    ambiguous = False
     for attempt in range(max_retries + 1):
         if deadline is not None and clock() >= deadline:
-            raise TransportFailure(f"the time limit ended before attempt {attempt + 1}; last: {last}")
+            raise TransportFailure(f"the time limit ended before attempt {attempt + 1}; last: {last}", ambiguous)
         budget = timeout if deadline is None else max(0.001, min(timeout, deadline - clock()))
         retry_after = None
         try:
@@ -104,10 +129,11 @@ def send_with_retries(tr, method, url, headers, body, *, timeout, max_retries=MA
             retry_after = {str(k).lower(): v for k, v in (resp.headers or {}).items()}.get("retry-after")
         except TransportError as exc:
             last = f"transport error: {exc}"
+            ambiguous = True
         if attempt == max_retries:
             break
         wait = _delay(attempt, retry_after, base_delay, rng)
         if deadline is not None and clock() + wait >= deadline:
-            raise TransportFailure(f"the time limit would pass during the backoff after attempt {attempt + 1}; last: {last}")
+            raise TransportFailure(f"the time limit would pass during the backoff after attempt {attempt + 1}; last: {last}", ambiguous)
         time.sleep(wait)
-    raise TransportFailure(f"gave up after {max_retries + 1} attempts; last: {last}")
+    raise TransportFailure(f"gave up after {max_retries + 1} attempts; last: {last}", ambiguous)
