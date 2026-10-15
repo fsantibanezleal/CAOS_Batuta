@@ -1,6 +1,7 @@
 """device check and the session-check hook handler (C31 handler result carrying the C16 SessionStart output)."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -141,19 +142,27 @@ class Check(DeviceCase):
         # The user-visible start: the first `device check --hook` after a deploy, whose copy holds no bytecode yet
         # (every deploy drops it), so the interpreter compiles the modules. The requirement's two seconds are
         # Batuta's own work, so the machine's interpreter start-up is measured right before (best of 3) and subtracted.
+        # The cold start is timed best of 3 as well (the bytecode a run leaves is removed before the next, so each run
+        # compiles the modules again), which keeps one run slowed by other processes on a loaded machine from deciding.
         assert not list(self.deploy_dir.rglob("__pycache__")), "the fresh copy must hold no bytecode"
         run_env = {**os.environ, **self.env, **env}
 
         def timed(argv):
             t = time.perf_counter()
-            proc = subprocess.run(argv, capture_output=True, text=True, env=run_env)
+            proc = subprocess.run(argv, capture_output=True, text=True, env=run_env, timeout=120)
             return time.perf_counter() - t, proc
 
         empty = min(timed([sys.executable, "-I", "-c", "pass"])[0] for _ in range(3))
         if empty > 1.0:
             self.skipTest(f"machine too loaded to time a cold start: an empty interpreter alone took {empty:.2f} s")
-        wall, proc = timed([sys.executable, "-I", str(self.deploy_dir / "scripts" / "batuta.py"), "device", "check",
-                            "--hook", "--deploy-root", str(self.deploy_dir), "--home", str(self.home)])
+        hook = [sys.executable, "-I", str(self.deploy_dir / "scripts" / "batuta.py"), "device", "check",
+                "--hook", "--deploy-root", str(self.deploy_dir), "--home", str(self.home)]
+        runs = []
+        for _ in range(3):
+            for cache in list(self.deploy_dir.rglob("__pycache__")):
+                shutil.rmtree(cache)
+            runs.append(timed(hook))
+        wall, proc = min(runs, key=lambda run: run[0])
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertLess(wall - empty, 2.0, f"first hook check after a deploy: wall {wall:.2f} s, empty interpreter "
                                            f"{empty:.2f} s, net {wall - empty:.2f} s")
