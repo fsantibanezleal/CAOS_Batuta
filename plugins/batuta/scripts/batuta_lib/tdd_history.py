@@ -1070,7 +1070,7 @@ class Checker:
         """(found, error) of the head check point. The configured test command runs verbatim in the repository's own checkout, as
         the project and CI run it, and the outcome of each test is read from the command's own output (a verbose unittest run, a
         JUnit report it writes, or pytest -rA): one process, the real one, so nothing in it can tell a check from a run. (None, None)
-        when the point failed here already: a working tree that differs from HEAD, or a command that reports no per-test outcome."""
+        when the point failed here already: a working tree that differs from HEAD, or a command that cannot report each test."""
         dirty = run(self.repo, "status", "--porcelain", "--untracked-files=no").stdout.decode("utf-8", "replace").strip()
         if dirty:
             self.fail(f"commit {sha[:7]}: the working tree differs from HEAD; commit or run from a clean checkout "
@@ -1082,11 +1082,8 @@ class Checker:
         except ValueError as exc:
             self.fail(f"commit {sha[:7]}: {exc}")
             return None, None
-        found, error = self._list_tests(sha, (argv, parse), in_place=True)
-        if error is None and not found:
-            self.fail(f"commit {sha[:7]}: the test command printed no per-test outcome; {NEEDS_REPORT}")
-            return None, None
-        return found, error
+        # a run that prints no test line at all means no locked test ran: each of them is reported as not run
+        return self._list_tests(sha, (argv, parse), in_place=True)
 
     def _list_tests(self, sha, listing, in_place=False):
         """The outcome of each test the runner runs at a commit, [{"id", "outcome"}], or an error text. `in_place` runs the command
