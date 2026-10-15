@@ -259,7 +259,7 @@ class Q3RuntimeComparison(ReviewBase):
 class R301RuntimeOutcomes(ReviewBase):
     # patches TestCase.setUp through setattr and a SkipTest looked up by a computed name: nothing a static rule reads
     SKIPPER = ("import unittest\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('environment')\n\n\n"
-               "setattr(unittest.TestCase, 'setUp', _setup)\n\n\nclass Z(unittest.TestCase):\n    def test_z(self):\n"
+               "setattr(vars(unittest)['Test' + 'Case'], 'setUp', _setup)\n\n\nclass Z(unittest.TestCase):\n    def test_z(self):\n"
                "        self.assertTrue(True)\n")
 
     def test_a_runtime_skip_of_every_locked_test_fails_the_replay(self):
@@ -311,7 +311,7 @@ class R401RuntimeAtEveryChange(ReviewBase):
     def test_u07_a_patch_that_changes_no_test_file_is_caught_at_the_head(self):
         repo = self.clone()
         repo.write("calc.py", "import unittest\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('x')\n\n\n"
-                              "setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+                              "setattr(vars(unittest)['Test' + 'Case'], 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
         repo.commit("chore: tidy", "calc.py")
         self.failing(repo, "skipped at runtime", "tests/test_calc.py", extra=("--replay",))
 
@@ -335,7 +335,7 @@ class R501TheHeadIsTheProjectsOwnRun(ReviewBase):
 
     def patched_calc(self, condition):
         return (f"import os\nimport unittest\n\n\ndef _setup(self):\n    {self.SKIP}\n\n\nif {condition}:\n"
-                f"    setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+                f"    setattr(vars(unittest)['Test' + 'Case'], 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
 
     def replay(self, repo, *extra):
         keys = ("BATUTA", "TDD", "REPLAY", "PYTHONDONTWRITEBYTECODE")
@@ -413,7 +413,7 @@ class R601TheHeadRunIsTheRealRun(ReviewBase):
 
     def patched_calc(self, condition):
         return (f"import sys\nimport unittest\n\n\ndef _setup(self):\n    {self.SKIP}\n\n\nif {condition}:\n"
-                f"    setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+                f"    setattr(vars(unittest)['Test' + 'Case'], 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
 
     def replay(self, repo, *extra, cfg=None):
         env = {k: v for k, v in os.environ.items() if not any(w in k.upper() for w in ("BATUTA", "TDD", "REPLAY"))}
@@ -485,7 +485,7 @@ class R601Parsers(unittest.TestCase):
 
     def test_a_junit_report_the_command_writes_is_read_from_the_path_it_was_given(self):
         import tempfile
-        xml = '<testsuites><testsuite><testcase classname="tests.test_a" name="test_x"/></testsuite></testsuites>'
+        xml = '<testsuites><testsuite tests="1"><testcase classname="tests.test_a" name="test_x"/></testsuite></testsuites>'
         for flag in (["--junitxml=report.xml"], ["--junitxml", "report.xml"]):
             with self.subTest(flag=flag), tempfile.TemporaryDirectory() as folder:
                 (Path(folder) / "report.xml").write_text(xml, encoding="utf-8")
@@ -513,6 +513,161 @@ class R601Parsers(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     hist.head_run(command, False, ".")
                 self.assertIn("configure tdd.test_command to report each test", str(caught.exception))
+
+
+class R701Forgery(ReviewBase):
+    """X19, X20, X20b, X22: a run cannot be forged from inside: result lines must be exactly one ok line per locked test and match
+    the runner's own summary, and code that patches the runner, replaces stdout or stderr or reads its parent is found by a static
+    scan of every Python file."""
+
+    HIDDEN_SKIP = ("import unittest\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('environment')\n\n\n"
+                   "setattr(vars(unittest)['Test' + 'Case'], 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+    FAKE = ("test_add (test_calc.CalcTests.test_add) ... ok\\n"
+            "test_add_negative (test_calc.CalcTests.test_add_negative) ... ok\\n")
+
+    def replay(self, repo, *extra, cfg=None):
+        env = {k: v for k, v in os.environ.items() if not any(w in k.upper() for w in ("BATUTA", "TDD", "REPLAY"))}
+        with mock.patch.dict(os.environ, env, clear=True):
+            return self.check(repo, "--replay", *extra, cfg=cfg)
+
+    def forged(self, repo, stream):
+        repo.write("calc.py", self.HIDDEN_SKIP)
+        repo.write("tests/test_zz_fake.py", f"import sys\nimport unittest\n\nsys.{stream}.write(\"{self.FAKE}\")\n\n\n"
+                                            "class F(unittest.TestCase):\n    def test_f(self):\n        self.assertTrue(True)\n")
+        repo.commit("chore: tidy", "calc.py", "tests/test_zz_fake.py")
+
+    def test_x20_fake_ok_lines_on_stderr_fail(self):
+        repo = self.clone()
+        self.forged(repo, "stderr")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"result lines|skipped at runtime|more than once")
+
+    def test_x20b_fake_ok_lines_on_stdout_fail(self):
+        repo = self.clone()
+        self.forged(repo, "stdout")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"result lines|skipped at runtime|more than once")
+
+    def test_x22_a_stderr_wrapper_that_rewrites_skipped_to_ok_fails(self):
+        repo = self.clone()
+        repo.write("calc.py", self.HIDDEN_SKIP)
+        repo.write("tests/test_zz_wrap.py", "import sys\nimport unittest\n\n\nclass W:\n    def __init__(self, inner):\n        self.inner = inner\n\n"
+                                            "    def write(self, text):\n        return self.inner.write(text.replace(' ... skipped', ' ... ok'))\n\n"
+                                            "    def flush(self):\n        self.inner.flush()\n\n    def __getattr__(self, name):\n"
+                                            "        return getattr(self.inner, name)\n\n\nsys.stderr = W(sys.stderr)\n\n\n"
+                                            "class F(unittest.TestCase):\n    def test_f(self):\n        self.assertTrue(True)\n")
+        repo.commit("chore: tidy", "calc.py", "tests/test_zz_wrap.py")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"sys\.stderr|skipped=")
+
+    def test_x19_a_read_of_the_parent_process_is_introduced_and_fails(self):
+        repo = self.clone()
+        repo.write("calc.py", "import os\n\nPARENT = os.getppid()\n\n\ndef add(a, b):\n    return a + b\n")
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("os.getppid", out)
+        self.assertIn("calc.py", out)
+
+    def test_an_approved_request_naming_the_file_lets_it_through(self):
+        repo = self.clone()
+        commit_request_open_first(repo, requests(path="calc.py"))
+        repo.write("specs/calc/spec.md", SPEC)
+        repo.commit("docs: spec", "specs/calc/spec.md")
+        repo.write("calc.py", "import os\n\nPARENT = os.getppid()\n\n\ndef add(a, b):\n    return a + b\n")
+        repo.commit(message("refactor", "T-001", "read the parent", "CR-001"), "calc.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)
+
+    def test_a_construct_that_was_already_there_at_the_base_is_a_warning(self):
+        repo = self.fresh("forgery-at-base")
+        repo.write("README.md", "x\n")
+        repo.write("calc.py", "import os\n\nPARENT = os.getppid()\n")
+        repo.commit("init", "README.md", "calc.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 2, out)
+        self.assertIn("already holds", out)
+        self.assertNotIn("FAIL", out)
+
+    def test_a_clean_file_is_not_a_finding(self):
+        repo = self.clone()
+        repo.write("calc.py", "import sys\n\n\ndef add(a, b):\n    print(sys.argv)\n    return a + b\n")
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 0, out)
+
+
+class R701Parsers(unittest.TestCase):
+    def head(self):
+        return hist.head_run('python -m unittest discover -s tests -p "test_*.py" -v', False, ".")[1]
+
+    GOOD = ("test_a (test_m.C.test_a) ... ok\ntest_b (test_m.C.test_b) ... ok\n\n"
+            "----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nOK\n")
+
+    def test_a_consistent_run_is_read(self):
+        self.assertEqual(len(self.head()(self.GOOD)), 2)
+
+    def test_more_result_lines_than_the_runner_ran_are_refused(self):
+        forged = "test_a (test_m.C.test_a) ... ok\n" + self.GOOD
+        with self.assertRaises(ValueError) as caught:
+            self.head()(forged)
+        self.assertIn("result lines", str(caught.exception))
+
+    def test_a_summary_that_counts_what_no_line_shows_is_refused(self):
+        skipped = self.GOOD.replace("\nOK\n", "\nOK (skipped=1)\n")
+        with self.assertRaises(ValueError) as caught:
+            self.head()(skipped)
+        self.assertIn("skipped", str(caught.exception))
+        failed = self.GOOD.replace("\nOK\n", "\nFAILED (failures=1)\n")
+        with self.assertRaises(ValueError):
+            self.head()(failed)
+
+    def test_a_missing_summary_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.head()("test_a (test_m.C.test_a) ... ok\n")
+
+    def test_a_skip_line_is_read_and_matches_its_tally(self):
+        text = ("test_a (test_m.C.test_a) ... skipped 'x'\ntest_b (test_m.C.test_b) ... ok\n\n"
+                "----------------------------------------------------------------------\nRan 2 tests in 0.001s\n\nOK (skipped=1)\n")
+        got = {e["id"]: e["outcome"] for e in self.head()(text)}
+        self.assertEqual(got["test_m.C.test_a"], "skipped")
+
+    def test_a_junit_report_whose_count_differs_from_its_cases_is_refused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "r.xml").write_text('<testsuites><testsuite tests="3"><testcase classname="t.a" name="test_x"/></testsuite></testsuites>',
+                                                encoding="utf-8")
+            parse = hist.head_run("pytest --junitxml=r.xml", False, folder)[1]
+            with self.assertRaises(ValueError) as caught:
+                parse("")
+            self.assertIn("result", str(caught.exception))
+
+    def test_a_pytest_summary_whose_counts_differ_from_its_lines_is_refused(self):
+        parse = hist.head_run("pytest -rA", False, ".")[1]
+        text = "=== short test summary info ===\nPASSED tests/test_a.py::test_x\n=== 2 passed in 0.1s ===\n"
+        with self.assertRaises(ValueError):
+            parse(text)
+        self.assertEqual(len(parse("=== short test summary info ===\nPASSED tests/test_a.py::test_x\n=== 1 passed in 0.1s ===\n")), 1)
+
+    def test_duplicates_and_every_skip_form_are_problems_for_a_locked_test(self):
+        base = [("C", "test_a")]
+        dup = [{"id": "test_m.C.test_a", "outcome": "passed"}, {"id": "test_m.C.test_a", "outcome": "passed"}]
+        self.assertEqual(len(hist.compare_listing("tests/test_m.py", base, dup)), 1)
+        for outcome in ("skipped", "expected failure", "unexpected success"):
+            with self.subTest(outcome=outcome):
+                mixed = [{"id": "test_m.C.test_a", "outcome": "passed"}, {"id": "test_m.C.test_a", "outcome": outcome}]
+                self.assertTrue(hist.compare_listing("tests/test_m.py", base, mixed))
+                self.assertTrue(hist.compare_listing("tests/test_m.py", base, mixed[1:]))
+        self.assertEqual(hist.compare_listing("tests/test_m.py", base, dup[:1]), [])
+
+    def test_a_parametrized_case_that_is_skipped_is_a_problem_but_several_passing_cases_are_not(self):
+        ok = [{"id": "tests/test_p.py::test_x[1]", "outcome": "passed"}, {"id": "tests/test_p.py::test_x[2]", "outcome": "passed"}]
+        self.assertEqual(hist.compare_listing("tests/test_p.py", [(None, "test_x")], ok), [])
+        bad = ok[:1] + [{"id": "tests/test_p.py::test_x[2]", "outcome": "skipped"}]
+        self.assertEqual(len(hist.compare_listing("tests/test_p.py", [(None, "test_x")], bad)), 1)
 
 
 class R302ApprovedMoves(ReviewBase):

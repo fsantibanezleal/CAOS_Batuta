@@ -325,6 +325,58 @@ class ThirdRoundPythonMarkers(unittest.TestCase):
         self.assertEqual(self.count("import importlib\nm = importlib.import_module('json')\n"), 0)
 
 
+class ForgeryScan(unittest.TestCase):
+    """R7-01: code that patches the runner, replaces stdout or stderr or reads its parent process."""
+
+    def found(self, src):
+        return tm.forgery_findings("lib/x.py", src)
+
+    def test_each_form_is_a_finding(self):
+        cases = [
+            "import unittest\nunittest.TestCase.run = lambda self, result=None: None\n",
+            "import unittest\nunittest.TestCase.setUp = f\n",
+            "import unittest as u\nu.TestCase.skipTest = f\n",
+            "import unittest\nsetattr(unittest.TestCase, 'run', f)\n",
+            "import unittest\nunittest.main = f\n",
+            "import unittest\nunittest.TextTestRunner = X\n",
+            "from unittest import TextTestResult as R\nR.addSkip = f\n",
+            "from unittest import mock\nimport unittest\nmock.patch.object(unittest.TestCase, 'run')\n",
+            "def pytest_collection_modifyitems(items):\n    pass\n",
+            "def pytest_runtest_call(item):\n    pass\n",
+            "import sys\nsys.stdout = W()\n",
+            "import sys\nsys.stderr = W()\n",
+            "import sys\nsetattr(sys, 'stderr', W())\n",
+            "import sys\nsys.stderr.write = f\n",
+            "import os\nos.getppid()\n",
+            "from os import getppid\ngetppid()\n",
+            "import psutil\np = psutil.Process().parent()\n",
+            "import psutil\nq = psutil.Process().ppid\n",
+            "open('/proc/self/cmdline').read()\n",
+            "import subprocess\nsubprocess.run(['wmic', 'process', 'get', 'ParentProcessId'])\n",
+            "run('Get-CimInstance Win32_Process')\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertTrue(self.found(src), src)
+
+    def test_ordinary_code_is_not(self):
+        cases = [
+            "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n",
+            "import sys\nprint(sys.stderr, sys.argv)\n",
+            "import os\nprint(os.getpid())\n",
+            "def helper():\n    \"\"\"Reads /proc/self/cmdline in the docs only.\"\"\"\n    return 1\n",
+            "import unittest\nsetattr(SomeClass, 'x', 1)\n",
+            "x = 1\n",
+        ]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertEqual(self.found(src), [])
+
+    def test_an_unparsable_file_has_no_findings(self):
+        self.assertEqual(self.found("def broken(:\n"), [])
+        self.assertEqual(tm.forgery_findings("notes.md", "os.getppid()"), [])
+
+
 class ThirdRoundListing(unittest.TestCase):
     """R3-01 and R3-02: the recorded outcome of each locked test, parametrized ids, the JUnit report of pytest."""
 
@@ -342,7 +394,7 @@ class ThirdRoundListing(unittest.TestCase):
 
     def test_a_parametrized_test_is_compared_by_its_base_name(self):
         from batuta_lib import tdd_history as hist
-        ok = [{"id": "tests/test_p.py::test_x[1]", "outcome": "passed"}, {"id": "tests/test_p.py::test_x[2]", "outcome": "skipped"}]
+        ok = [{"id": "tests/test_p.py::test_x[1]", "outcome": "passed"}, {"id": "tests/test_p.py::test_x[2]", "outcome": "passed"}]
         self.assertEqual(hist.compare_listing("tests/test_p.py", [(None, "test_x")], ok), [])
         gone = [{"id": "tests/test_p.py::test_y[1]", "outcome": "passed"}]
         self.assertEqual(len(hist.compare_listing("tests/test_p.py", [(None, "test_x")], gone)), 1)
