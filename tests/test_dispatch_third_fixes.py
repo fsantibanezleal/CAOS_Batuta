@@ -265,5 +265,26 @@ class M4DirectoryChanges(unittest.TestCase):
             self.assertEqual(self.decide(tmp, "echo x > docs/a.md").get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
 
 
+class M5PipeFedWriters(unittest.TestCase):
+    """A writer at the end of a pipe or under xargs writes what its input names: deny unless the names are literal paths inside the scope."""
+
+    def decide(self, tmp, command):
+        root = Path(tmp)
+        pol = lanes.make_policy([], lambda *a, **k: (0, "", ""), cwd=root, env={}, scope=(root, ["src/area/", "tests/area/"], []))
+        return asyncio.run(pol({"tool_name": "Bash", "tool_input": {"command": command}}, "t", None)).get("hookSpecificOutput", {}).get("permissionDecision")
+
+    def test_targets_that_cannot_be_known_or_lie_outside_the_scope_are_denied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for command in ("ls | xargs rm", "ls docs | xargs rm", "find . -name x | xargs rm", "cat list.txt | xargs touch",
+                            "ls src/area | xargs rm -f ../x", "git ls-files | xargs rm", "echo a b | xargs touch", "ls docs | xargs -I{} cp {} src/area/",
+                            "cd src/area && ls | xargs rm"):
+                self.assertEqual(self.decide(tmp, command), "deny", command)
+
+    def test_literal_paths_inside_the_scope_are_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for command in ("ls src/area | xargs rm", "echo src/area/a.py | xargs touch", "ls tests/area | xargs cat"):
+                self.assertEqual(self.decide(tmp, command), None, command)
+
+
 if __name__ == "__main__":
     unittest.main()
