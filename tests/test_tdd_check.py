@@ -157,7 +157,7 @@ class GrammarRules(CheckBase):
     def test_a_merge_does_not_hide_a_violation_on_a_branch(self):
         repo = self.clone()
         repo.git("checkout", "-q", "-b", "side")
-        repo.write("tests/test_extra.py", "import unittest\n\n\n@unittest.skip('later')\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_extra.py", "import unittest\n\n\n" "@unittest.skip('later')\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "add extra"), "tests/test_extra.py")
         repo.git("checkout", "-q", "main")
         repo.write("README.md", "main\n")
@@ -249,7 +249,7 @@ class LockedTestRules(CheckBase):
         code, out = self.check(repo)
         self.assertEqual(code, 2, out)
         self.assertIn("nothing is locked", out)
-        repo.write("tests/test_extra.py", "import unittest\n\n\n@unittest.skip('x')\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_extra.py", "import unittest\n\n\n" "@unittest.skip('x')\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra"), "tests/test_extra.py")
         self.failing(repo, "weakening marker", "nothing is locked")
 
@@ -263,7 +263,7 @@ class WeakeningRules(CheckBase):
 
     def test_an_expected_failure_and_xfail_are_weakening(self):
         for name, src in (("ef", EXTRA_OK.replace("    def test_a", "    @unittest.expectedFailure\n    def test_a")),
-                          ("xf", "import pytest\n\n\n@pytest.mark.xfail\ndef test_a():\n    assert 1 == 1\n")):
+                          ("xf", "import pytest\n\n\n" "@pytest.mark.xfail\ndef test_a():\n    assert 1 == 1\n")):
             with self.subTest(name=name):
                 repo = self.clone_named(name)
                 repo.write("tests/test_extra.py", src)

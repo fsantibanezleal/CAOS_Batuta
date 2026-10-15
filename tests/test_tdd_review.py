@@ -141,7 +141,7 @@ class C02ConfigFromTheBaseCommit(ReviewBase):
         folder.mkdir()
         cfg = write_config(folder, self.temp_root, markers=["wip"])
         repo = self.clone()
-        repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_extra.py", "import unittest\n\n\n" "@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra tests"), "tests/test_extra.py")
         code, out = self.check(repo, cfg=cfg)
         self.assertEqual(code, 1, out)
@@ -396,7 +396,7 @@ class MinorFindings(ReviewBase):
 
     def test_c06_an_aliased_skip_in_a_refactor_fails_through_the_cli(self):
         repo = self.clone()
-        repo.write("tests/test_extra.py", "import unittest as u\n\n\n@u.skip('later')\nclass E(u.TestCase):\n    def test_a(self):\n"
+        repo.write("tests/test_extra.py", "import unittest as u\n\n\n" "@u.skip('later')\nclass E(u.TestCase):\n    def test_a(self):\n"
                                           "        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra tests"), "tests/test_extra.py")
         self.failing(repo, "weakening marker")

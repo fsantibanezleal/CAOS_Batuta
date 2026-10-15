@@ -54,14 +54,14 @@ class PythonMarkers(unittest.TestCase):
 
     def test_each_default_marker_is_found(self):
         cases = [
-            "import unittest\n@unittest.skip('x')\ndef test_a(): pass\n",
-            "import unittest\n@unittest.skipIf(True, 'x')\ndef test_a(): pass\n",
-            "import unittest\n@unittest.skipUnless(False, 'x')\ndef test_a(): pass\n",
-            "import unittest\n@unittest.expectedFailure\ndef test_a(): pass\n",
-            "import pytest\n@pytest.mark.skip\ndef test_a(): pass\n",
-            "import pytest\n@pytest.mark.xfail(reason='x')\ndef test_a(): pass\n",
+            "import unittest\n" "@unittest.skip('x')\ndef test_a(): pass\n",
+            "import unittest\n" "@unittest.skipIf(True, 'x')\ndef test_a(): pass\n",
+            "import unittest\n" "@unittest.skipUnless(False, 'x')\ndef test_a(): pass\n",
+            "import unittest\n" "@unittest.expectedFailure\ndef test_a(): pass\n",
+            "import pytest\n" "@pytest.mark.skip\ndef test_a(): pass\n",
+            "import pytest\n" "@pytest.mark.xfail(reason='x')\ndef test_a(): pass\n",
             "import pytest\ndef test_a():\n    pytest.skip('x')\n",
-            "from unittest import skip\n@skip('x')\ndef test_a(): pass\n",
+            "from unittest import skip\n" "@skip('x')\ndef test_a(): pass\n",
         ]
         for src in cases:
             with self.subTest(src=src):
@@ -76,7 +76,7 @@ class PythonMarkers(unittest.TestCase):
             tm.weakening_markers("tests/test_x.py", "def broken(:\n")
 
     def test_a_custom_marker_list_extends_the_default_and_never_removes_a_marker(self):
-        src = "import unittest\n@unittest.skip('x')\ndef test_a(): pass\n@wip\ndef test_b(): pass\n"
+        src = "import unittest\n" "@unittest.skip('x')\ndef test_a(): pass\n" "@wip\ndef test_b(): pass\n"
         found = tm.weakening_markers("tests/test_x.py", src, {"python": ["wip"]})
         self.assertEqual(sum(found.values()), 2)
         self.assertEqual(sum(tm.weakening_markers("tests/test_x.py", src, {"python": ["unittest.skip"]}).values()), 1)
@@ -147,11 +147,11 @@ class ReviewPythonMarkers(unittest.TestCase):
 
     def test_an_aliased_module_or_a_renamed_import_is_resolved(self):
         cases = [
-            "import unittest as u\n@u.skip('x')\ndef test_a(): pass\n",
-            "from unittest import skip as s\n@s('x')\ndef test_a(): pass\n",
-            "import pytest as p\n@p.mark.skip\ndef test_a(): pass\n",
-            "from pytest import mark\n@mark.skip\ndef test_a(): pass\n",
-            "from pytest import mark as m\n@m.xfail\ndef test_a(): pass\n",
+            "import unittest as u\n" "@u.skip('x')\ndef test_a(): pass\n",
+            "from unittest import skip as s\n" "@s('x')\ndef test_a(): pass\n",
+            "import pytest as p\n" "@p.mark.skip\ndef test_a(): pass\n",
+            "from pytest import mark\n" "@mark.skip\ndef test_a(): pass\n",
+            "from pytest import mark as m\n" "@m.xfail\ndef test_a(): pass\n",
         ]
         for src in cases:
             with self.subTest(src=src):
@@ -162,7 +162,7 @@ class ReviewPythonMarkers(unittest.TestCase):
             "import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.skipTest('x')\n",
             "import unittest\ndef test_a():\n    raise unittest.SkipTest('x')\n",
             "from unittest import SkipTest\ndef test_a():\n    raise SkipTest('x')\n",
-            "import unittest\n@getattr(unittest, 'skip')('x')\ndef test_a(): pass\n",
+            "import unittest\n" "@getattr(unittest, 'skip')('x')\ndef test_a(): pass\n",
             "import pytest\ndef test_a():\n    pytest.importorskip('nope_xyz')\n",
             "import unittest\nunittest.TestCase.run = lambda self, result=None: None\n",
             "import pytest\ndef pytest_collection_modifyitems(items):\n    for item in items:\n        item.add_marker(pytest.mark.skip(reason='x'))\n",
@@ -255,11 +255,11 @@ class SecondRoundPythonMarkers(unittest.TestCase):
 
     def test_a_module_reached_through_importlib_or_dunder_import_is_resolved(self):
         cases = [
-            "import importlib\nu = importlib.import_module('unittest')\n@u.skip('x')\ndef test_a(): pass\n",
-            "import importlib\n@importlib.import_module('unittest').skip('x')\ndef test_a(): pass\n",
+            "import importlib\nu = importlib.import_module('unittest')\n" "@u.skip('x')\ndef test_a(): pass\n",
+            "import importlib\n" "@importlib.import_module('unittest').skip('x')\ndef test_a(): pass\n",
             "@__import__('unittest').skip('x')\ndef test_a(): pass\n",
-            "import unittest\nu = unittest\n@u.skip('x')\ndef test_a(): pass\n",
-            "import unittest\ns = unittest.skip\n@s('x')\ndef test_a(): pass\n",
+            "import unittest\nu = unittest\n" "@u.skip('x')\ndef test_a(): pass\n",
+            "import unittest\ns = unittest.skip\n" "@s('x')\ndef test_a(): pass\n",
         ]
         for src in cases:
             with self.subTest(src=src):
@@ -300,12 +300,12 @@ class ThirdRoundPythonMarkers(unittest.TestCase):
 
     def test_other_spellings_of_the_unittest_and_pytest_modules_are_resolved(self):
         cases = [
-            "import unittest\n@unittest.case.skip('x')\ndef test_a(): pass\n",
-            "from unittest import case\n@case.skip('x')\ndef test_a(): pass\n",
-            "from unittest.case import skip\n@skip('x')\ndef test_a(): pass\n",
+            "import unittest\n" "@unittest.case.skip('x')\ndef test_a(): pass\n",
+            "from unittest import case\n" "@case.skip('x')\ndef test_a(): pass\n",
+            "from unittest.case import skip\n" "@skip('x')\ndef test_a(): pass\n",
             "import unittest\ndef test_a():\n    raise unittest.case.SkipTest('x')\n",
-            "import sys\nu = sys.modules['unittest']\n@u.skip('x')\ndef test_a(): pass\n",
-            "import sys\n@sys.modules['unittest'].skip('x')\ndef test_a(): pass\n",
+            "import sys\nu = sys.modules['unittest']\n" "@u.skip('x')\ndef test_a(): pass\n",
+            "import sys\n" "@sys.modules['unittest'].skip('x')\ndef test_a(): pass\n",
             "from _pytest.outcomes import skip\ndef test_a():\n    skip('x')\n",
         ]
         for src in cases:
@@ -314,7 +314,7 @@ class ThirdRoundPythonMarkers(unittest.TestCase):
 
     def test_a_module_imported_by_a_computed_name_is_a_marker(self):
         cases = [
-            "import importlib\nu = importlib.import_module('unit' + 'test')\n@u.skip('x')\ndef test_a(): pass\n",
+            "import importlib\nu = importlib.import_module('unit' + 'test')\n" "@u.skip('x')\ndef test_a(): pass\n",
             "name = 'unittest'\nu = __import__(name)\n",
         ]
         for src in cases:

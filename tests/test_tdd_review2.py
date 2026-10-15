@@ -435,12 +435,12 @@ class C01Version11TddBlock(ReviewBase):
     def test_markers_extend_the_default_list_for_every_language(self):
         cfg = self.config11("k-markers", markers=["wip"])
         repo = self.red_repo("k-markers", self.PASSING, cfg)
-        repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_extra.py", "import unittest\n\n\n" "@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra"), "tests/test_extra.py")
         code, out = self.check(repo, cfg=cfg)
         self.assertEqual(code, 1, out)
         self.assertIn("'wip'", out)
-        repo.write("tests/test_other.py", "import unittest\n\n\n@unittest.skip('x')\nclass O(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_other.py", "import unittest\n\n\n" "@unittest.skip('x')\nclass O(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "other"), "tests/test_other.py")
         code, out = self.check(repo, cfg=cfg)
         self.assertIn("unittest.skip", out)   # a configured name adds to the defaults, it never removes one
@@ -475,7 +475,7 @@ class C01Version11TddBlock(ReviewBase):
         folder.mkdir(exist_ok=True)
         cfg = write_config(folder, self.temp_root, markers={"python": ["wip"]})
         repo = self.clone()
-        repo.write("tests/test_extra.py", "import unittest\n\n\n@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_extra.py", "import unittest\n\n\n" "@wip\nclass E(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n")
         repo.commit(message("refactor", "T-001", "extra"), "tests/test_extra.py")
         code, out = self.check(repo, cfg=cfg)
         self.assertEqual(code, 1, out)
