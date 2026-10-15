@@ -12,19 +12,35 @@ the legacy object per language, which adds too).
 
 Writes are dry runs unless `--apply` is given. Exit codes: 0 ok, 1 failure or refusal, 2 warnings.
 """
+import importlib
 import os
 import re
 import tempfile
 import threading
-import uuid
 from pathlib import Path
 
 from batuta_lib import config
 from batuta_lib import contract as core
-from batuta_lib import tdd_history as hist
-from batuta_lib import tdd_lock as lk
-from batuta_lib import test_markers as tm
 from batuta_lib.output import emit, item
+
+
+class _Lazy:
+    """A module imported on its first use. The dispatcher imports every area at every start (a hook runs it cold, with no bytecode),
+    and the history check, the lock and the marker reader are large: only a `tdd` verb needs them."""
+
+    def __init__(self, name):
+        self._name = name
+        self._module = None
+
+    def __getattr__(self, attr):
+        if self._module is None:
+            self._module = importlib.import_module(self._name)
+        return getattr(self._module, attr)
+
+
+hist = _Lazy("batuta_lib.tdd_history")
+lk = _Lazy("batuta_lib.tdd_lock")
+tm = _Lazy("batuta_lib.test_markers")
 
 AREA = "tdd"
 HELP = "Test-first on artifacts and history: test lock, red and green commits, history check and replay."
@@ -585,6 +601,7 @@ def _commit(args):
         return emit(AREA, "commit", items, "tdd commit: dry run, nothing staged or committed (use --apply)", as_json)
     message_dir = Path(settings.temp_root)
     message_dir.mkdir(parents=True, exist_ok=True)
+    import uuid
     message_file = message_dir / f"tdd-commit-{uuid.uuid4().hex}.txt"
     message_file.write_text(text, encoding="utf-8", newline="\n")
     try:
@@ -630,7 +647,7 @@ def _check(args):
 def _common(parser):
     parser.add_argument("--repo", metavar="DIR", default=None, help="the repository (default: the current directory)")
     parser.add_argument("--lock", metavar="PATH", default=None,
-                        help=f"the lock file, relative to the repository root (default {lk.DEFAULT_LOCK})")
+                        help=f"the lock file, relative to the repository root (default .batuta/test-locks.json)")
 
 
 def register(subparsers):
