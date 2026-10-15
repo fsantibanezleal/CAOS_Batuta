@@ -3,6 +3,7 @@ the locked tests), each reproduction as a test on scratch git repositories."""
 import json
 import os
 import subprocess
+from pathlib import Path
 import sys
 import unittest
 from unittest import mock
@@ -375,7 +376,8 @@ class R501TheHeadIsTheProjectsOwnRun(ReviewBase):
         repo = self.clone()
         repo.write("README.md", "changed but not committed\n")
         code, out = self.replay(repo, "--range", "HEAD~3..HEAD~1")
-        self.assertEqual(code, 0, out)
+        self.assertEqual(code, 2, out)   # the warning that the range ends before HEAD (R6-03); no dirty-tree failure
+        self.assertNotIn("differs from HEAD", out)
 
     def test_the_head_runs_in_the_checkout_and_the_others_in_neutral_worktrees(self):
         repo = self.clone()
@@ -401,6 +403,116 @@ class R501TheHeadIsTheProjectsOwnRun(ReviewBase):
                 self.assertNotIn(word, below)
         for line in lines:
             self.assertEqual(line["env"], [])
+
+
+class R601TheHeadRunIsTheRealRun(ReviewBase):
+    """X16 and X16b: the head check and the real run are one process: the configured test command, verbatim, in the checkout, its
+    own output read. No wrapper, no recording class, no added argument."""
+
+    SKIP = "raise vars(unittest)['Skip' + 'Test']('environment')"
+
+    def patched_calc(self, condition):
+        return (f"import sys\nimport unittest\n\n\ndef _setup(self):\n    {self.SKIP}\n\n\nif {condition}:\n"
+                f"    setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+
+    def replay(self, repo, *extra, cfg=None):
+        env = {k: v for k, v in os.environ.items() if not any(w in k.upper() for w in ("BATUTA", "TDD", "REPLAY"))}
+        with mock.patch.dict(os.environ, env, clear=True):
+            return self.check(repo, "--replay", *extra, cfg=cfg)
+
+    def test_x16_a_patch_keyed_on_argv_zero_of_the_recording_run_fails_at_the_head(self):
+        repo = self.clone()
+        repo.write("calc.py", self.patched_calc("sys.argv[0] != '-c'"))
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("skipped at runtime", out)
+
+    def test_x16b_a_patch_keyed_on_the_recording_class_in_main_fails_at_the_head(self):
+        repo = self.clone()
+        repo.write("calc.py", self.patched_calc("not hasattr(sys.modules['__main__'], 'Rec')"))
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("skipped at runtime", out)
+
+    def test_a_command_that_reports_no_per_test_outcome_fails_the_head_check(self):
+        folder = self.tmp / "quiet"
+        folder.mkdir(exist_ok=True)
+        cfg = write_config(folder, self.temp_root, test_command='python -m unittest discover -s tests -p "test_*.py"')
+        code, out = self.replay(self.clone(), cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("configure tdd.test_command to report each test", out)
+
+    def test_a_verbose_command_is_run_verbatim_and_passes(self):
+        folder = self.tmp / "verbose"
+        folder.mkdir(exist_ok=True)
+        cfg = write_config(folder, self.temp_root, test_command='python -m unittest discover -s tests -p "test_*.py" -v')
+        code, out = self.replay(self.clone(), cfg=cfg)
+        self.assertEqual(code, 0, out)
+
+    def test_r603_a_range_that_ends_before_head_warns_naming_both_commits(self):
+        repo = self.clone()
+        end = repo.git("rev-parse", "HEAD~1").strip()[:7]
+        top = repo.head()[:7]
+        code, out = self.replay(repo, "--range", "HEAD~3..HEAD~1")
+        self.assertEqual(code, 2, out)
+        self.assertIn("WARN", out)
+        self.assertIn(end, out)
+        self.assertIn(top, out)
+
+
+class R601Parsers(unittest.TestCase):
+    def test_every_spelling_of_a_verbose_unittest_outcome_is_read(self):
+        text = ("test_a (test_m.C.test_a) ... ok\ntest_b (test_m.C.test_b) ... FAIL\ntest_c (test_m.C.test_c) ... ERROR\n"
+                "test_d (test_m.C.test_d) ... skipped 'not on this machine ... really'\ntest_e (test_m.C.test_e) ... expected failure\n"
+                "test_f (test_m.C.test_f) ... unexpected success\ntest_g (test_m.C.test_g)\nA docstring line ... ok\n"
+                "test_h (test_m.C.test_h) (i=1) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests\n")
+        got = {e["id"]: e["outcome"] for e in hist.parse_unittest_verbose(text)}
+        self.assertEqual(got, {"test_m.C.test_a": "passed", "test_m.C.test_b": "failed", "test_m.C.test_c": "error",
+                               "test_m.C.test_d": "skipped", "test_m.C.test_e": "expected failure",
+                               "test_m.C.test_f": "unexpected success", "test_m.C.test_g": "passed", "test_m.C.test_h": "passed"})
+
+    def test_a_pytest_summary_of_rA_is_read(self):
+        text = ("=== short test summary info ===\nPASSED tests/test_a.py::test_x[1]\nPASSED tests/test_a.py::T::test_y\n"
+                "FAILED tests/test_a.py::test_z - assert 1 == 2\nERROR tests/test_a.py::test_e - boom\n"
+                "XFAIL tests/test_a.py::test_x_fail - reason\nXPASS tests/test_a.py::test_x_pass\nSKIPPED tests/test_a.py::test_s - why\n")
+        got = {e["id"]: e["outcome"] for e in hist.parse_pytest_summary(text)}
+        self.assertEqual(got, {"tests/test_a.py::test_x[1]": "passed", "tests/test_a.py::T::test_y": "passed",
+                               "tests/test_a.py::test_z": "failed", "tests/test_a.py::test_e": "error",
+                               "tests/test_a.py::test_x_fail": "expected failure", "tests/test_a.py::test_x_pass": "unexpected success",
+                               "tests/test_a.py::test_s": "skipped"})
+
+    def test_a_junit_report_the_command_writes_is_read_from_the_path_it_was_given(self):
+        import tempfile
+        xml = '<testsuites><testsuite><testcase classname="tests.test_a" name="test_x"/></testsuite></testsuites>'
+        for flag in (["--junitxml=report.xml"], ["--junitxml", "report.xml"]):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as folder:
+                (Path(folder) / "report.xml").write_text(xml, encoding="utf-8")
+                argv, parse = hist.head_run("pytest -q " + " ".join(flag), False, folder)
+                self.assertEqual(argv[1:], ["-q"] + flag)
+                self.assertEqual(parse("")[0]["outcome"], "passed")
+
+    def test_the_command_is_run_verbatim(self):
+        argv, _ = hist.head_run('python -m unittest discover -s tests -p "test_*.py" -v', False, ".")
+        self.assertEqual(argv[1:], ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"])
+        argv, _ = hist.head_run("pytest -rA tests", False, ".")
+        self.assertEqual(argv[1:], ["-rA", "tests"])
+
+    def test_the_default_command_reports_each_test(self):
+        argv, parse = hist.head_run(hist.DEFAULT_TEST_COMMAND, False, ".")
+        self.assertIn("-v", argv)
+        self.assertEqual(argv[1:4], ["-m", "unittest", "discover"])
+        argv, _ = hist.head_run(hist.DEFAULT_TEST_COMMAND, True, ".")
+        self.assertEqual(argv[-2:], ["-t", "."])
+
+    def test_a_command_that_reports_no_per_test_outcome_is_refused(self):
+        for command in ('python -m unittest discover -s tests', "pytest", "pytest -q tests", "make test", "python -m unittest {tests}",
+                        "python -m unittest discover -v {tests}"):
+            with self.subTest(command=command):
+                with self.assertRaises(ValueError) as caught:
+                    hist.head_run(command, False, ".")
+                self.assertIn("configure tdd.test_command to report each test", str(caught.exception))
 
 
 class R302ApprovedMoves(ReviewBase):
