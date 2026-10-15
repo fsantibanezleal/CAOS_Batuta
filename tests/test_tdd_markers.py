@@ -359,6 +359,24 @@ class ForgeryScan(unittest.TestCase):
             with self.subTest(src=src):
                 self.assertTrue(self.found(src), src)
 
+    def test_exec_eval_and_compile_of_code_that_is_not_a_literal_are_findings(self):
+        cases = ["exec(code)\n", "eval(compile(src, 'x', 'eval'))\n", "compile(src, 'f', 'exec')\n", "exec('a' + 'b')\n",
+                 "import builtins\nbuiltins.exec(code)\n", "eval(f'{x} + 1')\n", "exec(*args)\n", "eval()\n"]
+        for src in cases:
+            with self.subTest(src=src):
+                self.assertTrue(self.found(src), src)
+
+    def test_a_literal_string_is_quiet(self):
+        for src in ("exec('x = 1')\n", "eval('1 + 1')\n", "compile('x', 'f', 'exec')\n", "exec('''multi\nline''')\n"):
+            with self.subTest(src=src):
+                self.assertEqual(self.found(src), [])
+
+    def test_pyw_is_python_and_a_named_file_can_be_forced(self):
+        self.assertEqual(tm.language_of("run.pyw"), "python")
+        self.assertTrue(tm.forgery_findings("run.pyw", "import os\nos.getppid()\n"))
+        self.assertEqual(tm.forgery_findings("runtests", "import os\nos.getppid()\n"), [])
+        self.assertTrue(tm.forgery_findings("runtests", "import os\nos.getppid()\n", python=True))
+
     def test_ordinary_code_is_not(self):
         cases = [
             "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(True)\n",

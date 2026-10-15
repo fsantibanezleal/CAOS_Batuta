@@ -219,7 +219,8 @@ class Q2ShowAndTypedPrompt(OpenRequestCase):
 
 
 class Q3RuntimeComparison(ReviewBase):
-    HIDE = 'exec("import unittest\\ndef load_" + "tests(loader, tests, pattern):\\n    return unittest.TestSuite()\\n")\n'
+    HIDE = ("import unittest\n\n\ndef _f(loader, tests, pattern):\n    return unittest.TestSuite()\n\n\n"
+            "globals()['load_' + 'tests'] = _f\n")
 
     def test_a_locked_test_that_stops_being_collected_fails_the_replay(self):
         repo = self.clone()
@@ -591,6 +592,53 @@ class R701Forgery(ReviewBase):
         self.assertEqual(code, 2, out)
         self.assertIn("already holds", out)
         self.assertNotIn("FAIL", out)
+
+    def introduce(self, repo, path, text="import os\n\nPARENT = os.getppid()\n", cfg=None):
+        repo.write(path, text)
+        repo.commit("chore: tidy", path)
+        return self.check(repo, cfg=cfg)
+
+    def test_r801_a_pyw_source_is_scanned_too(self):
+        code, out = self.introduce(self.clone(), "tools/run.pyw")
+        self.assertEqual(code, 1, out)
+        self.assertIn("os.getppid", out)
+
+    def test_r801_a_file_the_test_command_names_is_scanned_whatever_its_name(self):
+        folder = self.tmp / "named"
+        folder.mkdir(exist_ok=True)
+        cfg = write_config(folder, self.temp_root, test_command="python run_checks -v")
+        code, out = self.introduce(self.clone(), "run_checks", cfg=cfg)
+        self.assertEqual(code, 1, out)
+        self.assertIn("run_checks", out)
+        code, out = self.introduce(self.clone_named("other"), "run_checks")   # not named by the default command: not Python
+        self.assertEqual(code, 0, out)
+
+    def clone_named(self, name):
+        return self.base.clone_to(self.tmp / f"{self.id().rsplit('.', 1)[-1]}-{name}")
+
+    def test_r802_exec_eval_and_compile_of_non_literal_code_are_introduced_and_fail(self):
+        for name, src in {"exec": "code = open('x').read()\nexec(code)\n", "eval": "value = eval(input())\n",
+                          "compile": "tree = compile(open('x').read(), 'x', 'exec')\n",
+                          "folded": "exec('imp' + 'ort os')\n", "fstring": "name = 'x'\neval(f'{name} + 1')\n"}.items():
+            with self.subTest(case=name):
+                code, out = self.introduce(self.clone_named(name), "calc.py", "def add(a, b):\n    return a + b\n\n\n" + src)
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"{name if name in ('exec', 'eval', 'compile') else 'exec' if name == 'folded' else 'eval'} of non-literal code", out)
+
+    def test_r802_a_call_with_a_literal_string_stays_quiet(self):
+        code, out = self.introduce(self.clone(), "calc.py", "def add(a, b):\n    return a + b\n\n\nexec('x = 1')\nvalue = eval('1 + 1')\n"
+                                                           "tree = compile('x', 'f', 'exec')\n")
+        self.assertEqual(code, 0, out)
+
+    def test_r802_non_literal_exec_at_the_base_is_a_warning(self):
+        repo = self.fresh("exec-at-base")
+        repo.write("README.md", "x\n")
+        repo.write("calc.py", "code = open('x').read()\nexec(code)\n")
+        repo.commit("init", "README.md", "calc.py")
+        code, out = self.check(repo)
+        self.assertEqual(code, 2, out)
+        self.assertIn("already holds", out)
+        self.assertIn("exec of non-literal code", out)
 
     def test_a_clean_file_is_not_a_finding(self):
         repo = self.clone()
