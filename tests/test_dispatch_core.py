@@ -73,10 +73,8 @@ class PriceTable(unittest.TestCase):
     def test_unverified_entries_exist_for_what_was_not_confirmed(self):
         # the Bedrock rate was not read on the AWS pricing page: it stays out of the verified set
         self.assertIsNone(prices.lookup("bedrock", "anthropic.claude-sonnet-5-5"))
-        # the Vertex rate is the Claude API rate plus the 10 percent regional premium the Claude on Vertex page states
-        vertex, direct = prices.lookup("vertex", "claude-sonnet-5-5"), prices.lookup("anthropic", "claude-sonnet-5-5")
-        self.assertAlmostEqual(vertex.input, direct.input * 1.1)
-        self.assertAlmostEqual(vertex.output, direct.output * 1.1)
+        # the Vertex rows stay unknown until a Google page confirms them (the lookup found no readable price table)
+        self.assertIsNone(prices.lookup("vertex", "claude-sonnet-5-5"))
 
 
 class Retries(unittest.TestCase):

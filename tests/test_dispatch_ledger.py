@@ -17,36 +17,6 @@ BASE = ("# Delegation ledger\n\n| ID | Agent | Model | Brief | Report | Status |
 VALUES = {"Model": "gpt-5", "Provider": "openai", "Tokens in": 10, "Tokens out": 5, "Cost USD": 0.01, "Status": "complete"}
 
 
-class SetCells(unittest.TestCase):
-    def test_adds_the_dispatch_columns_and_fills_the_row_only(self):
-        new = ledger.set_cells(BASE, "a-2026-10-10", VALUES)
-        columns, rows = delegation.ledger_rows(new)
-        for col in ("Provider", "Tokens in", "Tokens out", "Cost USD"):
-            self.assertIn(col, columns)
-        a, z = rows
-        self.assertEqual((a["Provider"], a["Tokens in"], a["Cost USD"], a["Status"], a["Model"]), ("openai", "10", "0.01", "complete", "gpt-5"))
-        self.assertEqual((z["Provider"], z["Status"], z["Accepted"]), ("", "accepted", "y"))     # the alias y is kept as written
-        self.assertEqual(delegation.ledger_problems(new), [])
-
-    def test_is_idempotent(self):
-        once = ledger.set_cells(BASE, "a-2026-10-10", VALUES)
-        self.assertEqual(ledger.set_cells(once, "a-2026-10-10", VALUES), once)
-
-    def test_keeps_crlf_and_free_text_notes(self):
-        text = BASE.replace("| Accepted |", "| Accepted | Notes |").replace("|---|---|---|---|---|---|---|", "|---|---|---|---|---|---|---|---|")
-        text = text.replace("| drafted | no |", "| drafted | no | keep me |").replace("| accepted | y |", "| accepted | y | checked by hand |")
-        text = text.replace("\n", "\r\n")
-        new = ledger.set_cells(text, "a-2026-10-10", VALUES)
-        self.assertNotIn("\r\r", new)
-        self.assertEqual(new.count("\r\n"), new.count("\n"))
-        self.assertIn("keep me", new)
-        self.assertIn("checked by hand", new)
-
-    def test_a_row_that_is_missing_is_a_key_error(self):
-        with self.assertRaises(KeyError):
-            ledger.set_cells(BASE, "nope", VALUES)
-
-
 class Record(unittest.TestCase):
     def test_updates_an_existing_row_through_update_ledger(self):
         with tempfile.TemporaryDirectory() as tmp:

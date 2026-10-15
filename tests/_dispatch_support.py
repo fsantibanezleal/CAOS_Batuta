@@ -120,7 +120,7 @@ def make_fake_sdk(calls):
         for step in mod.script.pop(0):
             kind = step[0]
             if kind == "init":
-                yield SystemMessage("init", {"session_id": step[1], "apiKeySource": "ANTHROPIC_API_KEY"})
+                yield SystemMessage("init", {"session_id": step[1], "apiKeySource": step[2] if len(step) > 2 else "ANTHROPIC_API_KEY"})
             elif kind == "text":
                 yield AssistantMessage([TextBlock(step[1])])
             elif kind == "tool":

@@ -226,8 +226,9 @@ class ProviderLanes(Base):
         text = good_report(ids) + f"\n```diff\n{DIFF_IN}```\n"
         t = FakeTransport([openai_reply(text, 50, 50)])
         code, out, _ = self.go(req, "--apply", transport_obj=t)
-        self.assertEqual(code, 0, out)
+        self.assertEqual(code, 2, out)          # the brief's checks wait for the patch: incomplete, never complete
         result = self.result_of(req)
+        self.assertEqual(result["status"], "incomplete")
         patch = self.root / result["patch"]
         self.assertEqual(patch.read_text(encoding="utf-8"), DIFF_IN)
         self.assertNotIn("diff --git", self.report_path(brief).read_text(encoding="utf-8"))
@@ -316,7 +317,7 @@ class ProviderLanes(Base):
         self.go(req, "--apply", transport_obj=FakeTransport([openai_reply(good_report(ids), 20, 20)]))
         columns, rows = delegation.ledger_rows(self.ledger.read_text(encoding="utf-8"))
         self.assertEqual(sum(1 for r in rows if r["ID"] == "alpha-2026-10-10"), 1)
-        self.assertEqual(self.row("alpha-2026-10-10")["Tokens in"], "20")
+        self.assertEqual(self.row("alpha-2026-10-10")["Tokens in"], "30")      # cost and tokens are cumulative per task
 
     def test_a_ledger_without_a_row_for_the_brief_gets_one(self):
         brief, ids = self.lookup()
@@ -498,13 +499,14 @@ class SdkLane(Base):
         self.assertTrue(all(c["options"].resume == "sess-1" for c in sdk.calls[1:]))
         self.assertEqual(self.result_of(req)["status"], "error")
 
-    def test_an_exception_in_the_session_is_an_error_with_the_message_redacted(self):
+    def test_an_exception_in_the_session_charges_its_budget_and_the_message_is_redacted(self):
         brief, req = self.brief_and_request()
         key = ENV["ANTHROPIC_API_KEY"]
         sdk = make_fake_sdk([[("init", "sess-1"), ("raise", RuntimeError(f"auth failed for {key}"))]] * 10)
         code, out, err = self.go(req, "--apply", sdk=sdk)
         self.assertEqual(code, 1)
         self.assert_no_key(out, err)
+        self.assertEqual(self.result_of(req)["status"], "over-budget")
 
     def test_the_time_limit_stops_the_session(self):
         brief, req = self.brief_and_request()

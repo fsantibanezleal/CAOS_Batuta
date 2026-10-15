@@ -114,9 +114,10 @@ class Policy(unittest.TestCase):
         self.assertEqual((spec["hookEventName"], spec["permissionDecision"]), ("PreToolUse", "deny"))
         self.assertIn("no secrets here", spec["permissionDecisionReason"])
 
-    def test_a_deny_stops_the_remaining_guards(self):
-        self.decide(self.policy({"guard-secrets": (2, "", "x"), "guard-destructive": (0, "", "")}))
-        self.assertEqual(len(self.calls), 1)
+    def test_a_deny_is_the_answer_but_every_guard_still_runs(self):
+        out = self.decide(self.policy({"guard-secrets": (2, "", "x"), "guard-destructive": (0, "", "")}))
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_a_guard_decision_on_stdout_is_passed_through_exactly(self):
         decision = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "r"}}
@@ -147,7 +148,7 @@ class Policy(unittest.TestCase):
 
     def test_without_a_registry_the_default_guards_apply(self):
         ids, closed = lanes.guard_ids_from_registry(Path("no-such-hooks.json"))
-        self.assertEqual(ids, list(lanes.DEFAULT_GUARDS))
+        self.assertEqual(ids, lanes.default_guards())
         self.assertEqual(closed, set())
         self.assertIn("guard-secrets", ids)
 
