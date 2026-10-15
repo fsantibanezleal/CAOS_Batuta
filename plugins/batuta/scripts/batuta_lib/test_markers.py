@@ -10,7 +10,7 @@ import hashlib
 import re
 from collections import Counter
 
-LANG_BY_EXT = {".py": "python", ".js": "javascript", ".jsx": "javascript", ".ts": "javascript", ".tsx": "javascript",
+LANG_BY_EXT = {".py": "python", ".pyw": "python", ".js": "javascript", ".jsx": "javascript", ".ts": "javascript", ".tsx": "javascript",
                ".mjs": "javascript", ".cjs": "javascript", ".mts": "javascript", ".cts": "javascript"}
 
 # The markers that make a test weaker without deleting it. A Python entry with a dot is compared with the dotted name
@@ -552,11 +552,13 @@ def _docstring_ids(tree):
     return ids
 
 
-def forgery_findings(path, text):
+def forgery_findings(path, text, python=False):
     """Sorted descriptions of what in a Python file could forge a test run from the inside: assignments to or patches of the test
     runner's own classes and functions, pytest hooks that change collection or reporting, a replacement of sys.stdout or sys.stderr,
-    and reads of the parent process. Empty for another language or a file that does not parse."""
-    if language_of(path) != "python":
+    reads of the parent process, and `exec`, `eval` or `compile` of code that is not a string literal. Python sources are `.py` and
+    `.pyw`; `python=True` reads a file of any name as Python (one the test command names). Empty for another language or a file that
+    does not parse."""
+    if not python and language_of(path) != "python":
         return []
     try:
         tree = ast.parse(text)
@@ -601,6 +603,10 @@ def forgery_findings(path, text):
                     found.add(f"patch of {name}")
             if canon in ("os.getppid", "posix.getppid", "nt.getppid"):
                 found.add("read of the parent process (os.getppid)")
+            if canon in ("exec", "eval", "compile", "builtins.exec", "builtins.eval", "builtins.compile"):
+                literal = node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)
+                if not literal:
+                    found.add(f"{canon.split('.')[-1]} of non-literal code")
         elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
             if psutil_used and node.attr in ("parent", "parents", "ppid"):
                 found.add(f"read of the parent process (psutil .{node.attr})")

@@ -672,6 +672,7 @@ class Checker:
         self.failed_locks = set()
         self.blobs = None
         self._base_signature = None
+        self._named = self._named_sources()
         self.task_commits = {}       # task id -> [(commit, kind)] of its tagged commits, oldest first
         self.commit_pos = {}         # sha -> position in the walk
         self.walked = []             # (sha, kind, changes) of every commit walked, merges with the changes they make themselves
@@ -842,15 +843,28 @@ class Checker:
             seen_red.add(task)
             reds.append((c, task, changes))
 
+    def _named_sources(self):
+        """Files the configured test command names explicitly (`python run_checks -v` names `run_checks`): read as Python whatever
+        their name, because the interpreter runs them."""
+        try:
+            tokens = shlex.split(self.s.test_command)
+        except ValueError:
+            return set()
+        return {t[2:] if t.startswith("./") else t for t in tokens[1:] if t and not t.startswith("-") and "{" not in t}
+
+    def _is_source(self, path):
+        return path.endswith((".py", ".pyw")) or path in self._named
+
     def _scan_base(self):
         """Warn about every Python file that already holds, at the base commit, a construct that could forge a test run."""
         if not self.base_sha:
             return
         for path in all_paths(self.repo, self.base_sha):
-            if not path.endswith(".py"):
+            if not self._is_source(path):
                 continue
             data = self.blobs.show(self.base_sha, path)
-            findings = tm.forgery_findings(path, data.decode("utf-8-sig", "replace")) if data is not None else []
+            findings = (tm.forgery_findings(path, data.decode("utf-8-sig", "replace"), python=path in self._named)
+                        if data is not None else [])
             if findings:
                 self.warn(f"{path} already holds {', '.join(findings)} at the base commit {self.base_sha[:7]}: it could forge a test run; "
                           f"the diff review is its control", path)
@@ -861,19 +875,20 @@ class Checker:
         if c.sha == self.base_sha:
             return
         for ch in changes:
-            if ch.status not in ("A", "M", "R") or not ch.path.endswith(".py"):
+            if ch.status not in ("A", "M", "R") or not self._is_source(ch.path):
                 continue
             data = self.blobs.show(c.sha, ch.path)
             if data is None:
                 continue
-            findings = set(tm.forgery_findings(ch.path, data.decode("utf-8-sig", "replace")))
+            findings = set(tm.forgery_findings(ch.path, data.decode("utf-8-sig", "replace"), python=ch.path in self._named))
             if not findings:
                 continue
             old_path = ch.old or ch.path
             before = set()
             if parent is not None and ch.status != "A":
                 old = self.blobs.show(parent, old_path)
-                before = set(tm.forgery_findings(old_path, old.decode("utf-8-sig", "replace"))) if old is not None else set()
+                before = (set(tm.forgery_findings(old_path, old.decode("utf-8-sig", "replace"), python=old_path in self._named))
+                          if old is not None else set())
             introduced = sorted(findings - before)
             if not introduced:
                 continue

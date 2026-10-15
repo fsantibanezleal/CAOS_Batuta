@@ -116,7 +116,9 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   or patches of the runner's own classes and functions (`unittest.TestCase` methods, `unittest.main`, `TextTestRunner`,
   `TextTestResult`), pytest hooks that change collection or reporting (`pytest_collection_modifyitems`, `pytest_runtest_*`), a
   replacement of `sys.stdout` or `sys.stderr`, and reads of the parent process (`os.getppid`, a psutil parent, `/proc/<pid>/cmdline`,
-  `wmic` or `Get-CimInstance` on a parent). A finding introduced inside the checked range fails unless an approved change request
+  `wmic` or `Get-CimInstance` on a parent), and `exec`, `eval` or `compile` of anything but a string literal. It reads every
+  Python source the interpreter can import or run: `.py`, `.pyw` and any file the configured test command names explicitly
+  (`python run_checks -v` names `run_checks`). A finding introduced inside the checked range fails unless an approved change request
   names the file; one that already exists at the base commit is a `WARN`. Residual (accepted, plan decision 37): in-process forgery
   that none of these sees (for example a result stream rewritten by means the scan does not know) is controlled by the static
   scan and by the human review of the diff; CI must run exactly `tdd.test_command`, and the guards and distribution unit adds a
