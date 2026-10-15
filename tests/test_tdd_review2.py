@@ -275,6 +275,57 @@ class R301RuntimeOutcomes(ReviewBase):
         self.assertEqual(code, 0, out)
 
 
+class R401RuntimeAtEveryChange(ReviewBase):
+    """U03, U04: the locked tests of every task are run at every later commit that changes a test, a test support file or the
+    test configuration, whatever its tag or task, and at the head of the range."""
+
+    PATCH = ("import unittest\n\nimport test_calc\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('environment')\n\n\n"
+             "setattr(test_calc.CalcTests, 'setUp', _setup)\n\n\nclass Z(unittest.TestCase):\n    def test_z(self):\n"
+             "        self.assertTrue(True)\n")
+    TWO = ("# REQ: REQ-CALC-002\nimport unittest\n\nimport calc\n\n\nclass TwoTests(unittest.TestCase):\n    def test_sub(self):\n"
+           "        self.assertEqual(calc.sub(3, 1), 2)\n")
+
+    def test_u03_a_skip_patch_in_an_untagged_commit_fails_the_replay(self):
+        repo = self.clone()
+        repo.write("tests/test_zz_env.py", self.PATCH)
+        repo.commit("chore: helper", "tests/test_zz_env.py")
+        sha = repo.head()[:7]
+        out = self.failing(repo, "skipped at runtime", "tests/test_calc.py", extra=("--replay",))
+        self.assertIn(sha, out)
+
+    def test_u04_a_skip_patch_of_another_tasks_tests_in_a_green_fails_the_replay(self):
+        repo = self.clone()
+        repo.write("tests/test_two.py", self.TWO)
+        code, out = self.lock(repo, "T-002", "tests/test_two.py")
+        self.assertEqual(code, 0, out)
+        code, out = run_cli("--config", self.cfg, "tdd", "commit", "--repo", repo.root, "--red", "T-002", "-m", "sub", "tests/test_two.py", "--apply")
+        self.assertEqual(code, 0, out)
+        repo.write("calc.py", "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n")
+        repo.write("tests/test_zz_env.py", self.PATCH)
+        repo.commit(message("green", "T-002", "sub"), "calc.py", "tests/test_zz_env.py")
+        sha = repo.head()[:7]
+        out = self.failing(repo, "skipped at runtime", "tests/test_calc.py", extra=("--replay",))
+        self.assertIn(sha, out)
+
+    def test_u07_a_patch_that_changes_no_test_file_is_caught_at_the_head(self):
+        repo = self.clone()
+        repo.write("calc.py", "import unittest\n\n\ndef _setup(self):\n    raise vars(unittest)['Skip' + 'Test']('x')\n\n\n"
+                              "setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+        repo.commit("chore: tidy", "calc.py")
+        self.failing(repo, "skipped at runtime", "tests/test_calc.py", extra=("--replay",))
+
+    def test_a_problem_is_named_at_the_first_commit_that_has_it(self):
+        repo = self.clone()
+        repo.write("tests/test_zz_env.py", self.PATCH)
+        repo.commit("chore: helper", "tests/test_zz_env.py")
+        first = repo.head()[:7]
+        repo.write("README.md", "later\n")
+        repo.commit("docs: later", "README.md")
+        out = self.failing(repo, "skipped at runtime", extra=("--replay",))
+        self.assertIn(first, out)
+        self.assertEqual(out.count("test_add is skipped at runtime"), 1)
+
+
 class R302ApprovedMoves(ReviewBase):
     def approve(self, repo):
         commit_request_open_first(repo, requests())
