@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""The one hook launcher (contract C31): `hook.py <handler id>`.
+
+Reads the C16 payload of the event on stdin, finds the handler `<id>` in the area modules under
+`batuta_lib/areas/` (a literal `HOOKS = {id: handler}`, read with `ast` without importing; only the module that
+defines the id is imported), calls `handler(payload)`, checks the handler result and then prints `output` as JSON on
+stdout, writes `message` to stderr and exits with `exit_code` (0, or 2 to block).
+
+An unknown id, an id defined twice, a module that fails to import, an exception, an invalid result or a field over
+the official 10,000-character cap writes the reason to stderr and exits 1, which Claude Code treats as a
+non-blocking error: the launcher itself fails open. A guard that must block when it cannot decide is wired with
+`onFailure: "block"` in hooks.json; that choice is never made here.
+
+Standard library only; writes no bytecode.
+"""
+from __future__ import annotations
+
+import ast
+import contextlib
+import importlib.util
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+HERE = Path(__file__).resolve().parent
+AREAS_DIR = HERE / "batuta_lib" / "areas"
+HOOK_ID = re.compile(r"[a-z][a-z0-9-]*")
+OUTPUT_CAP = 10000  # the official cap on hook output (characters)
+
+
+def discover(areas_dir: Path):
+    """({id: [module names]}, problems): the literal `HOOKS` dicts of the area modules, read without importing."""
+    found: dict[str, list[str]] = {}
+    problems: list[str] = []
+    for path in sorted(Path(areas_dir).glob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8-sig")
+        except OSError as exc:
+            problems.append(f"{path.stem}: cannot read ({exc})")
+            continue
+        if "HOOKS" not in source:
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError as exc:
+            problems.append(f"{path.stem}: cannot parse ({exc.msg})")
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                targets = [node.target.id]
+            else:
+                continue
+            if "HOOKS" in targets and isinstance(node.value, ast.Dict):
+                for key in node.value.keys:
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                        found.setdefault(key.value, []).append(path.stem)
+    return found, problems
+
+
+def validate_result(result) -> list[str]:
+    """Problems of a handler result: the contract decides (C31 `handler_result`, whose output is a C16 object), so a new
+    event the contract learns passes without a change here; the launcher adds only the official cap on field length."""
+    if not isinstance(result, dict):
+        return [f"the handler result must be an object, not {type(result).__name__}"]
+    try:
+        from batuta_lib import contract
+        schema = contract.load_schema(contract.find_schema(HERE.parent / "contracts", "C31"))
+        problems = contract.validate_instance("C31", result, schema)
+    except Exception as exc:  # noqa: BLE001 (a validator that cannot run is a non-blocking error, never a guess)
+        return [f"cannot validate against C31 ({type(exc).__name__}: {exc})"]
+    return problems + _cap_problems(result.get("output"))
+
+
+def _cap_problems(value, path: str = "output") -> list[str]:
+    """Any string field of the output longer than the official cap (10,000 characters)."""
+    if isinstance(value, str):
+        return [f"{path} is {len(value)} characters, over the {OUTPUT_CAP} cap"] if len(value) > OUTPUT_CAP else []
+    if isinstance(value, dict):
+        return [p for k, v in value.items() for p in _cap_problems(v, f"{path}/{k}")]
+    if isinstance(value, list):
+        return [p for i, v in enumerate(value) for p in _cap_problems(v, f"{path}/{i}")]
+    return []
+
+
+def _load(module_name: str, areas_dir: Path):
+    scripts = str(areas_dir.parent.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location(f"batuta_hook_area_{module_name}", areas_dir / f"{module_name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@contextlib.contextmanager
+def _handler_output_to_stderr(stderr):
+    """While a handler runs, anything it prints (Python level) or writes to file descriptor 1 goes to stderr: only the
+    launcher writes the decision on stdout."""
+    saved = None
+    try:
+        sys.stdout.flush()
+        saved = os.dup(1)
+        os.dup2(2, 1)
+    except (OSError, ValueError, AttributeError):
+        if saved is not None:
+            os.close(saved)
+        saved = None
+    try:
+        with contextlib.redirect_stdout(stderr):
+            yield
+    finally:
+        if saved is not None:
+            try:
+                sys.stdout.flush()
+            except (OSError, ValueError):
+                pass
+            os.dup2(saved, 1)
+            os.close(saved)
+
+
+def _write(stream, text: str) -> None:
+    stream.write(text)
+    stream.flush()
+
+
+def run(hook_id: str, stdin_text: str, stdout, stderr, areas_dir: Path | None = None) -> int:
+    """Run one handler; returns the exit code (0, 1 or 2). Never raises."""
+    areas_dir = Path(areas_dir) if areas_dir else AREAS_DIR
+
+    def fail(reason: str) -> int:
+        _write(stderr, f"hook {hook_id or '?'}: {reason}\n")
+        return 1
+
+    try:
+        if not isinstance(hook_id, str) or not HOOK_ID.fullmatch(hook_id):
+            return fail("a handler id is required (lowercase letters, digits and hyphens)")
+        text = stdin_text.lstrip("﻿")
+        payload = json.loads(text) if text.strip() else {}
+        if not isinstance(payload, dict):
+            return fail("the payload on stdin must be a JSON object")
+        found, _problems = discover(areas_dir)
+        modules = found.get(hook_id)
+        if not modules:
+            return fail(f"unknown handler id '{hook_id}' (no area module defines it)")
+        if len(modules) > 1:
+            return fail(f"handler id '{hook_id}' is defined twice (in {', '.join(modules)})")
+        # a handler's stray prints go to stderr: stdout carries exactly one JSON decision (or nothing)
+        with _handler_output_to_stderr(stderr):
+            module = _load(modules[0], areas_dir)
+            handler = getattr(module, "HOOKS", {}).get(hook_id)
+            if not callable(handler):
+                return fail(f"handler '{hook_id}' in {modules[0]} is not callable")
+            result = handler(payload)
+        problems = validate_result(result)
+        if problems:
+            return fail("invalid handler result: " + "; ".join(problems))
+        printed = ""
+        if result.get("output") is not None:
+            printed = json.dumps(result["output"])
+        if printed:
+            _write(stdout, printed + "\n")
+        if result["exit_code"] == 2:
+            _write(stderr, result["message"].rstrip() + "\n")
+        return result["exit_code"]
+    except json.JSONDecodeError as exc:
+        return fail(f"the payload on stdin is not valid JSON ({exc.msg})")
+    except BaseException as exc:  # noqa: BLE001 (SystemExit and KeyboardInterrupt included: always a non-blocking error)
+        return fail(f"{type(exc).__name__}: {exc}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    hook_id = argv[0] if len(argv) == 1 else ""
+    try:
+        data = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        data = ""
+    return run(hook_id, data, sys.stdout, sys.stderr)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
