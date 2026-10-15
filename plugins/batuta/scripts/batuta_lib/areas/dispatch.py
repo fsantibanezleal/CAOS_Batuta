@@ -383,6 +383,33 @@ def _read_state(path):
     return data if isinstance(data, dict) else {}
 
 
+def _ledger_spend(root, cfg, run_id):
+    """What the ledger row of the task records: {cost_usd, tokens_in, tokens_out} (empty without a row)."""
+    try:
+        rows = delegation.ledger_rows(delegation.read_text(_ledger_path(root, cfg)))[1]
+    except OSError:
+        return {}
+    for row in rows:
+        if row.get("ID") == run_id:
+            out = {}
+            for key, column, cast in (("cost_usd", "Cost USD", float), ("tokens_in", "Tokens in", int), ("tokens_out", "Tokens out", int)):
+                try:
+                    out[key] = cast(float(str(row.get(column, "")).strip()))
+                except ValueError:
+                    pass
+            return out
+    return {}
+
+
+def _spent_state(root, cfg, run_id, state_file):
+    """The task's spend: the larger of the state file and the ledger row, field by field, so deleting the state file cannot
+    reset the cap."""
+    state = _read_state(state_file)
+    for key, value in _ledger_spend(root, cfg, run_id).items():
+        state[key] = max(value, state.get(key, 0))
+    return state
+
+
 def _result_doc(request, status, ctx_provider, *, report=None, patch=None, outcome=None, duration=0.0, error=None):
     doc = {"contract_version": "1.0", "kind": "result", "run_id": request["run_id"], "lane": request["lane"], "status": status,
            "provider": ctx_provider, "model": request["model"], "duration_s": round(duration, 3)}
@@ -478,7 +505,7 @@ def _run_checks(checks, root, deadline, secrets):
 def _run_provider(args, root, cfg, request, ctx, brief_text, items, kind, state_file):
     """The tool-less lane. Cost and tokens are cumulative per task: what earlier runs of the request spent (the state file)
     is deducted from the cap before this call and added to its figures."""
-    prior = _read_state(state_file)
+    prior = _spent_state(root, cfg, request["run_id"], state_file)
     spent = float(prior.get("cost_usd", 0.0))
     remaining = ctx.max_cost - spent
     system_prompt = lanes.provider_messages(request, brief_text)
@@ -635,6 +662,8 @@ def _run(args, resume=None):
     if request is None:
         return out([item("FAIL", problem, Path(request_path).as_posix())], f"dispatch {args.verb_name} failed")
     if resume:
+        for key, value in _ledger_spend(root, cfg, request["run_id"]).items():
+            state[key] = max(value, state.get(key, 0))
         spent = float(state.get("cost_usd", 0.0))
         cap = request.get("max_cost_usd")
         if cap is not None and spent >= cap - 1e-9:
@@ -675,7 +704,7 @@ def _run(args, resume=None):
         doc = _result_doc(request, "pending", "anthropic")
     elif lane == "sdk":
         if state is None:    # a fresh run of the task starts a new session but keeps what the task has already spent
-            earlier = _read_state(state_file)
+            earlier = _spent_state(root, cfg, request["run_id"], state_file)
             state = {"session_id": None, "cost_usd": float(earlier.get("cost_usd", 0.0)), "tokens_in": int(earlier.get("tokens_in", 0)),
                      "tokens_out": int(earlier.get("tokens_out", 0)), "resumes": 0}
             base_elapsed = 0.0

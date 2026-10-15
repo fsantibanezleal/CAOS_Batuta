@@ -488,19 +488,77 @@ def _matches(matcher, tool_name):
 NO_WRITE = ("/dev/null", "/dev/stdout", "/dev/stderr", "nul", "$null", "-")
 
 
+def _cd_dest(seg):
+    """The folder a directory-change command moves into (the first operand, or the value of -Path), or None when it has none."""
+    args = guardshell.args_of(seg)
+    i = 0
+    while i < len(args):
+        if args[i].lower() in ("-path", "-literalpath") and i + 1 < len(args):
+            return args[i + 1].strip("'\"")
+        if not args[i].startswith("-"):
+            return args[i].strip("'\"")
+        i += 1
+    return None
+
+
+def _is_absolute(path):
+    return path.startswith("/") or re.match(r"^[A-Za-z]:", path) is not None
+
+
 def shell_write_violations(command, root, allowed, extra_roots):
-    """The write targets of a shell command that fall outside the write scope, the report and the extra roots. The targets come
-    from the guards' own shell parser (redirects, tee, cp, mv, rm, touch, sed -i, PowerShell cmdlets, nested commands); a target
-    that cannot be resolved (a variable, `~`, a wildcard) counts as outside."""
+    """The write targets of a shell command that fall outside the write scope, the report and the extra roots.
+
+    The targets come from the guards' own shell parser (redirects, tee, cp, mv, rm, touch, sed -i, PowerShell cmdlets, nested
+    commands). The command is walked in order and a directory change (`cd`, `pushd`, `chdir`, `Set-Location`, `sl`) moves the
+    folder a relative target is resolved against; a change that cannot be resolved statically (a variable, `~`, `-`, no operand,
+    a subshell) leaves relative targets unresolvable, and an unresolvable target counts as outside."""
     folded = guardtext.deobfuscate(guardtext.normalize(command))
     bad = []
-    for target in guardshell.write_targets_of(folded):
-        target = target.strip().strip("'\"")
-        if not target or target.lower() in NO_WRITE:
+    cwd = Path(root).resolve()
+    cd_seen = False
+
+    def unresolvable(t):
+        return any(ch in t for ch in "$%*?~`")
+
+    def check(target, cwd_now):
+        t = target.strip().strip("'\"")
+        if not t or t.lower() in NO_WRITE:
+            return
+        if unresolvable(t):
+            ok = False
+        else:
+            path = Path(t.replace("\\", "/"))
+            if _is_absolute(t):
+                resolved = path
+            elif cwd_now is None:
+                resolved = None
+            else:
+                resolved = cwd_now / path
+            ok = resolved is not None and _write_allowed(str(resolved), root, allowed, extra_roots)
+        if not ok and t not in bad:
+            bad.append(t)
+
+    for seg in guardshell.all_segments(folded):
+        if guardshell.command_name(seg) in guardshell.CD:
+            cd_seen = True
+            dest = _cd_dest(seg)
+            if dest is None or dest == "-" or unresolvable(dest) or cwd is None or "(" in folded or "{" in folded:
+                if dest is not None and not unresolvable(dest) and _is_absolute(dest) and "(" not in folded and "{" not in folded:
+                    cwd = Path(dest.replace("\\", "/")).resolve()
+                else:
+                    cwd = None
+            elif _is_absolute(dest):
+                cwd = Path(dest.replace("\\", "/")).resolve()
+            else:
+                cwd = (cwd / dest.replace("\\", "/")).resolve()
             continue
-        if any(ch in target for ch in "$%*?~") or not _write_allowed(target, root, allowed, extra_roots):
-            if target not in bad:
-                bad.append(target)
+        for target, _tag in guardshell.write_items(seg):
+            check(target, cwd)
+    # writers the walk above does not list (a pipe-fed writer, a link): their absolute or unresolvable targets still count
+    for target in guardshell.write_targets_of(folded):
+        t = target.strip().strip("'\"")
+        if t and (unresolvable(t) or _is_absolute(t)):
+            check(t, cwd)
     return bad
 
 

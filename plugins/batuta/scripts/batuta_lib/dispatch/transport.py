@@ -13,8 +13,10 @@ before each attempt and `charge(attempt, why)` is called after each billable att
 """
 from __future__ import annotations
 
+import base64
 import http.client
 import json
+import os
 import random
 import socket
 import threading
@@ -61,6 +63,57 @@ def before_send(exc):
 
 
 @dataclass
+class Proxy:
+    host: str
+    port: int
+    headers: dict = field(default_factory=dict)
+
+
+def _no_proxy(host, port, value):
+    """NO_PROXY: comma separated host names or domain suffixes (a leading dot is optional), `*` for every host, an optional
+    `:port`. CIDR ranges are not supported."""
+    for raw in value.split(","):
+        entry = raw.strip().lower()
+        if not entry:
+            continue
+        if entry == "*":
+            return True
+        entry_port = None
+        if ":" in entry and not entry.startswith("["):
+            entry, _sep, number = entry.rpartition(":")
+            entry_port = number
+        entry = entry.lstrip(".")
+        if entry_port and entry_port != str(port):
+            continue
+        if host == entry or host.endswith("." + entry):
+            return True
+    return False
+
+
+def proxy_for(url, env=None):
+    """The proxy an HTTPS call goes through (`HTTPS_PROXY` or `https_proxy`, an http:// URL, credentials in it become a Basic
+    Proxy-Authorization header), or None: no variable, a host matched by `NO_PROXY` or `no_proxy`, or a plain http call (which is
+    only ever local). A proxy that is not an http:// URL is refused."""
+    env = os.environ if env is None else env
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https":
+        return None
+    raw = env.get("HTTPS_PROXY") or env.get("https_proxy")
+    if not raw:
+        return None
+    if _no_proxy((parts.hostname or "").lower(), parts.port or 443, env.get("NO_PROXY") or env.get("no_proxy") or ""):
+        return None
+    proxy = urllib.parse.urlsplit(raw if "://" in raw else "http://" + raw)
+    if proxy.scheme != "http" or not proxy.hostname:
+        raise TransportError("only http:// proxies are supported (HTTPS_PROXY must be an http:// URL)", sent=False)
+    headers = {}
+    if proxy.username:
+        credential = f"{urllib.parse.unquote(proxy.username)}:{urllib.parse.unquote(proxy.password or '')}"
+        headers["Proxy-Authorization"] = "Basic " + base64.b64encode(credential.encode("utf-8")).decode("ascii")
+    return Proxy(proxy.hostname, proxy.port or 80, headers)
+
+
+@dataclass
 class Response:
     status: int
     headers: dict = field(default_factory=dict)
@@ -70,10 +123,11 @@ class Response:
 def _read_bounded(resp, started, budget):
     """Read the whole body in chunks, checking the call's time budget between reads."""
     chunks = []
+    read = getattr(resp, "read1", None) or resp.read       # read1 returns what has arrived instead of waiting for a full buffer
     while True:
         if time.monotonic() - started > budget:
             raise TransportError("the call exceeded its time budget while reading the answer")
-        chunk = resp.read(65536)
+        chunk = read(65536)
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
@@ -89,11 +143,23 @@ class UrllibTransport:
         target = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
         cls = http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
         started = time.monotonic()
-        conn = cls(parts.hostname, parts.port, timeout=timeout)
+        proxy = proxy_for(url)
+        if proxy is not None:
+            conn = cls(proxy.host, proxy.port, timeout=timeout)
+            conn.set_tunnel(parts.hostname, parts.port or 443, headers=proxy.headers)
+        else:
+            conn = cls(parts.hostname, parts.port, timeout=timeout)
         fired = []
 
         def cut():
+            # close() alone does not wake a thread blocked in a read: shut the socket down first, then close it
             fired.append(True)
+            sock = getattr(conn, "sock", None)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
             conn.close()
 
         timer = threading.Timer(timeout, cut)   # the watchdog: closes the socket at the total time budget

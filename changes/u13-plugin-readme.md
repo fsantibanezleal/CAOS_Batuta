@@ -50,3 +50,7 @@ python scripts/batuta.py dispatch resume --result FILE [--apply] [--hours H] [--
   what is left of the cap; a 429 answer and a connection error before the send are free. A run of read timeouts therefore ends
   `over-budget` once the cap cannot cover another attempt. The shell-write check of the sdk policy cannot see writes made by code
   inside an interpreter (`python -c "open(...)"`): that stays with the brief's scope and the guards.
+- Network: provider calls use the standard library's `http.client` (not `urllib.request`), TLS verification stays on, redirects are not
+  followed, plain HTTP is allowed only for the local host. They honour `HTTPS_PROXY` (an http:// proxy URL, tunnelled with CONNECT)
+  and `NO_PROXY` (host names and domain suffixes, `*`, an optional port; no CIDR ranges). `HTTP_PROXY` is not used because only local
+  hosts may use plain HTTP.
