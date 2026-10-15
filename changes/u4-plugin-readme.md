@@ -76,14 +76,19 @@ python scripts/batuta.py tdd check [--range GIT-RANGE] [--replay] [--config PATH
   own test command once: the configured `tdd.test_command` (the token `{tests}` stands for the red's test files), else
   `python -m unittest discover -s tests -p "test_*.py"` from the checkout root, with `-t .` when `tests` is a package. A red
   counts only when a test of its own failed or errored; exit 0, exit 5, `Ran 0 tests` and the failure of somebody else's
-  test do not. The worktree is removed on success, failure and timeout. `--replay` also RUNS, at every later `[green]` and
-  `[refactor]` commit of a task, the tests of the project (unittest discovery with a result class that records each test id's
-  outcome, or pytest with a JUnit XML report in the temp root) and compares the outcomes of the locked tests with the tests the
-  red commit's file defines: each locked test must have run, not be skipped and not be reported as an expected failure,
+  test do not. The worktree is removed on success, failure and timeout. `--replay` also RUNS the tests of the project (unittest
+  discovery with a result class that records each test id's outcome, or pytest with a JUnit XML report in the temp root) at every
+  commit of the range that changes a test, a test support file or the test configuration (whatever its tag or task), at every
+  `[green]` and `[refactor]` commit, and at the head of the range, and compares the outcomes of every live locked test, of every
+  task (from its first `[green]` commit on), with the tests the locked file defines: each must have run, not be skipped,
+  deselected or reported as an expected failure at any of those commits (the first commit with the problem is named),
   whatever configuration, hook, patch or import did it (`setattr` on `setUp`, a `SkipTest` raised from a fixture, a module-level
   patch). An approved rename maps the ids to the new file, an approved deletion removes them; a parametrized pytest id is
   compared by the part before `[` (one case that ran is enough). A test command that is neither pytest nor unittest discovery
-  gets a `WARN` that the comparison was not run.
+  gets a `WARN` that the comparison was not run. Cost: one checkout and one run of the test command per such commit, each bounded by
+  `replay_timeout_seconds`, so the time grows with the number of those commits times the length of the suite (at most that many
+  timeouts); a range with many test-changing commits is expensive, and CI should replay `<base>..HEAD` of a branch, not the whole
+  history.
 - Known limits of the static rules: a skip built from a name made at run time in a test that is not locked is not seen, except
   `import_module` or `__import__` with a computed name, which is itself flagged; the runtime run above is the control for
   locked tests. A skip raised inside a test body at run time is seen by the run only as `skipped`.
