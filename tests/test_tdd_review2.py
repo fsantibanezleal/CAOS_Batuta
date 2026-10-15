@@ -625,6 +625,13 @@ class R701Parsers(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.head()(failed)
 
+    def test_a_run_of_no_tests_is_an_empty_list_not_a_forgery(self):
+        empty = "\n----------------------------------------------------------------------\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n"
+        self.assertEqual(self.head()(empty), [])
+        lines_without_tests = "test_a (test_m.C.test_a) ... ok\n" + empty
+        with self.assertRaises(ValueError):
+            self.head()(lines_without_tests)
+
     def test_a_missing_summary_is_refused(self):
         with self.assertRaises(ValueError):
             self.head()("test_a (test_m.C.test_a) ... ok\n")

@@ -490,6 +490,8 @@ def check_unittest_run(text):
     it, so lines added, removed or rewritten by the code under test do not match. Raises ValueError on a mismatch."""
     entries = parse_unittest_verbose(text)
     ran, summary = _RAN.findall(text), _SUMMARY.findall(text)
+    if ran and int(ran[-1]) == 0 and not entries:
+        return []   # `Ran 0 tests`: nothing ran, so each locked test is reported as not run by the comparison
     if not ran or not summary:
         raise ValueError("the output has no `Ran N tests` summary and result line of the runner")
     lines = [e for e in entries if not e["sub"]]
