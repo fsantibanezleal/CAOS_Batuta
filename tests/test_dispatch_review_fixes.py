@@ -112,9 +112,9 @@ class F1CumulativeCost(Base):
         t = FakeTransport([transport.TransportError("read timed out")] * 8)
         code, out, _ = self.go(req, "--apply", tr=t)
         result = self.result_of(req)
-        self.assertEqual(result["status"], "error")
-        self.assertGreater(result["cost_usd"], 0)
-        self.assertIn("allowed budget", result["error"])
+        self.assertEqual(result["status"], "over-budget")          # every attempt is charged; what is left cannot cover another
+        self.assertGreater(result["cost_usd"], 0.4)
+        self.assertLessEqual(result["cost_usd"], 0.5 + 1e-9)
 
     def test_a_429_storm_is_not_charged_because_the_provider_refused_every_call(self):
         brief = self.brief("look", "searcher")
@@ -334,19 +334,32 @@ class F9Transport(unittest.TestCase):
         clock = [0.0]
 
         class Slow:
-            status, headers = 200, {}
+            status = 200
 
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
+            def getheaders(self):
+                return []
 
             def read(self, n=-1):
                 clock[0] += 4.0                       # four seconds a chunk, however short the socket timeout is
                 return b"x" * 10
 
-        with mock.patch("urllib.request.urlopen", return_value=Slow()), mock.patch.object(transport.time, "monotonic", side_effect=lambda: clock[0]):
+        class Conn:
+            def __init__(self, *a, **k):
+                pass
+
+            def connect(self):
+                return None
+
+            def request(self, *a, **k):
+                return None
+
+            def getresponse(self):
+                return Slow()
+
+            def close(self):
+                return None
+
+        with mock.patch("http.client.HTTPSConnection", Conn), mock.patch.object(transport.time, "monotonic", side_effect=lambda: clock[0]):
             with self.assertRaises(transport.TransportError) as cm:
                 transport.UrllibTransport().send("POST", "https://h.example/x", {}, b"{}", 10)
         self.assertIn("time budget", str(cm.exception))
