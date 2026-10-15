@@ -516,6 +516,7 @@ def shell_write_violations(command, root, allowed, extra_roots):
     bad = []
     cwd = Path(root).resolve()
     cd_seen = False
+    walked = set()
 
     def unresolvable(t):
         return any(ch in t for ch in "$%*?~`")
@@ -553,12 +554,15 @@ def shell_write_violations(command, root, allowed, extra_roots):
                 cwd = (cwd / dest.replace("\\", "/")).resolve()
             continue
         for target, _tag in guardshell.write_items(seg):
+            walked.add(target.strip().strip("'\""))
             check(target, cwd)
-    # writers the walk above does not list (a pipe-fed writer, a link): their absolute or unresolvable targets still count
+    # what the walk above did not list: writers fed through a pipe or xargs (their targets come from the input, `*` when it has
+    # none), links, and the spelling of a target joined with an earlier directory change. These are spelled relative to the project
+    # root, so they are judged against it: a literal path inside the scope passes, anything else (or `*`) is denied.
     for target in guardshell.write_targets_of(folded):
         t = target.strip().strip("'\"")
-        if t and (unresolvable(t) or _is_absolute(t)):
-            check(t, cwd)
+        if t and (t not in walked or unresolvable(t) or _is_absolute(t)):
+            check(t, Path(root).resolve())
     return bad
 
 
