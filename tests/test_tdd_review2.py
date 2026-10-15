@@ -432,12 +432,13 @@ class C01Version11TddBlock(ReviewBase):
         self.assertNotIn("does not satisfy", out)
 
     def test_a_bad_legacy_object_is_refused_in_a_1_0_document(self):
+        repo = self.clone()
         for name, markers in {"language-unknown": {"cobol": ["x"]}, "not-a-list": {"python": "wip"}, "empty-name": {"python": [""]}}.items():
             with self.subTest(case=name):
                 folder = self.tmp / ("legacy-" + name)
                 folder.mkdir(exist_ok=True)
                 cfg = write_config(folder, self.temp_root, markers=markers)
-                code, out = self.check(self.clone(), cfg=cfg)
+                code, out = self.check(repo, cfg=cfg)
                 self.assertEqual(code, 1, out)
                 self.assertIn("markers", out)
 
