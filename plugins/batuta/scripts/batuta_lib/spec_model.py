@@ -223,7 +223,6 @@ READ_ONLY = {"ls", "cat", "type", "dir", "test", "find", "sort", "more", "less",
 LISTING_FLAGS = {"--collect-only", "--co", "--dry-run", "--list", "--list-tests", "--listtests", "--collectonly"}
 INFO_FLAGS = LISTING_FLAGS | {"--version", "-V", "-h", "--help"}
 _SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "cmd", "powershell", "pwsh"}
-_SHELL_RUN_FLAGS = {"-c", "/c", "/k", "-command"}
 _INTERPRETERS = {"python", "python3", "py", "node", "ruby"}
 _INTERPRETER_RUN_FLAGS = {"-c", "-e"}
 _TEST_MODULES = {"pytest", "unittest", "nose", "nose2", "coverage", "tox", "nox", "behave", "doctest", "robot"}
@@ -316,14 +315,52 @@ def _test_invocation(words, first, root):
     return _names_test(" ".join(words[1:])) and _known_command(words[0], root)
 
 
-def _body_after(words, flags):
+_POSIX_SHELLS = {"sh", "bash", "zsh", "dash"}
+_POSIX_RUN_CLUSTER = re.compile(r"-[A-Za-z]*c[A-Za-z]*\Z")
+
+
+def _is_run_flag(shell, word):
+    """True when `word` makes `shell` run the text after it: `/c` and `/k` for cmd, any short-flag cluster holding `c`
+    (`-c`, `-lc`, `-ec`, `-xc`) for sh, bash, zsh and dash, and any prefix of `-command` of at least `-c` for PowerShell."""
+    low = word.lower()
+    if shell == "cmd":
+        return low in ("/c", "/k")
+    if shell in _POSIX_SHELLS:
+        return bool(_POSIX_RUN_CLUSTER.match(word))
+    return len(low) >= 2 and "-command".startswith(low)
+
+
+def _is_encoded_flag(word):
+    """PowerShell `-EncodedCommand`, any prefix of it of at least `-e`, and its alias `-ec`: a payload that cannot be read."""
+    low = word.lower()
+    return low == "-ec" or (len(low) >= 2 and "-encodedcommand".startswith(low))
+
+
+def _body_after(words, shell):
     for i, w in enumerate(words[1:], 1):
-        if w.lower() in flags:
+        if _is_run_flag(shell, w):
             body = " ".join(words[i + 1:]).strip()
             if len(body) > 1 and body[0] == body[-1] and body[0] in "'\"":
                 body = body[1:-1]
             return body
     return None
+
+
+def _pipefail_before(chain, upto):
+    """Whether `set -o pipefail` is in force at segment `upto`: an option word exactly `pipefail` after `-o` (alone or inside a
+    combined flag such as `-eo`, `-euo`), cancelled by a later `set +o pipefail`."""
+    state = False
+    for op, seg in chain[:upto]:
+        words = _words(seg)
+        if not words or _command_word(words[0]) != "set":
+            continue
+        for k, w in enumerate(words[1:], 1):
+            nxt = words[k + 1] if k + 1 < len(words) else ""
+            if nxt == "pipefail" and (w == "-o" or re.match(r"-[a-z]*o\Z", w)):
+                state = True
+            elif nxt == "pipefail" and w == "+o":
+                state = False
+    return state
 
 
 def _analyse(span, root, depth=0, powershell=False):
@@ -336,11 +373,10 @@ def _analyse(span, root, depth=0, powershell=False):
         return f"'{span.strip()}': a command after a double pipe runs only when the test failed and hides the failure", False, False
     heads = [(_words(seg), op) for op, seg in chain]
     first_cmd = next((_command_word(w[0]) for w, _ in heads if w and _command_word(w[0]) not in PREFIX_COMMANDS), "")
-    powershell = powershell or first_cmd in _POWERSHELL
-    pipes = any(op == "|" for op, _ in chain)
-    pipefail = any(w[:1] and _command_word(w[0]) == "set" and any("pipefail" in x for x in w[1:]) for w, _ in heads)
-    if pipes and (powershell or not pipefail):
-        why = "PowerShell has no pipefail" if powershell else "start the Gate with `set -o pipefail` (bash, sh)"
+    powershell = powershell or first_cmd in _POWERSHELL or first_cmd == "cmd"
+    pipe_at = [i for i, (op, _) in enumerate(chain) if op == "|"]
+    if pipe_at and (powershell or not all(_pipefail_before(chain, i) for i in pipe_at)):
+        why = "cmd and PowerShell have no pipefail" if powershell else "set `set -o pipefail` before the pipe (bash, sh)"
         return f"'{span.strip()}': a pipe after the test hides its exit status ({why}); the Gate's status must be the test's", False, False
     ran, commands, mixed = False, [], False
     for idx, (words, op) in enumerate(heads):
@@ -352,11 +388,15 @@ def _analyse(span, root, depth=0, powershell=False):
             mixed = True
         first = _command_word(words[0])
         if first in PREFIX_COMMANDS:
+            if commands and op in (";", "&"):
+                commands.append(False)      # a command after the test decides the status of a `;` or `&` chain
             continue
+        if first in _POWERSHELL and any(_is_encoded_flag(w) for w in words[1:]):
+            return f"'{span.strip()}': an encoded PowerShell command cannot be read, so it cannot be a gate", False, False
         if first in _SHELL_WRAPPERS and depth < 3:
-            body = _body_after(words, _SHELL_RUN_FLAGS)
+            body = _body_after(words, first)
             if body is not None:
-                problem, sub_ran, sub_test = _analyse(body, root, depth + 1, first in _POWERSHELL)
+                problem, sub_ran, sub_test = _analyse(body, root, depth + 1, first in _POWERSHELL or first == "cmd")
                 if problem:
                     return problem, False, False
                 ran, commands = ran or sub_ran, commands + [sub_test]
@@ -451,7 +491,7 @@ def is_test_path(path):
     if suffix in CODE_SUFFIXES:
         if low.startswith("test_") or ".test." in low or ".spec." in low or low.endswith(_TEST_NAME_ENDS):
             return True
-        if suffix == ".rs" and "tests" in (p.lower() for p in parts[:-1]):
+        if suffix == ".rs" and len(parts) >= 2 and parts[-2].lower() == "tests":
             return True
         return suffix in _JS_SUFFIXES and "__tests__" in parts[:-1]
     if not suffix or "." in name and low.endswith((".tests", ".unittests")):

@@ -64,3 +64,8 @@ python scripts/batuta.py spec freeze --check ID
 - The approval phrase is the whole first line: after trimming, the first line of the typed prompt must equal
   `approve <spec id> <first 12 hex>` (keyword and hex in any case). Other text on that line, even after a correct phrase
   (`approve 001-x abc123def456 -- no wait, do not`), is refused with a message and nothing is written; later lines are ignored.
+- Pipefail and shell wrappers, tightened: `set -o pipefail` counts only as a `set` segment before the pipe whose option is exactly
+  `pipefail` after `-o` (or in a combined flag such as `-eo`), never after a `set +o pipefail`, never under `cmd` or PowerShell;
+  in a `;` or `&` chain nothing may follow the test (not even `cd` or `export`), only `&&`. For sh, bash, zsh and dash any
+  short-flag cluster holding `c` (`-lc`, `-ec`) is the run flag; for PowerShell any prefix of `-command` of at least `-c` is,
+  and `-EncodedCommand` (any prefix of at least `-e`, or `-ec`) is refused. A Rust file counts as a test only directly under `tests/`.
