@@ -326,6 +326,83 @@ class R401RuntimeAtEveryChange(ReviewBase):
         self.assertEqual(out.count("test_add is skipped at runtime"), 1)
 
 
+class R501TheHeadIsTheProjectsOwnRun(ReviewBase):
+    """X13: product code must not be able to tell the replay from the project's own run. The head check point runs in the
+    repository's own checkout; intermediate points run in worktrees with neutral names and an unchanged environment."""
+
+    SKIP = "raise vars(unittest)['Skip' + 'Test']('environment')"
+
+    def patched_calc(self, condition):
+        return (f"import os\nimport unittest\n\n\ndef _setup(self):\n    {self.SKIP}\n\n\nif {condition}:\n"
+                f"    setattr(unittest.TestCase, 'setUp', _setup)\n\n\ndef add(a, b):\n    return a + b\n")
+
+    def replay(self, repo, *extra):
+        keys = ("BATUTA", "TDD", "REPLAY", "PYTHONDONTWRITEBYTECODE")
+        env = {k: v for k, v in os.environ.items() if not any(w in k.upper() for w in keys)}
+        with mock.patch.dict(os.environ, env, clear=True):
+            return self.check(repo, "--replay", *extra)
+
+    def test_x13_a_patch_that_acts_only_outside_a_replay_worktree_fails_at_the_head(self):
+        repo = self.clone()
+        repo.write("calc.py", self.patched_calc("'tdd-replay-' not in os.getcwd()"))
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("skipped at runtime", out)
+
+    def test_a_patch_keyed_on_a_variable_the_replay_used_to_set_fails(self):
+        repo = self.clone()
+        repo.write("calc.py", self.patched_calc("os.environ.get('PYTHONDONTWRITEBYTECODE') is None"))
+        repo.commit("chore: tidy", "calc.py")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("skipped at runtime", out)
+
+    def test_a_working_tree_that_differs_from_head_fails_the_head_check(self):
+        repo = self.clone()
+        repo.write("README.md", "changed but not committed\n")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 1, out)
+        self.assertIn("the working tree differs from HEAD", out)
+
+    def test_an_untracked_file_does_not(self):
+        repo = self.clone()
+        repo.write("notes.txt", "not tracked\n")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 0, out)
+
+    def test_a_range_that_ends_before_head_runs_its_end_in_a_worktree_and_ignores_the_dirty_tree(self):
+        repo = self.clone()
+        repo.write("README.md", "changed but not committed\n")
+        code, out = self.replay(repo, "--range", "HEAD~3..HEAD~1")
+        self.assertEqual(code, 0, out)
+
+    def test_the_head_runs_in_the_checkout_and_the_others_in_neutral_worktrees(self):
+        repo = self.clone()
+        log = self.tmp / "probe-log.jsonl"
+        log.unlink(missing_ok=True)
+        probe = ("import json\nimport os\nimport unittest\n\nLOG = " + repr(str(log)) + "\n\n\n"
+                 "def _record():\n    keys = sorted(k for k in os.environ if any(w in k.upper() for w in ('BATUTA', 'TDD', 'REPLAY')))\n"
+                 "    with open(LOG, 'a', encoding='utf-8') as handle:\n        handle.write(json.dumps({'cwd': os.getcwd(), 'env': keys}) + '\\n')\n\n\n"
+                 "_record()\n\n\nclass P(unittest.TestCase):\n    def test_p(self):\n        self.assertTrue(True)\n")
+        repo.write("tests/test_zz_probe.py", probe)
+        repo.commit("chore: probe", "tests/test_zz_probe.py")
+        repo.write("README.md", "later\n")
+        repo.commit("docs: later", "README.md")
+        code, out = self.replay(repo)
+        self.assertEqual(code, 0, out)
+        lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines() if x.strip()]
+        self.assertGreaterEqual(len(lines), 2, lines)
+        self.assertEqual(os.path.realpath(lines[-1]["cwd"]), os.path.realpath(repo.root))
+        for line in lines[:-1]:
+            below = os.path.relpath(os.path.realpath(line["cwd"]), os.path.realpath(self.temp_root)).lower()
+            self.assertFalse(below.startswith(".."), below)
+            for word in ("tdd", "replay", "batuta"):
+                self.assertNotIn(word, below)
+        for line in lines:
+            self.assertEqual(line["env"], [])
+
+
 class R302ApprovedMoves(ReviewBase):
     def approve(self, repo):
         commit_request_open_first(repo, requests())
