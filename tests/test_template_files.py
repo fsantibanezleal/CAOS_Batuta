@@ -119,8 +119,27 @@ class RenderedContracts(unittest.TestCase):
                          "the template adds only the status file (C10) that `gate check` needs; the empty approvals and evidence "
                          "folders are left out (a guard scans for `specs/*/approvals` folders) and created on first use")
         for rel, data in created.items():
-            if data is not None:
+            if data is None:
+                continue
+            if rel.endswith(("spec.md", "tasks.md")):
+                # the example rows (one requirement and its task, so the files satisfy C05 and C21) are the only addition
+                kept = [ln for ln in ours[rel].decode("utf-8").split("
+") if not ln.startswith(("| REQ-EXAMPLE-001", "| T-001"))]
+                self.assertEqual("
+".join(kept).encode("utf-8"), data, rel)
+                self.assertNotEqual(ours[rel], data, f"{rel} carries its example row")
+            else:
                 self.assertEqual(ours[rel], data, rel)
+
+    def test_every_rendered_file_validates_against_its_contract(self):
+        contracts = {".batuta/batuta.json": "C01", "specs/000-foundation/thresholds.json": "C11",
+                     "specs/001-example-feature/spec.md": "C05", "specs/001-example-feature/tasks.md": "C21",
+                     "specs/001-example-feature/status.md": "C10"}
+        for rel, cid in contracts.items():
+            code, out, err = run("contract", "validate", cid, str(self.out / rel))
+            self.assertEqual(code, 0, f"{rel} as {cid}: {out}{err}")
+        preset = init._settings_preset((self.out / ".claude/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(preset["contract_version"], "1.0")
 
     def test_status_file_is_the_gate_areas_template_for_the_example_feature(self):
         text = (self.out / "specs/001-example-feature/status.md").read_text(encoding="utf-8")
@@ -170,8 +189,10 @@ class RenderedContracts(unittest.TestCase):
 
     def test_render_refuses_a_missing_or_unsafe_variable(self):
         with self.assertRaises(init.InitError):
-            init.render_project({k: v for k, v in FIXTURE_VARS.items() if k != "project_slug"})
-        for key, bad in (("project_slug", "Bad Slug"), ("python_version", "three"), ("test_command", 'run "x"'),
+            init.render_project({k: v for k, v in FIXTURE_VARS.items() if k != "default_branch"})
+        with self.assertRaises(init.InitError):   # the unused project_slug question is gone
+            init.render_project({**FIXTURE_VARS, "project_slug": "x"})
+        for key, bad in (("python_version", "three"), ("batuta_ref", "main"), ("test_command", 'run "x"'),
                          ("test_command", "line1\nline2"), ("default_branch", "-x"), ("project_name", 'a"b'),
                          ("project_name", "{{ x }}")):
             with self.assertRaises(init.InitError, msg=f"{key}={bad!r}"):
@@ -218,10 +239,11 @@ class CopierFile(unittest.TestCase):
         for name in FIVE:
             self.assertRegex(text, rf"(?m)^{name}:\s*$", name)
         for key, value in init.DEFAULTS.items():
-            if key in ("project_name", "project_slug"):
+            if key == "project_name":
                 continue   # derived from the target folder by `init project`; copier asks
             self.assertIn(str(value), text, f"default of {key} differs between copier.yml and init project")
-        self.assertEqual(len(re.findall(r"(?m)^[a-z_]+:\s*$", text)), 6, "five questions and the hidden release tag")
+        self.assertEqual(len(re.findall(r"(?m)^[a-z_]+:\s*$", text)), 5, "four questions and the hidden release tag")
+        self.assertNotIn("project_slug", text)
         self.assertRegex(text, r"(?ms)^batuta_ref:.*?when:\s*false")
         tag = "v" + (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         self.assertEqual(init.DEFAULTS["batuta_ref"], tag, "init project pins the checks to the installed version")

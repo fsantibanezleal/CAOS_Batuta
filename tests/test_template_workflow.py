@@ -152,6 +152,14 @@ class GatesStep(unittest.TestCase):
         for needed in ("gate thresholds", "context check", "leaks scan"):
             self.assertTrue(any(c.startswith(needed) for c in calls), (needed, calls))
 
+    def test_a_missing_batuta_script_fails_the_job_instead_of_passing_as_a_warning(self):
+        (self.fake / "batuta.py").unlink()
+        done, calls = self.gates()
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        self.assertIn("::error::", done.stdout)
+        self.assertIn("batuta.py", done.stdout)
+        self.assertEqual(calls, [])
+
     def test_a_warning_exit_code_is_reported_and_does_not_fail_the_job(self):
         done, _ = self.gates(tdd_check=2, leaks_scan=2)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)

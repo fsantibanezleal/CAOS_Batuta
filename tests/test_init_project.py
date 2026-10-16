@@ -31,7 +31,7 @@ class DryRun(World):
         (self.project / "AGENTS.md").write_text("mine\n", encoding="utf-8")
         before = snapshot(self.project)
         code, out, _ = self.init_project(apply=False)
-        self.assertIn("CHANGED AGENTS.md", out)
+        self.assertIn("DIFFERENT AGENTS.md", out)   # a managed file the user edited is kept
         self.assertIn("SAME CLAUDE.md", out)
         self.assertEqual(snapshot(self.project), before)
 
@@ -100,10 +100,10 @@ class Apply(World):
                          r"BATUTA_REF: v\d+\.\d+\.\d+")
 
     def test_a_bad_variable_is_refused_with_nothing_written(self):
-        code, out, err = self.cli("init", "project", "--target", str(self.project), "--var", "project_slug=Bad Slug",
+        code, out, err = self.cli("init", "project", "--target", str(self.project), "--var", "python_version=three",
                                   "--apply")
         self.assertEqual(code, 1)
-        self.assertIn("project_slug", out + err)
+        self.assertIn("python_version", out + err)
         self.assertFalse(self.project.exists())
         code, out, err = self.cli("init", "project", "--target", str(self.project), "--var", "nope=1", "--apply")
         self.assertEqual(code, 1)
@@ -125,12 +125,17 @@ class Apply(World):
 
 
 class ExistingFiles(World):
-    def test_an_existing_claude_md_is_backed_up_with_a_stamp_before_it_is_replaced(self):
+    def test_an_existing_claude_md_keeps_the_users_content_and_gets_a_managed_block(self):
         self.project.mkdir()
         mine = "# My own rules\n\nKeep tabs.\n"
         (self.project / "CLAUDE.md").write_text(mine, encoding="utf-8")
         code, out, _ = self.init_project()
-        self.assertIn("CHANGED CLAUDE.md", out)
+        self.assertRegex(out, r"MERGED CLAUDE\.md")
+        text = (self.project / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith(mine), "the user's content stays first and untouched")
+        self.assertEqual(text.count("<!-- batuta:begin"), 1)
+        self.assertEqual(text.count("<!-- batuta:end -->"), 1)
+        self.assertIn("Demo Project", text)
         backups = sorted(self.project.glob("CLAUDE.md.bak-*"))
         self.assertEqual(len(backups), 1, out)
         self.assertEqual(backups[0].read_text(encoding="utf-8"), mine)
@@ -138,6 +143,75 @@ class ExistingFiles(World):
         manifest = im.Manifest.load(self.project / ".batuta" / "installed.json")
         entry = next(e for e in manifest.files if e["path"] == "CLAUDE.md")
         self.assertEqual(entry["backup"], backups[0].name)
+        before = (self.project / "CLAUDE.md").read_bytes()
+        code, out, _ = self.init_project()
+        self.assertEqual((self.project / "CLAUDE.md").read_bytes(), before, "a second run changes nothing")
+        self.assertEqual(len(list(self.project.glob("CLAUDE.md.bak-*"))), 1)
+
+    def test_the_managed_block_is_updated_in_place_around_the_users_text(self):
+        self.project.mkdir()
+        (self.project / "CLAUDE.md").write_text("# Mine\n\nabove\n", encoding="utf-8")
+        self.init_project()
+        path = self.project / "CLAUDE.md"
+        path.write_text(path.read_text(encoding="utf-8") + "\nbelow, written later\n", encoding="utf-8")
+        code, out, _ = self.init_project("--var", "project_name=Renamed")
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("above", text)
+        self.assertIn("below, written later", text)
+        self.assertIn("Renamed", text)
+        self.assertNotIn("Demo Project", text)
+        self.assertEqual(text.count("<!-- batuta:begin"), 1)
+
+    def test_a_fresh_claude_md_is_the_plain_rendering_without_markers(self):
+        self.init_project()
+        text = (self.project / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertNotIn("batuta:begin", text)
+        self.assertEqual(text, init.render_project(dict(FIXTURE_VARS))["CLAUDE.md"])
+
+    def test_seed_files_are_yours_after_the_first_install(self):
+        self.init_project()
+        seeds = {"specs/000-foundation/thresholds.json":
+                 '{"contract_version": "1.0", "values": {"line_coverage_percent": 92}, "history": []}\n',
+                 "tests/test_foundation.py": "# my tests\n", ".batuta/batuta.json": "{}\n",
+                 "specs/001-example-feature/spec.md": "mine\n"}
+        for rel, text in seeds.items():
+            (self.project / rel).write_text(text, encoding="utf-8")
+        for extra in ((), ("--force",)):
+            code, out, _ = self.init_project(*extra)
+            for rel, text in seeds.items():
+                self.assertEqual((self.project / rel).read_text(encoding="utf-8"), text, f"{rel} with {extra}")
+                self.assertRegex(out, "SKIP " + rel.replace(".", "[.]"))
+        self.assertEqual(list(self.project.rglob("thresholds.json.bak-*")), [])
+
+    def test_a_seed_file_that_already_exists_before_the_first_install_is_left_alone(self):
+        (self.project / "tests").mkdir(parents=True)
+        (self.project / "tests" / "test_foundation.py").write_text("# mine\n", encoding="utf-8")
+        code, out, _ = self.init_project()
+        self.assertEqual((self.project / "tests" / "test_foundation.py").read_text(encoding="utf-8"), "# mine\n")
+
+    def test_a_hand_edited_managed_file_is_kept_unless_forced_and_then_backed_up(self):
+        make_repo(self.project)
+        self.init_project()
+        agents = self.project / "AGENTS.md"
+        agents.write_text("my own agents file\n", encoding="utf-8")
+        code, out, _ = self.init_project()
+        self.assertEqual(code, 2, out)
+        self.assertRegex(out, r"DIFFERENT AGENTS\.md")
+        self.assertIn("--force", out)
+        self.assertEqual(agents.read_text(encoding="utf-8"), "my own agents file\n")
+        self.assertEqual(list(self.project.glob("AGENTS.md.bak-*")), [])
+        code, out, _ = self.init_project("--force")
+        self.assertRegex(out, r"CHANGED AGENTS\.md")
+        self.assertIn("Demo Project", agents.read_text(encoding="utf-8"))
+        backups = list(self.project.glob("AGENTS.md.bak-*"))
+        self.assertEqual([b.read_text(encoding="utf-8") for b in backups], ["my own agents file\n"])
+
+    def test_a_managed_file_the_user_had_before_the_install_is_kept_unless_forced(self):
+        self.project.mkdir()
+        (self.project / "AGENTS.md").write_text("theirs\n", encoding="utf-8")
+        code, out, _ = self.init_project()
+        self.assertEqual((self.project / "AGENTS.md").read_text(encoding="utf-8"), "theirs\n")
+        self.assertRegex(out, r"DIFFERENT AGENTS\.md")
 
     def test_existing_settings_are_merged_append_only_and_backed_up(self):
         (self.project / ".claude").mkdir(parents=True)

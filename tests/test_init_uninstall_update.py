@@ -141,10 +141,13 @@ class ProjectUpdate(World):
         make_repo(self.project)
         (self.project / "AGENTS.md").write_bytes(b"original\n")
         before = snapshot(self.project)
-        self.init_project()
+        self.init_project("--force")
         agents = self.project / "AGENTS.md"
         agents.write_text("my edit\n", encoding="utf-8")
         code, out, _ = self.cli("init", "update", "--target", str(self.project), "--apply")
+        self.assertRegex(out, r"DIFFERENT AGENTS\.md")
+        self.assertEqual(agents.read_text(encoding="utf-8"), "my edit\n", "update keeps a hand-edited managed file")
+        code, out, _ = self.cli("init", "update", "--target", str(self.project), "--apply", "--force")
         self.assertRegex(out, r"CHANGED AGENTS\.md")
         kept = [p.read_text(encoding="utf-8") for p in self.project.glob("AGENTS.md.bak-*")]
         self.assertIn("my edit\n", kept)
@@ -153,6 +156,16 @@ class ProjectUpdate(World):
         restored = {k: v for k, v in snapshot(self.project).items() if not k.startswith("AGENTS.md.bak-")}
         self.assertEqual(restored["AGENTS.md"], b"original\n")
         self.assertEqual({k: v for k, v in restored.items() if k in before}, before)
+
+    def test_update_never_overwrites_a_seed_file_even_with_force(self):
+        make_repo(self.project)
+        self.init_project()
+        path = self.project / "specs" / "000-foundation" / "thresholds.json"
+        path.write_text('{"contract_version": "1.0", "values": {"x": 1}, "history": []}\n', encoding="utf-8")
+        with mock.patch.object(init, "template_dir", lambda: self.altered_template()):
+            for extra in ((), ("--force",)):
+                self.cli("init", "update", "--target", str(self.project), "--apply", *extra)
+                self.assertIn('"x": 1', path.read_text(encoding="utf-8"))
 
     def test_update_moves_the_pinned_release_tag_to_the_installed_version(self):
         make_repo(self.project)

@@ -19,7 +19,6 @@ TEMPLATE_DIR = ROOT / "plugins" / "batuta" / "templates" / "project"
 WORKFLOW = ".github/workflows/batuta-gates.yml"
 FIXTURE_VARS = {
     "project_name": "Demo Project",
-    "project_slug": "demo-project",
     "python_version": "3.12",
     "test_command": "python -m unittest discover -s tests -t . -v",
     "default_branch": "main",
