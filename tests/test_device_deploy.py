@@ -136,17 +136,16 @@ class TemplateFolders(unittest.TestCase):
             (base / rel).mkdir(parents=True)
             (base / rel / "x.md").write_text(rel, encoding="utf-8")
 
-    def test_a_checkout_mirrors_the_repository_templates_and_the_plugin_templates(self):
+    def test_a_checkout_mirrors_the_plugins_own_templates_only(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            self.layout(base, "templates/presets", "plugins/batuta/templates/spec")
+            self.layout(base, "templates/stray", "plugins/batuta/templates/presets")
             (base / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
             with mock.patch.object(device, "PLUGIN_ROOT", base / "plugins" / "batuta"):
-                self.assertEqual([base / "templates", base / "plugins" / "batuta" / "templates"],
-                                 device._templates_dirs())
+                self.assertEqual([base / "plugins" / "batuta" / "templates"], device._templates_dirs())
 
-    def test_a_checkout_without_plugin_templates_still_mirrors_the_repository_templates(self):
+    def test_a_plugin_without_templates_mirrors_none_even_when_the_repository_has_a_folder(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -154,7 +153,7 @@ class TemplateFolders(unittest.TestCase):
             (base / "plugins" / "batuta").mkdir(parents=True)
             (base / ".git").mkdir()
             with mock.patch.object(device, "PLUGIN_ROOT", base / "plugins" / "batuta"):
-                self.assertEqual([base / "templates"], device._templates_dirs())
+                self.assertEqual([], device._templates_dirs())
 
     def test_a_plugins_folder_outside_a_repository_is_not_a_checkout(self):
         import tempfile

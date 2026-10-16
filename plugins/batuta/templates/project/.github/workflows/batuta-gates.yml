@@ -1,8 +1,7 @@
 # The CI twin of the Batuta hooks: the same checks, on every push and pull request, that cannot be skipped from a
 # developer's machine. Mark the job `batuta-gates` as a required status check on the default branch.
 #
-# This file holds no GitHub expression syntax on purpose: copier renders every file of the template, and the base
-# revision is read from the event payload by the `base` step instead. The concurrency group is therefore one per project.
+# GitHub expressions sit inside raw blocks of the template so that copier and `init project` render them untouched.
 name: batuta-gates
 
 on:
@@ -10,8 +9,8 @@ on:
   pull_request:
 
 concurrency:
-  group: batuta-gates-{{ project_slug }}
-  cancel-in-progress: false
+  group: {% raw %}${{ github.workflow }}-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -22,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # The Batuta release the checks come from; pin it to a release tag once the project adopts one.
-      BATUTA_REF: main
+      # The release tag of the installed Batuta that the checks come from; `init update` moves it.
+      BATUTA_REF: {{ batuta_ref }}
       DEFAULT_BRANCH: "{{ default_branch }}"
     steps:
       - name: Check out the full history
@@ -40,9 +39,11 @@ jobs:
           echo "BATUTA_DIR=$RUNNER_TEMP/batuta/plugins/batuta/scripts" >> "$GITHUB_ENV"
       - name: Resolve the base revision
         id: base
+        env:
+          PR_BASE_SHA: {% raw %}${{ github.event.pull_request.base.sha }}{% endraw %}
+          PUSH_BEFORE_SHA: {% raw %}${{ github.event.before }}{% endraw %}
         run: |
           python - <<'PY'
-          import json
           import os
           import subprocess
 
@@ -58,19 +59,14 @@ jobs:
               return bool(sha) and sha != ZEROS and git("cat-file", "-e", sha + "^{commit}")[0] == 0
 
 
-          event = {}
-          path = os.environ.get("GITHUB_EVENT_PATH")
-          if path and os.path.exists(path):
-              with open(path, encoding="utf-8") as handle:
-                  event = json.load(handle)
           name = os.environ.get("GITHUB_EVENT_NAME", "")
           default = os.environ.get("DEFAULT_BRANCH", "main")
           base = ""
           if name == "pull_request":
-              candidate = ((event.get("pull_request") or {}).get("base") or {}).get("sha", "")
+              candidate = os.environ.get("PR_BASE_SHA", "")      # github.event.pull_request.base.sha
               base = candidate if known(candidate) else ""
           elif name == "push":
-              candidate = event.get("before", "")
+              candidate = os.environ.get("PUSH_BEFORE_SHA", "")  # github.event.before, all zeros on a new branch
               base = candidate if known(candidate) else ""
           if not base:
               for ref in ("origin/" + default, default):

@@ -86,7 +86,7 @@ class RenderedContracts(unittest.TestCase):
         rendered = init.render_project(dict(FIXTURE_VARS))
         self.assertEqual(sorted(rendered), EXPECTED)
         for rel, text in rendered.items():
-            self.assertNotRegex(text, r"\{\{", rel)
+            self.assertNotRegex(text, r"(?<!\$)\{\{", rel)   # only a GitHub expression, `${{ ... }}`, keeps braces
         self.assertIn("Demo Project", rendered["AGENTS.md"])
 
     def test_batuta_json_validates_as_c01_and_names_the_test_command(self):

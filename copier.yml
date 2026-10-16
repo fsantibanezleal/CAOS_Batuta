@@ -1,7 +1,7 @@
-# Copier template: `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` renders templates/project/ with the five
+# Copier template: `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` renders plugins/batuta/templates/project/ with the five
 # answers below. `batuta.py init project` renders the same files with the same defaults and the same bytes; the
 # template uses {{ name }} placeholders only (no template logic), so both renderers agree.
-_subdirectory: templates/project
+_subdirectory: plugins/batuta/templates/project
 _templates_suffix: ""
 
 project_name:
@@ -44,3 +44,9 @@ default_branch:
     {% if not (default_branch | regex_search('^[A-Za-z0-9][A-Za-z0-9._/-]*$')) %}
     Use letters, digits, '.', '_', '-' and '/'.
     {% endif %}
+
+batuta_ref:
+  type: str
+  help: The Batuta release tag the CI checks are fetched from (kept in step with VERSION; `init update` moves it)
+  default: v0.01.000
+  when: false

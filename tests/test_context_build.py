@@ -229,7 +229,7 @@ class Stale(Case):
 
 class Template(Case):
     def test_the_shipped_sample_manifest_builds_and_lists_all_three_layers(self):
-        sample = ROOT / "templates" / "knowledge" / "manifest.json"
+        sample = ROOT / "plugins" / "batuta" / "templates" / "knowledge" / "manifest.json"
         code, text = self.build(sample, "--apply")
         self.assertEqual(code, 0, text)
         self.assertEqual(sorted(self.tree()), ["CORE.md", "INDEX.md", "rules/web-ui-floor.md"])

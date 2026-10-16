@@ -11,6 +11,7 @@ Dry run by default: the lines that would be merged are listed and nothing is wri
 file and then deletes the merged fragments. A refusal (duplicate key, a fragment that is not bullets, a missing heading)
 changes nothing and exits 1.
 
+A file named `<unit>-plugin-readme.md` in `changes/` holds a README section, not a changelog fragment, and is skipped.
 A changelog fragment holds bullet lines only (`- ...`, continuation lines indented), no headings. An i18n fragment may repeat
 the dictionary header line (it is dropped; a different header is refused). The dictionary header and its line ending are
 kept and existing rows are never touched or reordered. When the existing keys are sorted, new rows are inserted at their
@@ -35,6 +36,7 @@ HELP = "Fragments: merge per-unit changelog bullets and i18n rows into the share
 _UNRELEASED = re.compile(r"^##\s+\[Unreleased\]", re.IGNORECASE)
 _H2 = re.compile(r"^##\s")
 _BULLET = re.compile(r"^\s*[-*]\s")
+PLUGIN_README_SUFFIX = "-plugin-readme.md"   # sections for the plugin README share the folder; they are not changelog fragments
 
 
 class FragmentError(Exception):
@@ -81,7 +83,8 @@ def plan_changelog(repo):
     if not changelog.is_file():
         raise FragmentError(f"{changelog.as_posix()} not found")
     folder = repo / "changes"
-    files = sorted(folder.glob("*.md"), key=lambda p: p.name) if folder.is_dir() else []
+    files = sorted((p for p in folder.glob("*.md") if not p.name.endswith(PLUGIN_README_SUFFIX)),
+                   key=lambda p: p.name) if folder.is_dir() else []
     if not files:
         return None, [], []
     old = _read(changelog)

@@ -20,15 +20,16 @@ copier copy gh:fsantibanezleal/CAOS_Batuta <destination>
 - `init user` writes `<BATUTA_HOME>/batuta.json` only when it is missing (roots from `BATUTA_*` variables, the user core
   template and its values), then runs the device area's deploy and restore and installs the agent files into
   `~/.claude/agents/`. The manifest is `<deploy root>/installed.json`.
-- `init project` renders `templates/project/` with five variables (`project_name`, `project_slug`, `python_version`,
-  `test_command`, `default_branch`; the defaults are the target folder's name, `3.12`, `python -m unittest discover -s tests -t . -v`
+- `init project` renders `templates/project/` of the plugin with six variables (`project_name`, `project_slug`, `python_version`,
+  `test_command`, `default_branch`, `batuta_ref`, the release tag of the installed version that the CI checks are fetched
+  from, moved by `init update`; the defaults are the target folder's name, `3.12`, `python -m unittest discover -s tests -t . -v`
   and `main`). An existing `CLAUDE.md` or `AGENTS.md` is backed up with a stamp before it is replaced;
   `.claude/settings.json` is merged append-only (the permission rules of the template are added, nothing is removed or
   reordered) after a backup; a file the template does not own is never touched. No git repository at the target is a
   WARN (the workflow is still written); a target inside another repository is a WARN that GitHub reads the workflow at
   the repository root only. The manifest is `<project>/.batuta/installed.json` and carries no machine path.
 - The workflow `.github/workflows/batuta-gates.yml` has one job, `batuta-gates`: full history, Python from
-  `python_version`, the base revision from the event payload (the pull request's base commit; the previous commit of a
+  `python_version`, the base revision from `github.event.pull_request.base.sha` (pull request) or `github.event.before` (a
   push, or the merge base with the default branch on a new branch or a force push), the test step `id: tests` running
   exactly `tdd.test_command`, then the Batuta checks. A WARN (exit 2) of a check is reported and does not fail the job; a
   FAIL fails it, and every check runs even after a failure.

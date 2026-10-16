@@ -3,7 +3,7 @@
 Verbs:
     user       create `<BATUTA_HOME>/batuta.json` (C01) when missing, then deploy the device copy, restore the settings
                presets and the user core (the device area), and install the agent files into `~/.claude/agents/`
-    project    render the project template (`templates/project/`) into `--target`: AGENTS.md, CLAUDE.md,
+    project    render the project template (`plugins/batuta/templates/project/`) into `--target`: AGENTS.md, CLAUDE.md,
                `.claude/settings.json` (merged append-only), `.batuta/batuta.json`, the constitution and thresholds, an
                example feature and the `batuta-gates` workflow
     doctor     the device check plus probes (Python, Git Bash on Windows, Node, the `claude` CLI, the plugin's `python`
@@ -40,6 +40,7 @@ from batuta_lib import device_profile as dp
 from batuta_lib import install_manifest as im
 from batuta_lib import settings_merge as sm
 from batuta_lib.areas import device
+from batuta_lib.areas import version as version_area
 from batuta_lib.output import emit, item
 
 AREA = "init"
@@ -47,9 +48,20 @@ HELP = "Adopt Batuta: init user and init project, then doctor, update and uninst
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]          # plugins/batuta, or the device copy itself
 SCRIPT = PLUGIN_ROOT / "scripts" / "batuta.py"
-VARIABLES = ("project_name", "project_slug", "python_version", "test_command", "default_branch")
+VARIABLES = ("project_name", "project_slug", "python_version", "test_command", "default_branch", "batuta_ref")
+
+
+def _release_tag():
+    """The git tag of the installed release (`v` + the display version), which the workflow's checks are fetched from."""
+    try:
+        return "v" + version_area.read_version()
+    except RuntimeError:
+        return ""   # the template then refuses to render until `--var batuta_ref=<release tag>` is given
+
+
 DEFAULTS = {"python_version": "3.12", "test_command": "python -m unittest discover -s tests -t . -v",
-            "default_branch": "main"}
+            "default_branch": "main", "batuta_ref": _release_tag()}
+_RAW = re.compile(r"\{%\s*raw\s*%\}(.*?)\{%\s*endraw\s*%\}", re.S)
 USER_DEFAULTS = {"language": "English", "tone": "direct, no filler"}
 USER_KEYS = ("user_name", "language", "tone")
 USER_CORE_TEMPLATE = "templates/user/CLAUDE.template.md"
@@ -72,15 +84,11 @@ class InitError(ValueError):
 
 
 def template_dir():
-    """The project template: the device copy's `templates/project`, or the repository's own (a checkout or an npx copy)."""
-    candidates = [PLUGIN_ROOT / "templates" / "project"]
-    if PLUGIN_ROOT.parent.name == "plugins":
-        candidates.append(PLUGIN_ROOT.parents[1] / "templates" / "project")
-    for folder in candidates:
-        if folder.is_dir():
-            return folder
-    raise InitError("the project template (templates/project) is not found next to this copy of Batuta; run init from a "
-                    "checkout of the repository, from `npx github:fsantibanezleal/CAOS_Batuta`, or after `init user --apply`")
+    """The project template: `templates/project` inside the plugin (a checkout, a marketplace copy, an npx copy or a device copy)."""
+    folder = PLUGIN_ROOT / "templates" / "project"
+    if folder.is_dir():
+        return folder
+    raise InitError(f"the project template is not found at {folder.as_posix()}; reinstall Batuta (the plugin carries its templates)")
 
 
 def read_template(folder):
@@ -111,6 +119,7 @@ def check_variables(variables):
         "test_command": (r"(?! )[^\x00-\x1f\"\\{}]{1,300}", "one line without double quotes, backslashes or braces (use single quotes "
                                                               "inside the command)"),
         "default_branch": (r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}", "letters, digits, '.', '_', '-' and '/'"),
+        "batuta_ref": (r"v\d+\.\d{2}\.\d{3}", "a release tag such as v0.01.000 (never a branch)"),
     }
     for key, (pattern, words) in rules.items():
         if key in values and not re.fullmatch(pattern, values[key]):
@@ -128,10 +137,23 @@ def render_project(variables, folder=None):
     out = {}
     for rel, text in read_template(folder or template_dir()).items():
         try:
-            out[rel] = render.render(text, values)
+            out[rel] = render_text(text, values)
         except render.RenderError as exc:
             raise InitError(f"template file {rel}: {exc}") from exc
     return out
+
+
+def render_text(text, values):
+    """Fill the `{{ name }}` placeholders of `text`. A `{% raw %}...{% endraw %}` block is kept as written, without its
+    markers (the one construct besides placeholders the template uses: copier reads it the same way, so GitHub's own
+    `${{ ... }}` expressions pass through both renderers untouched)."""
+    parts, last = [], 0
+    for m in _RAW.finditer(text):
+        parts.append(render.render(text[last:m.start()], values))
+        parts.append(render.normalise(m.group(1)))
+        last = m.end()
+    parts.append(render.render(text[last:], values))
+    return "".join(parts)
 
 
 def parse_vars(pairs, allowed):
@@ -254,7 +276,10 @@ def _git_items(target):
 
 
 def _settings_preset(text):
-    """The template's settings as a C17 preset (so the device area's append-only merge applies it)."""
+    """The template's settings as a C17 preset (so the device area's append-only merge applies it). The deny rules use the
+    syntax of the official permissions documentation (https://code.claude.com/docs/en/permissions#read-and-edit, verified
+    2026-10-16): `Edit(path)` rules take gitignore patterns, a leading `/` anchors at the project for project settings, and
+    an `Edit` rule covers every built-in file-editing tool."""
     try:
         template = json.loads(text)
     except ValueError as exc:
@@ -612,7 +637,10 @@ def _update_project(args, items):
     if manifest is None or manifest.kind != "project":
         items.append(item("REFUSED", f"{manifest_path.as_posix()} not found: nothing was installed here by init project"))
         return "init update: refused, nothing written"
-    variables = _project_variables(target, parse_vars(getattr(args, "var", None), VARIABLES), manifest.variables)
+    overrides = parse_vars(getattr(args, "var", None), VARIABLES)
+    variables = _project_variables(target, overrides, manifest.variables)
+    if "batuta_ref" not in overrides:
+        variables["batuta_ref"] = DEFAULTS["batuta_ref"]   # an update moves the pinned checks to the installed release
     rendered = render_project(variables)
     plan = _plan_project(target, rendered, items)
     blocked = [i for i in items if i["tag"] in ("FAIL", "REFUSED")]
@@ -835,7 +863,11 @@ def _probe_claude():
 
 def _plugin_option_python(home):
     """(value, where) of the plugin's `python` option: the environment Claude Code exports to hooks, else the user's
-    settings (`pluginConfigs`), else (None, None)."""
+    settings (`pluginConfigs`), else (None, None). Verified 2026-10-16 against the official documentation: the options are
+    exported to hook processes as `CLAUDE_PLUGIN_OPTION_<KEY>` and a non-sensitive value is saved in the user's
+    `settings.json` as `{"pluginConfigs": {"<plugin>@<marketplace>": {"options": {"<key>": ...}}}}`
+    (https://code.claude.com/docs/en/plugins-reference#user-configuration and
+    https://code.claude.com/docs/en/settings-reference#pluginconfigs; project and local settings are ignored there)."""
     value = os.environ.get("CLAUDE_PLUGIN_OPTION_PYTHON")
     if value:
         return value, "the environment (CLAUDE_PLUGIN_OPTION_PYTHON)"

@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 
 from batuta_lib import render  # noqa: E402
 
-TEMPLATES = ROOT / "templates"
+TEMPLATES = ROOT / "plugins" / "batuta" / "templates"
 USER_VALUES = {"language": "English", "tone": "Direct, no filler.", "user_name": "the user", "python": "python3",
                "deploy_root": "~/.batuta", "temp_root": "~/.batuta/temp", "data_root": "~/.batuta/data",
                "models_root": "~/.batuta/models", "worktrees_root": "~/.batuta/worktrees"}

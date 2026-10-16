@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from batuta_lib import settings_merge as sm  # noqa: E402
 
-PRESETS = ROOT / "templates" / "presets"
+PRESETS = ROOT / "plugins" / "batuta" / "templates" / "presets"
 VALUES = {"spawn_depth": "1", "max_concurrent_agents": "4"}
 
 
