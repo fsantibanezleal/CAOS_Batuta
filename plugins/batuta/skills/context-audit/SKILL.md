@@ -1,7 +1,7 @@
 ---
 name: context-audit
-description: Use when a session feels heavy or before adding rules or memory: measures what loads at session start and checks it against the budgets.
-allowed-tools: Bash(python *) Read Grep Glob
+description: "Use when a session feels heavy or before adding rules or memory: measures what loads at session start and checks it against the budgets."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 ---
 
 # Audit the always-loaded context

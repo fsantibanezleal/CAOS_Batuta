@@ -1,7 +1,7 @@
 ---
 name: spec
-description: Use when starting a feature or product, before any code: understand, size, decide technology, write contracts and the spec (L0 to L5, up to the freeze).
-allowed-tools: Bash(python *) Read Grep Glob Edit Write
+description: "Use when starting a feature or product, before any code: understand, size, decide technology, write contracts and the spec (L0 to L5, up to the freeze)."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Edit Write
 argument-hint: <feature id or title>
 ---
 
@@ -25,7 +25,7 @@ Gates: L0-understand, L1-size, L2-decide, L3-contracts, L5-freeze. Each gate end
    `python "${CLAUDE_PLUGIN_ROOT}/scripts/batuta.py" spec lint`
 6. After tests exist, build the trace matrix:
    `python "${CLAUDE_PLUGIN_ROOT}/scripts/batuta.py" spec trace SPEC_ID --apply`
-7. When lint is clean, hand over to the human with the `freeze` skill. You never approve a spec yourself.
+7. When lint is clean, ask the human to run `/batuta:freeze` (only a person can start it). You never approve a spec yourself.
 
 On a non-zero exit: exit 1 is a refusal (a requirement without a Gate, an id reused, a missing ADR for tier L, an open
 `[NEEDS CLARIFICATION]`): fix the artifact and run the same command again. Exit 2 is a warning (for example a component

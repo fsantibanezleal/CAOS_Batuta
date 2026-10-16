@@ -20,3 +20,7 @@ this CLI, the lifecycle gate it serves and what to do on a non-zero exit. `freez
 
 Set the option `python` when Claude Code asks at install: `python3` on macOS and Linux, `py` or the absolute path of
 python.exe on Windows (Python 3.10 or newer; Git Bash must be installed on Windows).
+
+`"onFailure": "block"` in hooks needs Claude Code v2.1.295 or later (the hooks reference,
+https://code.claude.com/docs/en/hooks, read 2026-10-16). The page does not say what an older client does with the key;
+that behavior is UNVERIFIED, so run the plugin on v2.1.295 or later or the five guards may not fail closed.

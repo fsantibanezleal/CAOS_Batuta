@@ -1,7 +1,7 @@
 ---
 name: lessons
-description: Use when a unit's build has passed, to record its dated lesson (L10-lessons) and check LESSONS.md and overdue ADR reviews.
-allowed-tools: Bash(python *) Read Grep Glob Edit
+description: "Use when a unit's build has passed, to record its dated lesson (L10-lessons) and check LESSONS.md and overdue ADR reviews."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Edit
 argument-hint: <unit>
 ---
 

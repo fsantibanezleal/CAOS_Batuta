@@ -199,7 +199,7 @@ class SkillAgentTests(unittest.TestCase):
         named = set()
         for name in NAMES:
             text, _, _ = read_skill(name)
-            for agent in re.findall(r"batuta:([a-z][a-z-]*)", text):
+            for agent in re.findall(r"(?<!/)batuta:([a-z][a-z-]*)", text):
                 named.add(agent)
                 self.assertIn(agent, agents, f"{name}: names agent batuta:{agent}, which has no file")
         self.assertLessEqual({"implementer", "test-author", "adversary", "reviewer"}, named)

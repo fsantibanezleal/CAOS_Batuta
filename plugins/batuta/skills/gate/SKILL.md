@@ -1,7 +1,7 @@
 ---
 name: gate
-description: Use when asking whether a lifecycle gate is passed or what blocks the next one: status, evidence files and the deterministic checks for L0 to L10.
-allowed-tools: Bash(python *) Read Grep Glob
+description: "Use when asking whether a lifecycle gate is passed or what blocks the next one: status, evidence files and the deterministic checks for L0 to L10."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 argument-hint: <feature id>
 ---
 

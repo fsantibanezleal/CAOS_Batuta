@@ -1,7 +1,7 @@
 ---
 name: green
-description: Use when locked red tests exist and the code must make them pass (L7-build, green): minimal code, a [green] commit, history check and trace.
-allowed-tools: Bash(python *) Read Grep Glob Edit Write
+description: "Use when locked red tests exist and the code must make them pass (L7-build, green): minimal code, a [green] commit, history check and trace."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Edit Write
 argument-hint: <task id T-NNN>
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: red
-description: Use when a task's tests must exist before its code (L7-build, red): a test-author writes failing tests, they are locked by hash and a [red] commit records them.
-allowed-tools: Bash(python *) Read Grep Glob
+description: "Use when a task's tests must exist before its code (L7-build, red): a test-author writes failing tests, they are locked by hash and a [red] commit records them."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 argument-hint: <task id T-NNN>
 ---
 

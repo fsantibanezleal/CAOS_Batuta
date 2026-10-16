@@ -98,7 +98,7 @@ ADVICE = ("Do not retry it through another shell, script or tool. If this was on
 EXPLAIN = ["Blocks commands that leave unattended automation behind. Rules (id: message):"] + \
     [f"  - {rid}: {why}" for rid, _, why in RULES] + [f"  - {LOOP_ID}: {LOOP_WHY}", f"  - {UNREADABLE_ID}: {UNREADABLE_WHY}"] + \
     [f"  - {rid} (write targets of Edit, Write and shell commands): {why}" for rid, _, why in PATH_RULES] + \
-    ["Tool scope: every tool call that carries a string `command` (the hooks.json matcher is Bash|PowerShell|Monitor)."]
+    ["Tool scope: every tool call that carries a string `command` (the hooks.json matcher is Bash|PowerShell|Monitor|Edit|Write|MultiEdit|NotebookEdit: shell tools by their command, file tools by their path)."]
 
 
 def self_calling_function(text: str) -> bool:

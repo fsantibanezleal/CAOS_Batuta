@@ -1,8 +1,8 @@
 ---
 name: promote
-description: Use when every gate through L9-promote is green and a human wants to merge a unit: merges only on green checks for the exact head commit.
+description: "Use when every gate through L9-promote is green and a human wants to merge a unit: merges only on green checks for the exact head commit."
 disable-model-invocation: true
-allowed-tools: Bash(python *) Read Grep Glob
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 argument-hint: <feature id>
 ---
 

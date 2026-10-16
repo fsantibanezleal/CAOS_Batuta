@@ -1,8 +1,8 @@
 ---
 name: freeze
-description: Use when the spec, contracts and ADRs are ready and a human is about to approve them (L5-freeze). Prints the phrase to type and checks that the approval still matches.
+description: "Use when the spec, contracts and ADRs are ready and a human is about to approve them (L5-freeze). Prints the phrase to type and checks that the approval still matches."
 disable-model-invocation: true
-allowed-tools: Bash(python *) Read Grep Glob
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 argument-hint: <spec id>
 ---
 

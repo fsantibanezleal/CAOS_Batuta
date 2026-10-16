@@ -1,7 +1,7 @@
 ---
 name: route
-description: Use when choosing which agent and model runs a task, or before launching any agent. Prints the role table (model, effort) from batuta.json and checks the agent files against it.
-allowed-tools: Bash(python *) Read Grep Glob
+description: "Use when choosing which agent and model runs a task, or before launching any agent. Prints the role table (model, effort) from batuta.json and checks the agent files against it."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob
 ---
 
 # Route a task to a script, an agent or yourself

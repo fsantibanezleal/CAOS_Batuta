@@ -1,7 +1,7 @@
 ---
 name: delegate
-description: Use when launching a named agent on a linted brief, on the subagent lane, the Agent SDK lane or a provider lane, and when accepting the agent's report.
-allowed-tools: Bash(python *) Read Grep Glob Agent
+description: "Use when launching a named agent on a linted brief, on the subagent lane, the Agent SDK lane or a provider lane, and when accepting the agent's report."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Agent
 argument-hint: <brief path>
 ---
 

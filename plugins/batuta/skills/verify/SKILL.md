@@ -1,7 +1,7 @@
 ---
 name: verify
-description: Use at the end of every gate: an independent agent with fresh context reproduces each claim at the reviewed commit and writes the evidence file.
-allowed-tools: Bash(python *) Read Grep Glob Agent
+description: "Use at the end of every gate: an independent agent with fresh context reproduces each claim at the reviewed commit and writes the evidence file."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Agent
 argument-hint: <gate id> <feature id>
 ---
 

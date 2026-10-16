@@ -94,7 +94,13 @@ def _load(module_name: str, areas_dir: Path):
         sys.path.insert(0, scripts)
     spec = importlib.util.spec_from_file_location(f"batuta_hook_area_{module_name}", areas_dir / f"{module_name}.py")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # registered before it runs: a handler module that uses @dataclass with postponed annotations looks itself up here
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(spec.name, None)
+        raise
     return module
 
 

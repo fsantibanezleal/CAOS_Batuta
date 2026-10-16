@@ -1,7 +1,7 @@
 ---
 name: brief
-description: Use when about to hand work to an agent: write the brief first. Creates a brief from the template with its ledger row and lints it before launch.
-allowed-tools: Bash(python *) Read Grep Glob Edit Write
+description: "Use when about to hand work to an agent: write the brief first. Creates a brief from the template with its ledger row and lints it before launch."
+allowed-tools: Bash(python *scripts/batuta.py* *) Bash(py *scripts/batuta.py* *) Read Grep Glob Edit Write
 argument-hint: <topic> <agent>
 ---
 
