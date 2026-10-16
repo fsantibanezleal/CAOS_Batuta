@@ -97,7 +97,7 @@ class Apply(World):
         self.assertEqual(json.loads(text)["tdd"]["test_command"], init.DEFAULTS["test_command"])
         self.assertIn("my project", (self.project / "AGENTS.md").read_text(encoding="utf-8"))
         self.assertRegex((self.project / ".github/workflows/batuta-gates.yml").read_text(encoding="utf-8"),
-                         r"group: batuta-gates-my-project")
+                         r"BATUTA_REF: v\d+\.\d+\.\d+")
 
     def test_a_bad_variable_is_refused_with_nothing_written(self):
         code, out, err = self.cli("init", "project", "--target", str(self.project), "--var", "project_slug=Bad Slug",

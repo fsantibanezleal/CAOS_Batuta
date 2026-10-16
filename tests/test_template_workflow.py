@@ -47,12 +47,12 @@ class BaseRevision(unittest.TestCase):
         self.c3 = commit_all(self.repo, "three")
 
     def resolve(self, event_name, event):
-        event_file = self.tmp / "event.json"
-        event_file.write_text(json.dumps(event), encoding="utf-8")
         env_file = self.tmp / "github_env"
         env_file.write_text("", encoding="utf-8")
-        env = {**os.environ, "GITHUB_EVENT_NAME": event_name, "GITHUB_EVENT_PATH": str(event_file),
-               "GITHUB_ENV": str(env_file), "DEFAULT_BRANCH": FIXTURE_VARS["default_branch"]}
+        # the step's `env:` maps the event fields (github.event.pull_request.base.sha, github.event.before) to these
+        env = {**os.environ, "GITHUB_EVENT_NAME": event_name, "GITHUB_ENV": str(env_file),
+               "PR_BASE_SHA": ((event.get("pull_request") or {}).get("base") or {}).get("sha", ""),
+               "PUSH_BEFORE_SHA": event.get("before", ""), "DEFAULT_BRANCH": FIXTURE_VARS["default_branch"]}
         done = subprocess.run([sys.executable, "-B", "-c", base_script()], cwd=self.repo, env=env, capture_output=True,
                               text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -92,11 +92,9 @@ class BaseRevision(unittest.TestCase):
         (solo / "a.txt").write_text("1\n", encoding="utf-8")
         head = commit_all(solo, "only")
         git(solo, "update-ref", "refs/remotes/origin/main", head)
-        event_file = self.tmp / "event2.json"
-        event_file.write_text(json.dumps({"before": ZEROS}), encoding="utf-8")
         env_file = self.tmp / "github_env2"
         env_file.write_text("", encoding="utf-8")
-        env = {**os.environ, "GITHUB_EVENT_NAME": "push", "GITHUB_EVENT_PATH": str(event_file),
+        env = {**os.environ, "GITHUB_EVENT_NAME": "push", "PUSH_BEFORE_SHA": ZEROS, "PR_BASE_SHA": "",
                "GITHUB_ENV": str(env_file), "DEFAULT_BRANCH": "main"}
         done = subprocess.run([sys.executable, "-B", "-c", base_script()], cwd=solo, env=env, capture_output=True,
                               text=True, timeout=120)

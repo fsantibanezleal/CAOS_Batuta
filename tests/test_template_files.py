@@ -30,7 +30,8 @@ EXPECTED = [
     "tests/__init__.py",
     "tests/test_foundation.py",
 ]
-FIVE = set(FIXTURE_VARS)
+FIVE = set(FIXTURE_VARS)   # the five questions and the hidden sixth variable, the release tag of the checks
+RAW = re.compile(r"\{%\s*raw\s*%\}(.*?)\{%\s*endraw\s*%\}", re.S)
 
 
 def template_files():
@@ -44,12 +45,13 @@ class TemplateTree(unittest.TestCase):
     def test_only_the_five_placeholders_and_no_template_logic(self):
         for rel, path in template_files().items():
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn("{%", text, rel)
-            self.assertNotIn("{#", text, rel)
-            self.assertNotIn("${{", text, f"{rel}: a GitHub expression would be read as a placeholder by copier")
-            for name in re.findall(r"\{\{\s*([^{}]*?)\s*\}\}", text):
-                self.assertIn(name, FIVE, f"{rel}: placeholder {name!r} is not one of the five variables")
-            self.assertEqual(text.count("{{"), text.count("}}"), rel)
+            plain = RAW.sub("", text)   # only a GitHub expression inside a raw block may hold braces
+            self.assertNotIn("{%", plain, rel)
+            self.assertNotIn("{#", plain, rel)
+            self.assertNotIn("${{", plain, f"{rel}: a GitHub expression outside a raw block would be read as a placeholder")
+            for name in re.findall(r"\{\{\s*([^{}]*?)\s*\}\}", plain):
+                self.assertIn(name, FIVE, f"{rel}: placeholder {name!r} is not one of the template variables")
+            self.assertEqual(plain.count("{{"), plain.count("}}"), rel)
 
     def test_no_machine_path_in_any_template_file(self):
         bad = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]|/Users/|/home/[a-z]|\\Users\\|@[a-z0-9-]+\.(com|org|net)\b")
@@ -195,7 +197,7 @@ class CopierEquivalence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             src = tmp / "src"
-            shutil.copytree(ROOT / "templates", src / "templates")
+            shutil.copytree(ROOT / "plugins" / "batuta" / "templates", src / "plugins" / "batuta" / "templates")
             shutil.copy2(ROOT / "copier.yml", src / "copier.yml")
             dest = tmp / "copier-out"
             data = [a for k, v in FIXTURE_VARS.items() for a in ("--data", f"{k}={v}")]
@@ -212,14 +214,18 @@ class CopierEquivalence(unittest.TestCase):
 class CopierFile(unittest.TestCase):
     def test_copier_yml_names_the_subdirectory_and_the_five_questions(self):
         text = (ROOT / "copier.yml").read_text(encoding="utf-8")
-        self.assertRegex(text, r"(?m)^_subdirectory:\s*templates/project\s*$")
+        self.assertRegex(text, r"(?m)^_subdirectory:\s*plugins/batuta/templates/project\s*$")
         for name in FIVE:
             self.assertRegex(text, rf"(?m)^{name}:\s*$", name)
         for key, value in init.DEFAULTS.items():
             if key in ("project_name", "project_slug"):
                 continue   # derived from the target folder by `init project`; copier asks
             self.assertIn(str(value), text, f"default of {key} differs between copier.yml and init project")
-        self.assertEqual(len(re.findall(r"(?m)^[a-z_]+:\s*$", text)), 5, "exactly five questions")
+        self.assertEqual(len(re.findall(r"(?m)^[a-z_]+:\s*$", text)), 6, "five questions and the hidden release tag")
+        self.assertRegex(text, r"(?ms)^batuta_ref:.*?when:\s*false")
+        tag = "v" + (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(init.DEFAULTS["batuta_ref"], tag, "init project pins the checks to the installed version")
+        self.assertIn(tag, text, "copier.yml carries the same tag as its default")
 
 
 class WorkflowFile(World):
@@ -230,7 +236,13 @@ class WorkflowFile(World):
         self.assertRegex(text, r"(?m)^    name: batuta-gates\s*$")
         self.assertRegex(text, r"(?m)^  push:")
         self.assertRegex(text, r"(?m)^  pull_request:")
-        self.assertRegex(text, r"(?m)^concurrency:\s*\n\s+group: batuta-gates")
+        rendered = init.render_project(dict(FIXTURE_VARS))[WORKFLOW]
+        self.assertRegex(rendered, r"(?m)^concurrency:\s*\n\s+group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\s*$")
+        self.assertIn("${{ github.event.pull_request.base.sha }}", rendered)
+        self.assertIn("${{ github.event.before }}", rendered)
+        self.assertRegex(rendered, r"(?m)^      BATUTA_REF: v0\.01\.000\s*$")
+        self.assertNotIn("BATUTA_REF: main", rendered)
+        self.assertNotIn("{%", rendered)
         self.assertRegex(text, r"(?m)^    timeout-minutes: \d+")
         self.assertRegex(text, r"fetch-depth: 0")
         self.assertIn('python-version: "{{ python_version }}"', text)

@@ -154,6 +154,17 @@ class ProjectUpdate(World):
         self.assertEqual(restored["AGENTS.md"], b"original\n")
         self.assertEqual({k: v for k, v in restored.items() if k in before}, before)
 
+    def test_update_moves_the_pinned_release_tag_to_the_installed_version(self):
+        make_repo(self.project)
+        self.init_project("--var", "batuta_ref=v0.00.001")
+        workflow = self.project / ".github" / "workflows" / "batuta-gates.yml"
+        self.assertIn("BATUTA_REF: v0.00.001", workflow.read_text(encoding="utf-8"))
+        code, out, _ = self.cli("init", "update", "--target", str(self.project), "--apply")
+        self.assertEqual(code, 0, out)
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("BATUTA_REF: " + init.DEFAULTS["batuta_ref"], text)
+        self.assertNotIn("v0.00.001", text)
+
     def test_update_restores_a_deleted_file_and_is_a_dry_run_by_default(self):
         make_repo(self.project)
         self.init_project()

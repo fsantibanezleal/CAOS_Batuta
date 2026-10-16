@@ -94,6 +94,18 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("no fragments", out)
 
+    def test_the_repositorys_own_fragments_folder_is_accepted(self):
+        import shutil
+        repo = Path(__file__).resolve().parents[1]
+        shutil.copy2(repo / "CHANGELOG.md", self.cl)
+        for f in self.changes.glob("*.md"):
+            f.unlink()
+        for f in sorted((repo / "changes").glob("*.md")):
+            shutil.copy2(f, self.changes / f.name)
+        code, out, _ = run("fragments", "changelog", str(self.root))
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("REFUSED", out)
+
     def test_json_output_is_the_c20_object(self):
         code, out, _ = run("fragments", "changelog", str(self.root), "--json")
         doc = json.loads(out)

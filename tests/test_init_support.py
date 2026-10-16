@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from test_device_support import run  # noqa: E402,F401  (re-exported: the in-process CLI runner)
 
-TEMPLATE_DIR = ROOT / "templates" / "project"
+TEMPLATE_DIR = ROOT / "plugins" / "batuta" / "templates" / "project"
 WORKFLOW = ".github/workflows/batuta-gates.yml"
 FIXTURE_VARS = {
     "project_name": "Demo Project",
@@ -23,6 +23,7 @@ FIXTURE_VARS = {
     "python_version": "3.12",
     "test_command": "python -m unittest discover -s tests -t . -v",
     "default_branch": "main",
+    "batuta_ref": "v0.01.000",
 }
 VAR_ARGS = [a for k, v in FIXTURE_VARS.items() for a in ("--var", f"{k}={v}")]
 
