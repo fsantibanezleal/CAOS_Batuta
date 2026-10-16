@@ -98,6 +98,21 @@ def _quoted(v, n):
 _DEEP = "line {n}: structures deeper than one level are not supported (nested maps, lists of lists, maps in inline lists)"
 
 
+_STRICT = False   # set by parse(strict=True): a plain string must be a valid YAML plain scalar
+_PLAIN_FIRST = ",]}#&*!|>%@`"
+
+
+def _plain_problem(v):
+    """Why `v` is not a YAML plain scalar, or None: a `: ` or a trailing colon, ` #`, a leading indicator."""
+    if ": " in v or v.endswith(":"):
+        return "contains ': ' (quote the value)"
+    if " #" in v:
+        return "contains ' #' (quote the value)"
+    if v[0] in _PLAIN_FIRST or (v[0] in "-?:" and v[1:2] == " "):
+        return f"starts with the YAML indicator '{v[0]}' (quote the value)"
+    return None
+
+
 def _scalar(v, n, allow="both"):
     """Parse one value. `allow` says which inline containers this position may hold: both, list, map or none."""
     v = v.strip()
@@ -123,6 +138,10 @@ def _scalar(v, n, allow="both"):
         return False
     if v in ("null", "~"):
         return None
+    if _STRICT:
+        problem = _plain_problem(v)
+        if problem:
+            raise ValueError(f"line {n}: a plain value {problem}")
     return v
 
 
@@ -230,8 +249,21 @@ def header_bullets(text):
     return meta
 
 
-def parse(text):
-    """Return (meta, body). meta is a dict; body is the text after the closing dashes line."""
+def parse(text, strict=False):
+    """Return (meta, body). meta is a dict; body is the text after the closing dashes line.
+
+    `strict=True` also refuses a plain (unquoted) string that YAML cannot read (it contains `: ` or ` #`, ends with a colon
+    or starts with an indicator), the files whose front matter another reader, such as Claude Code, parses as YAML. The
+    default stays lenient: ADR and brief headers carry plain strings with colons by design."""
+    global _STRICT
+    saved, _STRICT = _STRICT, bool(strict)
+    try:
+        return _parse(text)
+    finally:
+        _STRICT = saved
+
+
+def _parse(text):
     lines = _lines(text.lstrip("﻿"))
     i = 0
     while i < len(lines) and (not lines[i].strip() or _COMMENT.match(lines[i])):
