@@ -231,5 +231,40 @@ class SkillAgentTests(unittest.TestCase):
             self.assertFalse(line.startswith(("spec approve", "spec hook-approval", "tdd change-request decide")), line)
 
 
+class SkillReviewFixes(unittest.TestCase):
+    """Findings M2, M3, M4 and M5 of the adversary check of unit U9a."""
+
+    def test_bash_grants_are_narrowed_to_the_plugin_script(self):
+        load_batuta()
+        for name in NAMES:
+            _, meta, _ = read_skill(name)
+            grants = re.findall(r"Bash\(([^)]*)\)", str(meta["allowed-tools"]))
+            self.assertTrue(grants, f"{name}: no Bash grant")
+            for grant in grants:
+                self.assertNotEqual(grant.strip(), "python *", name)
+                self.assertIn("batuta.py", grant, f"{name}: the Bash grant must name the plugin script: {grant}")
+
+    def test_doctor_says_how_to_choose_the_interpreter_in_the_bash_tool(self):
+        load_batuta()
+        text, _, _ = read_skill("doctor")
+        self.assertIn("CLAUDE_PLUGIN_OPTION_PYTHON", text)
+        self.assertRegex(text, r"(?i)bash tool")
+        self.assertRegex(text, r"(?i)not exported|is not set|does not export")
+        self.assertNotIn("never fire", text)
+        self.assertRegex(text, r"(?i)block")
+
+    def test_spec_hands_over_by_asking_the_human_to_run_the_freeze_skill(self):
+        load_batuta()
+        text, _, _ = read_skill("spec")
+        self.assertIn("/batuta:freeze", text)
+        self.assertNotIn("with the `freeze` skill", text)
+
+    def test_the_readme_fragment_states_the_minimum_claude_code_version_for_on_failure(self):
+        fragment = (ROOT / "changes" / "u9a-plugin-readme.md").read_text(encoding="utf-8")
+        self.assertIn("v2.1.295", fragment)
+        self.assertIn("https://code.claude.com/docs/en/hooks", fragment)
+        self.assertIn("onFailure", fragment)
+
+
 if __name__ == "__main__":
     unittest.main()

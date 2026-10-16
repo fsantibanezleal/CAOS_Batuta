@@ -131,6 +131,15 @@ class HooksFileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, out + result.stderr)
         self.assertIn("hooks/hooks.json satisfies C31; its 11 entr(ies) resolve to a handler each", out)
 
+    def test_guard_automation_explain_lists_every_matcher_tool_of_its_entry(self):
+        load_batuta()
+        from batuta_lib.guards import automation
+        text = " ".join(automation.EXPLAIN)
+        for event, matcher, entry, hid in self.found:
+            if hid == "guard-automation":
+                for tool in matcher.split("|"):
+                    self.assertIn(tool, text, f"--explain does not mention {tool}")
+
 
 if __name__ == "__main__":
     unittest.main()
