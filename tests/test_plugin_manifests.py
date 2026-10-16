@@ -95,7 +95,7 @@ class PluginManifestTests(unittest.TestCase):
 
     def test_no_machine_path_in_the_manifest(self):
         text = PLUGIN_JSON.read_text(encoding="utf-8")
-        self.assertIsNone(re.search(r"[A-Za-z]:[\\/]|/home/|/Users/", text))
+        self.assertIsNone(re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]|/home/|/Users/", text))
 
     def test_only_official_fields(self):
         official = {

@@ -138,7 +138,7 @@ class SkillFilesTests(unittest.TestCase):
         load_batuta()
         for name in NAMES:
             text, _, _ = read_skill(name)
-            self.assertIsNone(re.search(r"[A-Za-z]:[\\/]|/home/|/Users/", text), name)
+            self.assertIsNone(re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]|/home/|/Users/", text), name)
             self.assertNotIn("python3 ", text, name)
 
 

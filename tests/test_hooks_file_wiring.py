@@ -70,7 +70,7 @@ class HooksFileTests(unittest.TestCase):
 
     def test_no_machine_path_or_hard_coded_interpreter(self):
         text = HOOKS_JSON.read_text(encoding="utf-8")
-        self.assertIsNone(re.search(r"[A-Za-z]:[\\/]|/home/|/Users/|/usr/|python\.exe", text))
+        self.assertIsNone(re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]|/home/|/Users/|/usr/|python\.exe", text))
         for _, _, entry, _ in self.found:
             self.assertTrue(entry["command"].startswith('"$CLAUDE_PLUGIN_OPTION_PYTHON" '))
 
