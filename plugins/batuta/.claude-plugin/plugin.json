@@ -1,5 +1,6 @@
 {
   "name": "batuta",
+  "displayName": "Batuta",
   "version": "0.1.0",
   "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code (pre-release, under construction toward 0.01.000).",
   "author": {
@@ -8,5 +9,13 @@
   "homepage": "https://github.com/fsantibanezleal/CAOS_Batuta",
   "repository": "https://github.com/fsantibanezleal/CAOS_Batuta",
   "license": "Apache-2.0",
-  "keywords": ["agents", "governance", "tdd", "sdd", "claude-code"]
+  "keywords": ["agents", "governance", "tdd", "sdd", "claude-code"],
+  "userConfig": {
+    "python": {
+      "type": "string",
+      "title": "Python interpreter",
+      "description": "Command that starts Python 3.10 or newer, used by every Batuta hook. Leave python3 on macOS and Linux. On Windows use py, or the absolute path of python.exe.",
+      "default": "python3"
+    }
+  }
 }

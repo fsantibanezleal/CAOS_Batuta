@@ -1,0 +1,144 @@
+{
+  "description": "Batuta hooks: every handler runs through scripts/hook.py (contract C31, shipped profile).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" session-check",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "Checking the Batuta setup"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Monitor|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-automation",
+            "shell": "bash",
+            "timeout": 15,
+            "onFailure": "block",
+            "statusMessage": "Checking for unattended automation"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-destructive",
+            "shell": "bash",
+            "timeout": 15,
+            "onFailure": "block",
+            "statusMessage": "Checking for destructive commands"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-locked-tests",
+            "shell": "bash",
+            "timeout": 15,
+            "onFailure": "block",
+            "statusMessage": "Checking locked tests"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-approvals",
+            "shell": "bash",
+            "timeout": 15,
+            "onFailure": "block",
+            "statusMessage": "Checking approvals"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor|Read|Grep|Glob|NotebookRead",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-secrets",
+            "shell": "bash",
+            "timeout": 15,
+            "onFailure": "block",
+            "statusMessage": "Checking secret files"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" guard-require-brief",
+            "shell": "bash",
+            "timeout": 15,
+            "statusMessage": "Checking the delegation brief"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" subagent-stop",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "Checking the agent report"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" spec-approval",
+            "shell": "bash",
+            "timeout": 15,
+            "statusMessage": "Reading a spec approval"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" tdd-change-request",
+            "shell": "bash",
+            "timeout": 15,
+            "statusMessage": "Reading a test change decision"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PLUGIN_OPTION_PYTHON\" -I \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.py\" gate-stop",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "Checking open gates"
+          }
+        ]
+      }
+    ]
+  }
+}

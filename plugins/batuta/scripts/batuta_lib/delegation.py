@@ -24,15 +24,25 @@ from batuta_lib import config
 from batuta_lib import contract
 
 MODELS = ("haiku", "sonnet", "opus", "fable")
-# agent -> (pinned model, kind); general-purpose (primary-source research) has no pinned model
-AGENTS = {
-    "searcher": ("haiku", "lookup"),
-    "runner": ("haiku", "run"),
-    "implementer": ("sonnet", "implement"),
-    "doc-writer": ("sonnet", "docs"),
-    "reviewer": ("opus", "review"),
-    "general-purpose": (None, "research"),
-}
+# The default kind of the roles that ship; an agent file with no entry here needs --kind.
+DEFAULT_KINDS = {"searcher": "lookup", "runner": "run", "implementer": "implement", "test-author": "implement",
+                 "doc-writer": "docs", "adversary": "review", "reviewer": "review"}
+AGENTS_DIR = Path(__file__).resolve().parents[2] / "agents"
+
+
+def _shipped_agents(agents_dir=None):
+    """agent -> (pinned model, default kind or None), read from the agent files of the plugin (the `model` line of each);
+    general-purpose (primary-source research) has no pinned model."""
+    found = {}
+    folder = Path(agents_dir) if agents_dir else AGENTS_DIR
+    for path in sorted(folder.glob("*.md")):
+        m = re.search(r"^model:\s*(\S+)\s*$", path.read_text(encoding="utf-8-sig").split("\n---", 1)[0], re.M)
+        found[path.stem] = (m.group(1) if m else None, DEFAULT_KINDS.get(path.stem))
+    found["general-purpose"] = (None, "research")
+    return found
+
+
+AGENTS = _shipped_agents()
 KINDS = ("implement", "job", "skeleton", "docs", "review", "research", "lookup", "run")
 CPD_KINDS = ("implement", "job", "skeleton")   # the kinds whose briefs carry the contract-first sections
 SPEC_KINDS = ("implement", "job", "skeleton", "docs")   # the kinds whose briefs need Definitions and Spec
@@ -679,6 +689,8 @@ def new_brief(root, cfg, slug, topic, agent, title, model=None, kind=None, sizin
     if pinned and model != pinned:
         notes.append(f"{agent} is pinned to {pinned}; {model} is an escalation, say why in the brief's model line")
     kind = kind or default_kind
+    if kind is None:
+        raise DelegationError(f"--kind is required with --agent {agent} (it has no default kind)")
     if not _TOPIC.match(topic):
         raise DelegationError("--topic is lower-case kebab-case (letters, digits and hyphens): the id is <topic>-<date>")
     date = date or dt.date.today().isoformat()
