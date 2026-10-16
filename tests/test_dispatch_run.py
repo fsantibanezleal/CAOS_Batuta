@@ -389,7 +389,7 @@ class SdkLane(Base):
         sdk = make_fake_sdk([steps])
         calls = []
 
-        def launcher(guard_id, payload_text, env):
+        def launcher(guard_id, payload_text, env, timeout=None):
             calls.append(guard_id)
             denied = guard_id == "guard-secrets" and json.loads(payload_text)["tool_name"] == "Read"
             return (2, "", "blocked by a guard") if denied else (0, "", "")

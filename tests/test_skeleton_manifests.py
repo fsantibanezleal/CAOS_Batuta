@@ -5,7 +5,8 @@ import unittest
 from _support import ROOT
 
 PLUGIN_FIELDS = {
-    "name", "version", "description", "author", "homepage", "repository", "license", "keywords",
+    "name", "displayName", "version", "description", "author", "homepage", "repository", "license", "keywords",
+    "userConfig",
 }
 HOMEPAGE = "https://github.com/fsantibanezleal/CAOS_Batuta"
 RESERVED_PREFIXES = ("claude-", "anthropic-", "cc-plugin-")
