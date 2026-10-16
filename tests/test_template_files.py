@@ -23,8 +23,6 @@ EXPECTED = [
     "CLAUDE.md",
     "specs/000-foundation/constitution.md",
     "specs/000-foundation/thresholds.json",
-    "specs/001-example-feature/approvals/.gitkeep",
-    "specs/001-example-feature/evidence/.gitkeep",
     "specs/001-example-feature/plan.md",
     "specs/001-example-feature/spec.md",
     "specs/001-example-feature/status.md",
@@ -112,10 +110,12 @@ class RenderedContracts(unittest.TestCase):
             items = spec.new(tmp, init.EXAMPLE_TITLE, tier=init.EXAMPLE_TIER, owner=init.EXAMPLE_OWNER, apply=True,
                              today=init.EXAMPLE_DATE)
             self.assertFalse([i for i in items if i["tag"] == "FAIL"])
-            created = {k: v for k, v in snapshot(Path(tmp)).items() if k.startswith("specs/001-")}
+            created = {k: v for k, v in snapshot(Path(tmp)).items()
+                       if k.startswith("specs/001-") and not k.endswith(".gitkeep")}
         ours = {k: v for k, v in snapshot(self.out).items() if k.startswith("specs/001-")}
         self.assertEqual(sorted(set(ours) - set(created)), ["specs/001-example-feature/status.md"],
-                         "the template adds only the status file (C10) that `gate check` needs")
+                         "the template adds only the status file (C10) that `gate check` needs; the empty approvals and evidence "
+                         "folders are left out (a guard scans for `specs/*/approvals` folders) and created on first use")
         for rel, data in created.items():
             if data is not None:
                 self.assertEqual(ours[rel], data, rel)
