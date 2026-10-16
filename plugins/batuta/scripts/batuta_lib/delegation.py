@@ -513,6 +513,62 @@ def ledger_set_status(text, row_id, status):
     raise KeyError(row_id)
 
 
+def _cell_text(value):
+    return " ".join(str(value).replace("|", "\\|").split())
+
+
+def _ensure_pipe(content):
+    return content if content.rstrip().endswith("|") else content.rstrip() + " |"
+
+
+def ledger_set_cells(text, row_id, values):
+    """The ledger text with the cells `values` (column name -> value) of the row `row_id` set; every other byte as it was.
+
+    A column the header lacks (the optional ones: Provider, Tokens in, Tokens out, Cost USD, Notes) is appended to the header,
+    the separator and every row. A pipe or a line break inside a value cannot break the row. KeyError for an unknown id or a
+    text without a table. Applied through `update_ledger`, the only writer."""
+    lines = _lines(text)
+    found = _find_table(lines)
+    if found is None:
+        raise KeyError(row_id)
+    head, sep, last = found
+    columns = [_canonical(lines[head][0][s:e]) for s, e in _spans(lines[head][0])]
+    if "ID" not in columns:
+        raise KeyError(row_id)
+    id_at = columns.index("ID")
+    target = None
+    for n in range(sep + 1, last + 1):
+        spans = _spans(lines[n][0])
+        if len(spans) > id_at and lines[n][0][spans[id_at][0]:spans[id_at][1]].strip() == row_id:
+            target = n
+            break
+    if target is None:
+        raise KeyError(row_id)
+    missing = [c for c in values if c not in columns]
+    if missing:
+        for n in range(head, last + 1):
+            content, eol = lines[n]
+            if n == head:
+                content = _ensure_pipe(content) + "".join(f" {c} |" for c in missing)
+            elif n == sep:
+                content = _ensure_pipe(content) + "---|" * len(missing)
+            else:
+                content = _ensure_pipe(content) + " |" * len(missing)
+            lines[n] = (content, eol)
+        columns += missing
+    content, eol = lines[target]
+    content = _ensure_pipe(content)
+    while len(_spans(content)) < len(columns):
+        content += " |"
+    for name, value in values.items():
+        a, b = _spans(content)[columns.index(name)]
+        if content[a:b].strip() == _cell_text(value):
+            continue
+        content = content[:a] + " " + _cell_text(value) + " " + content[b:]
+    lines[target] = (content, eol)
+    return "".join(c + e for c, e in lines)
+
+
 class _Lock:
     """A lock file next to the ledger (created exclusively); a lock older than LOCK_STALE_SECONDS is a crashed writer's."""
 
