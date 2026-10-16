@@ -93,6 +93,10 @@ jobs:
       - name: Batuta gates
         id: gates
         run: |
+          if [ ! -f "$BATUTA_DIR/batuta.py" ]; then
+            echo "::error::missing script: $BATUTA_DIR/batuta.py (no gate ran)"
+            exit 1
+          fi
           PY="${PYTHON:-python}"
           status=0
           gate() {

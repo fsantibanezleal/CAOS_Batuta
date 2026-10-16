@@ -1,5 +1,5 @@
-# Copier template: `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` renders plugins/batuta/templates/project/ with the five
-# answers below. `batuta.py init project` renders the same files with the same defaults and the same bytes; the
+# Copier template: `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` renders plugins/batuta/templates/project/ with the four
+# answers below (and the hidden release tag). `batuta.py init project` renders the same files with the same defaults and the same bytes; the
 # template uses {{ name }} placeholders only (no template logic), so both renderers agree.
 _subdirectory: plugins/batuta/templates/project
 _templates_suffix: ""
@@ -8,15 +8,6 @@ project_name:
   type: str
   help: Project name, shown in AGENTS.md and CLAUDE.md
   default: My project
-
-project_slug:
-  type: str
-  help: Short name in lower case letters, digits and hyphens (names the CI concurrency group)
-  default: my-project
-  validator: >-
-    {% if not (project_slug | regex_search('^[a-z0-9]+(-[a-z0-9]+)*$')) %}
-    Use lower case letters, digits and single hyphens.
-    {% endif %}
 
 python_version:
   type: str

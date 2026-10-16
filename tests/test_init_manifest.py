@@ -27,7 +27,7 @@ class ManifestFile(unittest.TestCase):
         self.path = self.root / ".batuta" / "installed.json"
 
     def test_record_save_and_load_round_trip(self):
-        m = im.Manifest(self.path, "project", {"project": str(self.root)}, {"project_name": "x"})
+        m = im.Manifest(self.path, "project", {"project": "."}, {"project_name": "x"})
         m.record("project", "a/b.txt", b"hello\n", backup="b.txt.bak-20261015-101010")
         m.record_dir("project", "a")
         m.save()

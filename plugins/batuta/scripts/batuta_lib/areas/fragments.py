@@ -23,11 +23,10 @@ Exit codes: 0 ok, 1 refused or failed.
 import bisect
 import csv
 import io
-import os
 import re
-import tempfile
 from pathlib import Path
 
+from batuta_lib import render
 from batuta_lib.output import emit, item
 
 AREA = "fragments"
@@ -52,17 +51,8 @@ def _eol(text):
 
 
 def _write(path, text):
-    """Atomic write of `text` as UTF-8 exactly as given (line endings are the caller's)."""
-    path = Path(path)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(text.encode("utf-8"))
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+    """Atomic write of `text` as UTF-8 exactly as given (line endings are the caller's), through the shared writer."""
+    render.write_atomic_bytes(path, text.encode("utf-8"))
 
 
 def _rel(path, root):

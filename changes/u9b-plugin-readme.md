@@ -20,7 +20,7 @@ copier copy gh:fsantibanezleal/CAOS_Batuta <destination>
 - `init user` writes `<BATUTA_HOME>/batuta.json` only when it is missing (roots from `BATUTA_*` variables, the user core
   template and its values), then runs the device area's deploy and restore and installs the agent files into
   `~/.claude/agents/`. The manifest is `<deploy root>/installed.json`.
-- `init project` renders `templates/project/` of the plugin with six variables (`project_name`, `project_slug`, `python_version`,
+- `init project` renders `templates/project/` of the plugin with five variables (`project_name`, `python_version`,
   `test_command`, `default_branch`, `batuta_ref`, the release tag of the installed version that the CI checks are fetched
   from, moved by `init update`; the defaults are the target folder's name, `3.12`, `python -m unittest discover -s tests -t . -v`
   and `main`). An existing `CLAUDE.md` or `AGENTS.md` is backed up with a stamp before it is replaced;
@@ -28,6 +28,13 @@ copier copy gh:fsantibanezleal/CAOS_Batuta <destination>
   reordered) after a backup; a file the template does not own is never touched. No git repository at the target is a
   WARN (the workflow is still written); a target inside another repository is a WARN that GitHub reads the workflow at
   the repository root only. The manifest is `<project>/.batuta/installed.json` and carries no machine path.
+- Ownership: a seed file (`.batuta/batuta.json`, the constitution, thresholds, the example feature, the foundation test) is
+  written once and is yours afterwards; `init` and `init update` never overwrite it. A managed file (AGENTS.md, the
+  workflow, the agent files) is rewritten only while it is an unchanged installed copy; a hand-edited one is kept and
+  reported DIFFERENT (exit 2) unless `--force` replaces it after a backup. An existing CLAUDE.md, in a project or the user
+  core, keeps its content and gains one block between `<!-- batuta:begin ... -->` and `<!-- batuta:end -->`, rewritten in
+  place by `init update`. `init uninstall` refuses a manifest whose bases, paths or links leave the project or the Batuta
+  home, deleting nothing.
 - The workflow `.github/workflows/batuta-gates.yml` has one job, `batuta-gates`: full history, Python from
   `python_version`, the base revision from `github.event.pull_request.base.sha` (pull request) or `github.event.before` (a
   push, or the merge base with the default branch on a new branch or a force push), the test step `id: tests` running

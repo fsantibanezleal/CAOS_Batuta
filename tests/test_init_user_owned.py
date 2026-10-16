@@ -39,7 +39,9 @@ class UserCore(World):
         self.core().write_text("# Mine\n", encoding="utf-8")
         self.init_user("--var", "user_name=Ada")
         self.core().write_text(self.core().read_text(encoding="utf-8") + "\nadded below\n", encoding="utf-8")
-        self.cli("init", "update", "--scope", "user", "--home", str(self.home), "--var", "user_name=Grace", "--apply")
+        cfg = self.bh / "batuta.json"
+        cfg.write_text(cfg.read_text(encoding="utf-8").replace("Ada", "Grace"), encoding="utf-8")   # the config is yours
+        self.cli("init", "update", "--scope", "user", "--home", str(self.home), "--apply")
         text = self.core().read_text(encoding="utf-8")
         self.assertIn("Grace", text)
         self.assertNotIn("Ada", text)

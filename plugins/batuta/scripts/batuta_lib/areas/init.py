@@ -18,7 +18,7 @@ of the device area. What init wrote (path, hash, backup, folders it created) is 
 project. Exit codes: 0 ok, 1 failure or refusal, 2 warnings (for example a file kept because it changed).
 
 The project template variables are the same for `init project` and the copier channel (`copier.yml`): `project_name`,
-`project_slug`, `python_version`, `test_command`, `default_branch`. Templates hold `{{ name }}` placeholders only.
+`python_version`, `test_command`, `default_branch` and the hidden `batuta_ref`. Templates hold `{{ name }}` placeholders only.
 """
 import argparse
 import contextlib
@@ -48,7 +48,7 @@ HELP = "Adopt Batuta: init user and init project, then doctor, update and uninst
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[3]          # plugins/batuta, or the device copy itself
 SCRIPT = PLUGIN_ROOT / "scripts" / "batuta.py"
-VARIABLES = ("project_name", "project_slug", "python_version", "test_command", "default_branch", "batuta_ref")
+VARIABLES = ("project_name", "python_version", "test_command", "default_branch", "batuta_ref")
 
 
 def _release_tag():
@@ -101,12 +101,8 @@ def read_template(folder):
     return out
 
 
-def slugify(name):
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "project"
-
-
 def check_variables(variables):
-    """The five variables as text, or InitError naming every problem (they land in JSON, YAML and Markdown unescaped)."""
+    """The template variables as text, or InitError naming every problem (they land in JSON, YAML and Markdown unescaped)."""
     unknown = sorted(set(variables) - set(VARIABLES))
     missing = [k for k in VARIABLES if k not in variables]
     problems = [f"unknown variable {k!r} (the variables are {', '.join(VARIABLES)})" for k in unknown]
@@ -114,7 +110,6 @@ def check_variables(variables):
     values = {k: str(v) for k, v in variables.items() if k in VARIABLES}
     rules = {
         "project_name": (r"[^\x00-\x1f\"\\{}]{1,100}", "1 to 100 characters without control characters, quotes, backslashes or braces"),
-        "project_slug": (r"[a-z0-9]+(?:-[a-z0-9]+)*", "lower case letters, digits and single hyphens"),
         "python_version": (r"3\.(?:1[0-9]|[2-9][0-9])", "3.10 or newer, as in 3.12"),
         "test_command": (r"(?! )[^\x00-\x1f\"\\{}]{1,300}", "one line without double quotes, backslashes or braces (use single quotes "
                                                               "inside the command)"),
@@ -194,18 +189,9 @@ def _backup(path):
 
 
 def _write_bytes(path, data):
-    """Atomic binary write (temp file in the same folder, then `os.replace`)."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+    """Atomic binary write through the shared writer (a temp file in the same folder, then `os.replace`, retried a few
+    times on a transient Windows access error)."""
+    render.write_atomic_bytes(path, data)
 
 
 def _is_link(path):
@@ -275,6 +261,67 @@ def _git_items(target):
 # ------------------------------------------------------------------ project: plan and apply
 
 
+SEED_FILES = (".batuta/batuta.json", "specs/000-foundation/constitution.md", "specs/000-foundation/thresholds.json",
+              "tests/__init__.py", "tests/test_foundation.py")
+SEED_PREFIXES = ("specs/001-",)          # the example feature
+BLOCK_FILES = ("CLAUDE.md",)             # an existing file keeps its content and gains a managed block
+BLOCK_BEGIN = "<!-- batuta:begin (managed by `batuta init`; edit outside these markers, `init update` rewrites the block) -->"
+BLOCK_END = "<!-- batuta:end -->"
+_BLOCK = re.compile(r"<!-- batuta:begin[^\n]*-->\n.*?\n<!-- batuta:end -->", re.S)
+
+
+def file_kind(rel):
+    """How init treats a template file: `seed` (yours after the first install, never overwritten), `block` (merged as a
+    managed block into an existing file), `settings` (merged append-only) or `managed` (kept current by init)."""
+    if rel == SETTINGS:
+        return "settings"
+    if rel in SEED_FILES or rel.startswith(SEED_PREFIXES):
+        return "seed"
+    return "block" if rel in BLOCK_FILES else "managed"
+
+
+def merge_block(existing, body):
+    """`existing` with the managed block holding `body`: replaced in place when its markers are there, else appended after
+    the user's content. The user's text and line endings stay as they are."""
+    crlf = "\r\n" in existing
+    text = render.normalise(existing)
+    block = BLOCK_BEGIN + "\n" + render.normalise(body).rstrip("\n") + "\n" + BLOCK_END
+    if _BLOCK.search(text):
+        merged = _BLOCK.sub(lambda m: block, text, count=1)
+    elif text.strip():
+        merged = text.rstrip("\n") + "\n\n" + block + "\n"
+    else:
+        merged = block + "\n"
+    return merged.replace("\n", "\r\n") if crlf else merged
+
+
+def classify(kind, path, text, manifest, base, rel, force):
+    """(status, bytes to write or None) for one file: NEW, SAME, CHANGED, MERGED (a managed block), DIFFERENT (kept: it is
+    not an unchanged installed copy; `force` replaces it with a backup) or SKIP (a seed file that is yours). `text` is
+    what init would write (for a `block` file, the body of the block)."""
+    data = text.encode("utf-8")
+    entry = manifest.entry(base, rel) if manifest is not None else None
+    path = Path(path)
+    if not path.is_file():
+        if kind == "seed" and entry is not None:
+            return "SKIP", None            # a seed file you removed stays removed
+        return "NEW", data
+    current = path.read_bytes()
+    if _sha(current) == _sha(data):
+        return "SAME", None
+    if kind == "seed":
+        return "SKIP", None
+    unchanged = entry is not None and manifest.state(manifest.base_dir(base), rel) == "SAME"
+    if kind == "block":
+        existing = current.decode("utf-8-sig")
+        if _BLOCK.search(render.normalise(existing)) or entry is None:
+            merged = merge_block(existing, text).encode("utf-8")
+            return ("SAME", None) if _sha(merged) == _sha(current) else ("MERGED", merged)
+    if unchanged or force:
+        return "CHANGED", data
+    return "DIFFERENT", None
+
+
 def _settings_preset(text):
     """The template's settings as a C17 preset (so the device area's append-only merge applies it). The deny rules use the
     syntax of the official permissions documentation (https://code.claude.com/docs/en/permissions#read-and-edit, verified
@@ -294,9 +341,9 @@ def _settings_preset(text):
     return preset
 
 
-def _plan_project(target, rendered, items):
-    """[(rel, status, text)] for each template file; refusals and unusable settings go to `items`. status is NEW, SAME,
-    CHANGED or, for the settings file, MERGED (some preset items are missing) or SAME."""
+def _plan_project(target, rendered, items, manifest=None, force=False):
+    """[(rel, status, data)] for each template file; refusals and unusable settings go to `items`. For the settings file
+    the status is NEW, MERGED (some preset items are missing) or SAME and `data` is None (the merge writes it)."""
     plan = []
     for rel in sorted(rendered):
         text = rendered[rel]
@@ -305,7 +352,8 @@ def _plan_project(target, rendered, items):
             items.append(item("REFUSED", f"{rel}: {why}", rel))
             continue
         path = Path(target) / rel
-        if rel == SETTINGS:
+        kind = file_kind(rel)
+        if kind == "settings":
             try:
                 preset = _settings_preset(text)
                 raw = path.read_bytes() if path.is_file() else None
@@ -317,36 +365,48 @@ def _plan_project(target, rendered, items):
             rows = sm.plan(current, preset)
             items.extend(item("WARN", f"{rel} {label}", rel) for tag, label in rows if tag == "WARN")
             missing = [label for tag, label in rows if tag == "NEW"]
-            status = "NEW" if current is None else ("MERGED" if missing else "SAME")
-            plan.append((rel, status, text))
+            plan.append((rel, "NEW" if current is None else ("MERGED" if missing else "SAME"), None))
             continue
-        if not path.is_file():
-            status = "NEW"
-        else:
-            status = "SAME" if _sha(path.read_bytes()) == _sha(text.encode("utf-8")) else "CHANGED"
-        plan.append((rel, status, text))
+        status, data = classify(kind, path, text, manifest, "project", rel, force)
+        plan.append((rel, status, data))
     return plan
 
 
-def _apply_file(manifest, base, base_dir, rel, status, data, items, label=None):
-    """Write `data` at `base_dir/rel` for a NEW or CHANGED plan row (CHANGED backs the old file up first) and record it."""
+def _kept_note(rel, status):
+    if status == "SKIP":
+        return f"{rel} is yours after the first install; kept as it is"
+    return (f"{rel} differs from the template and is not an unchanged installed copy; kept "
+            "(use --force to replace it, with a backup)")
+
+
+def _status_items(plan, items):
+    """One output line per planned file, and one WARN when a managed file was kept (exit 2)."""
+    kept = []
+    for rel, status, _ in plan:
+        if status == "MERGED":
+            what = ("the template's permission rules added, nothing removed" if file_kind(rel) == "settings"
+                    else "the managed block added or updated, your text untouched")
+            items.append(item("MERGED", f"{rel} ({what})", rel))
+        elif status in ("SKIP", "DIFFERENT"):
+            items.append(item(status, _kept_note(rel, status), rel))
+            if status == "DIFFERENT":
+                kept.append(rel)
+        else:
+            items.append(item(status, rel, rel))
+    if kept:
+        items.append(item("WARN", f"{len(kept)} file(s) differ from the template and were kept: {', '.join(kept)}; "
+                                  "use --force to replace them (each is backed up first)"))
+
+
+def _apply_file(manifest, base, base_dir, rel, status, data, items, seed=False):
+    """Write `data` at `base_dir/rel` for a NEW, CHANGED or MERGED row (an existing file is backed up first) and record it."""
     path = Path(base_dir) / rel
     backup = None
-    if status == "CHANGED":
+    if status in ("CHANGED", "MERGED") and path.is_file():
         backup = _backup(path)
         items.append(item("OK", f"backup of {rel} at {backup.name}", rel))
     _write_bytes(path, data)
-    manifest.record(base, rel, data, backup.name if backup else None)
-
-
-def _project_status_items(plan, items):
-    for rel, status, _ in plan:
-        if status == "MERGED":
-            items.append(item("MERGED", f"{rel} (the template's permission rules added, nothing removed)", rel))
-        elif status == "CHANGED":
-            items.append(item("CHANGED", rel, rel))
-        else:
-            items.append(item(status, rel, rel))
+    manifest.record(base, rel, data, backup.name if backup else None, seed=seed)
 
 
 def _write_project(manifest, target, anchor, plan, rendered, items):
@@ -354,14 +414,14 @@ def _write_project(manifest, target, anchor, plan, rendered, items):
     created = _new_dirs(anchor, [Path(target) / rel for rel, _, _ in plan] + [manifest.path])
     for sub in created:
         manifest.record_dir("anchor", sub)
-    for rel, status, text in plan:
-        if status == "SAME":
+    for rel, status, data in plan:
+        if status in ("SAME", "SKIP", "DIFFERENT"):
             continue
         path = Path(target) / rel
-        if rel == SETTINGS:
+        if file_kind(rel) == "settings":
             notes = []
             try:
-                result = sm.write_verified(path, _settings_preset(text), notes=notes)
+                result = sm.write_verified(path, _settings_preset(rendered[rel]), notes=notes)
             except (sm.SettingsError, OSError, InitError) as exc:
                 items.extend(item("WARN", n) for n in notes)
                 items.append(item("FAIL", f"{rel}: {exc}", rel))
@@ -373,7 +433,7 @@ def _write_project(manifest, target, anchor, plan, rendered, items):
             if result.get("wrote"):
                 manifest.record("project", rel, path.read_bytes(), backup.name if backup else None)
             continue
-        _apply_file(manifest, "project", target, rel, status, text.encode("utf-8"), items)
+        _apply_file(manifest, "project", target, rel, status, data, items, seed=file_kind(rel) == "seed")
 
 
 def _new_project_manifest(target, anchor, variables):
@@ -384,9 +444,8 @@ def _new_project_manifest(target, anchor, variables):
 
 def _project_variables(target, overrides, base=None):
     values = {"project_name": Path(os.path.abspath(target)).name or "project"}
-    values["project_slug"] = slugify(values["project_name"])
     values.update(DEFAULTS)
-    values.update(base or {})
+    values.update({k: v for k, v in (base or {}).items() if k in VARIABLES})   # a variable of an older release is dropped
     values.update(overrides)
     return values
 
@@ -412,15 +471,16 @@ def _project(args):
         items.append(item("FAIL", str(exc)))
         return done("init project: failed, nothing written")
     anchor = _anchor(target)
-    plan = _plan_project(target, rendered, items)
+    plan = _plan_project(target, rendered, items, manifest, bool(getattr(args, "force", False)))
     blocked = [i for i in items if i["tag"] in ("FAIL", "REFUSED")]
-    _project_status_items(plan, items)
+    _status_items(plan, items)
     items.extend(_git_items(target))
+    todo = sum(1 for _, s, _ in plan if s in ("NEW", "CHANGED", "MERGED"))
     if blocked:
         return done("init project: refused, nothing written")
     if not args.apply:
         items.append(item("SKIP", "dry run: nothing written (use --apply)"))
-        return done(f"init project: {sum(1 for _, s, _ in plan if s != 'SAME')} of {len(plan)} file(s) to write (dry run)")
+        return done(f"init project: {todo} of {len(plan)} file(s) to write (dry run)")
     if manifest is None:
         manifest = _new_project_manifest(target, anchor, variables)
     manifest.variables = variables
@@ -431,8 +491,7 @@ def _project(args):
     finally:
         if manifest.files or manifest.dirs:
             manifest.save()
-    return done(f"init project: {sum(1 for _, s, _ in plan if s != 'SAME')} of {len(plan)} file(s) written in "
-                f"{target.as_posix()}")
+    return done(f"init project: {todo} of {len(plan)} file(s) written in {target.as_posix()}")
 
 
 # ------------------------------------------------------------------ user install
@@ -498,13 +557,55 @@ def _backup_names(folder, stem):
     return {p.name for p in folder.glob(stem + ".bak-*")} if folder.is_dir() else set()
 
 
+@contextlib.contextmanager
+def _config_without_user_core(cfg_arg, values, deploy):
+    """The path of a temporary copy of the user configuration without `user_core`: the device restore reads it so that it
+    leaves `~/.claude/CLAUDE.md` to init, which merges the user core as a managed block instead of replacing the file."""
+    if cfg_arg and Path(cfg_arg).is_file():
+        doc = json.loads(Path(cfg_arg).read_text(encoding="utf-8-sig"))
+    else:
+        doc = user_config_doc(values)
+    doc.pop("user_core", None)
+    with tempfile.TemporaryDirectory(prefix="batuta-init-", dir=deploy if Path(deploy).is_dir() else None) as folder:
+        path = Path(folder) / config.FILE_NAME
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        yield path.as_posix()
+
+
+def _user_core_text(cfg_arg, values, deploy, items):
+    """The rendered user core (the device area's rendering of the configured template), or None after items say why."""
+    try:
+        cfg = config.load(cfg_arg).config if cfg_arg else user_config_doc(values)
+        profile = dp.read_profile(deploy)
+    except (config.ConfigError, dp.ProfileError) as exc:
+        items.append(item("FAIL", f"user core: {exc}"))
+        return None
+    scratch = []
+    text = device._user_core(cfg, profile, deploy, scratch)
+    items.extend(scratch)
+    return text
+
+
+def user_core_is_current(home, deploy, cfg_arg=None):
+    """True when `~/.claude/CLAUDE.md` holds the user core, as the whole file or as its managed block."""
+    try:
+        text = _user_core_text(cfg_arg, _user_variables({}), Path(deploy), [])
+    except (InitError, OSError):
+        return False
+    if text is None:
+        return False
+    status, _ = classify("block", Path(home) / ".claude" / "CLAUDE.md", text, None, "claude", "CLAUDE.md", False)
+    return status == "SAME"
+
+
 def _user_flow(args, items, mode):
     """`init user` and `init update --scope user`; returns the summary text."""
     apply = args.apply
+    force = bool(getattr(args, "force", False))
     label = "init user" if mode == "init" else "init update"
     home, deploy, claude = _user_paths(args)
     manifest_path = deploy / im.FILE_NAME
-    manifest = im.Manifest.load(manifest_path)
+    manifest = im.Manifest.load(manifest_path, expect={"deploy": deploy, "claude": claude})
     if manifest is not None and manifest.kind != "user":
         raise InitError(f"{manifest_path.as_posix()} is not a user manifest")
     if mode == "update" and manifest is None:
@@ -568,47 +669,58 @@ def _user_flow(args, items, mode):
                     if p.is_dir() and rel not in sub_before and "__pycache__" not in p.parts:
                         manifest.record_dir("deploy", rel)
 
-    # 3. the settings presets and the user core (the device area's restore), when the device copy exists
+    # 3. the settings presets (the device area's restore, without the user core) and the user core (a managed block)
     if apply or (deploy / dp.PROFILE_FILE).is_file():
-        settings, core = claude / "settings.json", claude / "CLAUDE.md"
-        before = {"settings.json": settings.read_bytes() if settings.is_file() else None,
-                  "CLAUDE.md": core.read_bytes() if core.is_file() else None}
-        names_before = {"settings.json": _backup_names(claude, "settings.json"), "CLAUDE.md": _backup_names(claude, "CLAUDE.md")}
-        code, ritems = _call_device(device._restore, config=cfg_arg, home=str(home), deploy_root=str(deploy), apply=apply,
-                                    stubs=None, force=False)
+        settings = claude / "settings.json"
+        before = settings.read_bytes() if settings.is_file() else None
+        names_before = _backup_names(claude, "settings.json")
+        with _config_without_user_core(cfg_arg, values, deploy) as restore_cfg:
+            code, ritems = _call_device(device._restore, config=restore_cfg, home=str(home), deploy_root=str(deploy),
+                                        apply=apply, stubs=None, force=False)
         items.extend(ritems)
         if apply:
-            for rel in ("settings.json", "CLAUDE.md"):
-                path = claude / rel
-                after = path.read_bytes() if path.is_file() else None
-                if after is not None and after != before[rel]:
-                    new = sorted(_backup_names(claude, rel) - names_before[rel])
-                    manifest.record("claude", rel, after, new[0] if new else None)
-            if not claude_existed and claude.exists():
-                manifest.record_dir("claude", ".")
+            after = settings.read_bytes() if settings.is_file() else None
+            if after is not None and after != before:
+                new = sorted(_backup_names(claude, "settings.json") - names_before)
+                manifest.record("claude", "settings.json", after, new[0] if new else None)
+        core_text = _user_core_text(cfg_arg, values, deploy, items)
+        if core_text is not None:
+            why = _blocked(claude, "CLAUDE.md")
+            if why:
+                items.append(item("REFUSED", f"CLAUDE.md: {why}", "CLAUDE.md"))
+            else:
+                st, data = classify("block", claude / "CLAUDE.md", core_text, manifest, "claude", "CLAUDE.md", force)
+                _status_items([("CLAUDE.md", st, data)], items)
+                if apply and st in ("NEW", "CHANGED", "MERGED"):
+                    _apply_file(manifest, "claude", claude, "CLAUDE.md", st, data, items)
+        if apply and not claude_existed and claude.exists():
+            manifest.record_dir("claude", ".")
     else:
         items.append(item("SKIP", "restore of the settings and the user core is planned after the device copy exists "
                                   "(run with --apply)"))
 
-    # 4. the agent files (the device channel has no plugin to bring them)
+    # 4. the agent files (the device channel has no plugin to bring them); one the user changed is kept unless --force
     source = PLUGIN_ROOT / "agents"
     files = sorted(source.glob("*.md")) if source.is_dir() else []
     if not files:
         items.append(item("WARN", f"no agent files next to this copy of Batuta ({source.as_posix()}); install the plugin or "
                                   "copy the agent files into ~/.claude/agents"))
+    plan = []
     for f in files:
-        rel, data = f"agents/{f.name}", f.read_bytes()
+        rel = f"agents/{f.name}"
         why = _blocked(claude, rel)
         if why:
             items.append(item("REFUSED", f"{rel}: {why}", rel))
             continue
-        path = claude / rel
-        st = "NEW" if not path.is_file() else ("SAME" if _sha(path.read_bytes()) == _sha(data) else "CHANGED")
-        items.append(item(st, rel, rel))
-        if apply and st != "SAME":
-            _apply_file(manifest, "claude", claude, rel, st, data, items)
-    if apply and not agents_existed and (claude / "agents").exists():
-        manifest.record_dir("claude", "agents")
+        st, data = classify("managed", claude / rel, f.read_text(encoding="utf-8"), manifest, "claude", rel, force)
+        plan.append((rel, st, data))
+    _status_items(plan, items)
+    if apply:
+        for rel, st, data in plan:
+            if st in ("NEW", "CHANGED"):
+                _apply_file(manifest, "claude", claude, rel, st, data, items)
+        if not agents_existed and (claude / "agents").exists():
+            manifest.record_dir("claude", "agents")
 
     if apply and (manifest.files or manifest.dirs):
         manifest.save()
@@ -642,9 +754,9 @@ def _update_project(args, items):
     if "batuta_ref" not in overrides:
         variables["batuta_ref"] = DEFAULTS["batuta_ref"]   # an update moves the pinned checks to the installed release
     rendered = render_project(variables)
-    plan = _plan_project(target, rendered, items)
+    plan = _plan_project(target, rendered, items, manifest, bool(getattr(args, "force", False)))
     blocked = [i for i in items if i["tag"] in ("FAIL", "REFUSED")]
-    _project_status_items(plan, items)
+    _status_items(plan, items)
     stale = [e for e in manifest.files if e["base"] == "project" and e["path"] not in rendered]
     for e in stale:
         state = manifest.state(target, e["path"])
@@ -666,7 +778,8 @@ def _update_project(args, items):
         items.append(item("FAIL", f"write failed ({type(exc).__name__}: {exc})"))
     finally:
         manifest.save()
-    return f"init update: {sum(1 for _, s, _ in plan if s != 'SAME')} of {len(plan)} file(s) rewritten in {target.as_posix()}"
+    return (f"init update: {sum(1 for _, s, _ in plan if s in ('NEW', 'CHANGED', 'MERGED'))} of {len(plan)} file(s) "
+            f"rewritten in {target.as_posix()}")
 
 
 def _update(args):
@@ -747,15 +860,26 @@ def _uninstall_manifest(manifest, apply, items):
 def _uninstall(args):
     items, as_json = [], _flag_json(args)
     try:
+        expect = None
         if args.scope == "user":
             home, deploy, claude = _user_paths(args)
             manifest_path = deploy / im.FILE_NAME
+            expect = {"deploy": deploy, "claude": claude}
         else:
             manifest_path = Path(os.path.abspath(args.target)) / config.PROJECT_DIR / im.FILE_NAME
-        manifest = im.Manifest.load(manifest_path)
+        try:
+            manifest = im.Manifest.load(manifest_path, expect=expect)
+        except im.ManifestError as exc:
+            items.append(item("REFUSED", f"{exc}; the whole manifest is refused and nothing was deleted"))
+            return emit(AREA, "uninstall", items, "init uninstall: refused, nothing changed", as_json)
         if manifest is None or manifest.kind != args.scope:
             items.append(item("REFUSED", f"{manifest_path.as_posix()} not found: nothing was installed here by "
                                          f"init {args.scope}"))
+            return emit(AREA, "uninstall", items, "init uninstall: refused, nothing changed", as_json)
+        problems = manifest.link_problems()
+        if problems:
+            items.append(item("REFUSED", f"{manifest_path.as_posix()}: {'; '.join(problems)}; the whole manifest is refused "
+                                         "and nothing was deleted"))
             return emit(AREA, "uninstall", items, "init uninstall: refused, nothing changed", as_json)
         kept = _uninstall_manifest(manifest, args.apply, items)
         if args.apply:
@@ -1045,6 +1169,11 @@ def _doctor(args):
         if profile.is_file():
             for it in device._check_items(home, deploy, getattr(args, "config", None)):
                 fix_text = it.pop("fix", None)
+                if it["tag"] == "FAIL" and it["message"].startswith("user core ") and user_core_is_current(
+                        home, deploy, getattr(args, "config", None)):
+                    # the device check compares the whole file; init keeps an existing CLAUDE.md and adds a managed block
+                    it = item("OK", "user core current (a managed block in your CLAUDE.md)")
+                    fix_text = None
                 items.append({**it, "message": it["message"] + (f"; fix: {fix_text}" if fix_text else "")})
         elif channel == "device":
             items.append(_bad(f"device copy not found at {deploy.as_posix()}", _fix_command("init user --apply")))
@@ -1070,13 +1199,15 @@ def register(subparsers):
     home_flags(p)
     p.add_argument("--python", help="the interpreter to record in the device profile (default: the running one)")
     p.add_argument("--var", action="append", help="user_name, language or tone as key=value (repeatable)")
+    p.add_argument("--force", action="store_true", help="replace a managed file that differs from the template (backed up first)")
     p.add_argument("--apply", action="store_true", help="write (default: dry run)")
     p.set_defaults(func=_user)
 
     p = subparsers.add_parser("project", help="render the project template into a folder (dry run unless --apply)")
     p.add_argument("--target", default=".", help="the project folder (default: the current folder)")
-    p.add_argument("--var", action="append", help="project_name, project_slug, python_version, test_command or "
-                                                   "default_branch as key=value (repeatable)")
+    p.add_argument("--var", action="append", help="project_name, python_version, test_command, default_branch or "
+                                                   "batuta_ref as key=value (repeatable)")
+    p.add_argument("--force", action="store_true", help="replace a managed file that differs from the template (backed up first)")
     p.add_argument("--apply", action="store_true", help="write (default: dry run)")
     p.set_defaults(func=_project)
 
@@ -1096,5 +1227,6 @@ def register(subparsers):
         if name == "update":
             p.add_argument("--var", action="append", help="a template variable as key=value (repeatable)")
             p.add_argument("--python", help="the interpreter to record in the device profile (user scope)")
+            p.add_argument("--force", action="store_true", help="replace a managed file that differs from the template (backed up first)")
         p.add_argument("--apply", action="store_true", help="write (default: dry run)")
         p.set_defaults(func=func)

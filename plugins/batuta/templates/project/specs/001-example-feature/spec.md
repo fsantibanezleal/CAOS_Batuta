@@ -24,6 +24,7 @@ in this spec or in any other. The Gate is a backticked command or a test id (`pa
 
 | Id | Kind | EARS text | Gate | Verification | Status |
 |---|---|---|---|---|---|
+| REQ-FOUND-001 | ubiquitous | The project shall keep its constitution at `specs/000-foundation/constitution.md`. | `python -m unittest tests/test_foundation.py` | unit test | active |
 
 <!--
 Example row (a comment: it is never counted as a requirement):

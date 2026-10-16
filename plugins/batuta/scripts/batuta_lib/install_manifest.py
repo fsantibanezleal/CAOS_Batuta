@@ -63,8 +63,11 @@ class Manifest:
     # ------------------------------------------------------------------ reading and writing
 
     @classmethod
-    def load(cls, path):
-        """The manifest at `path`, or None when there is none. ManifestError when it is unreadable or unsound."""
+    def load(cls, path, expect=None):
+        """The manifest at `path`, or None when there is none. ManifestError when it is unreadable or unsound, or when a base
+        leaves the folder it was installed into. A project manifest may name only the project (`.`) and an `anchor` that is
+        `.` or an ancestor of the project (`..`, `../..`); a user manifest only the `deploy` folder it sits in and the
+        `claude` folder, which must equal `expect["claude"]` (and `expect["deploy"]`) when the caller passes them."""
         path = Path(path)
         if not path.is_file():
             return None
@@ -77,6 +80,7 @@ class Manifest:
         kind = doc.get("kind")
         manifest = cls(path, kind, doc.get("bases") if isinstance(doc.get("bases"), dict) else {},
                        doc.get("variables") if isinstance(doc.get("variables"), dict) else {})
+        manifest.check_bases(expect)
         for entry in doc.get("files", []):
             if not isinstance(entry, dict) or entry.get("base") not in manifest.bases:
                 raise ManifestError(f"{path.as_posix()} has a file entry with an unknown base: {entry!r}")
@@ -87,13 +91,49 @@ class Manifest:
                 if name is not None and (not isinstance(name, str) or "/" in name or "\\" in name or name in ("", ".", "..")):
                     raise ManifestError(f"{path.as_posix()}: the backup name {name!r} of {entry['path']} is not a file name")
             manifest.files.append({"base": entry["base"], "path": entry["path"], "sha256": entry["sha256"],
-                                   "backup": entry.get("backup"), "previous": list(entry.get("previous", []))})
+                                   "backup": entry.get("backup"), "previous": list(entry.get("previous", [])),
+                                   "seed": bool(entry.get("seed", False))})
         for entry in doc.get("dirs", []):
             if not isinstance(entry, dict) or entry.get("base") not in manifest.bases:
                 raise ManifestError(f"{path.as_posix()} has a folder entry with an unknown base: {entry!r}")
             check_rel(entry.get("path"), allow_dot=True)
             manifest.dirs.append({"base": entry["base"], "path": entry["path"]})
         return manifest
+
+    def check_bases(self, expect=None):
+        """ManifestError unless every base stays where this kind of install put it (see `load`)."""
+        name = self.path.as_posix()
+        bases = self.bases
+        if self.kind == "project":
+            if set(bases) - {"project", "anchor"} or bases.get("project") != ".":
+                raise ManifestError(f"{name}: a project manifest names only the project ('.') and its anchor, not {bases!r}")
+            anchor = bases.get("anchor", ".")
+            if not isinstance(anchor, str) or not re.fullmatch(r"\.|\.\.(/\.\.)*", anchor):
+                raise ManifestError(f"{name}: the anchor {anchor!r} is not the project or one of its ancestors ('..', '../..')")
+            return
+        if set(bases) - {"deploy", "claude"} or not set(bases) >= {"deploy", "claude"}:
+            raise ManifestError(f"{name}: a user manifest names only the deploy and claude folders, not {bases!r}")
+        same = lambda a, b: os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))   # noqa: E731
+        for key, value in bases.items():
+            if not isinstance(value, str) or not (Path(value).is_absolute() or re.match(r"^[A-Za-z]:", value)):
+                raise ManifestError(f"{name}: the {key} base {value!r} is not an absolute folder")
+        if not same(bases["deploy"], self.path.parent):
+            raise ManifestError(f"{name}: the deploy base {bases['deploy']!r} is not the folder this manifest sits in")
+        for key, folder in (expect or {}).items():
+            if key in bases and not same(bases[key], folder):
+                raise ManifestError(f"{name}: the {key} base {bases[key]!r} is not {Path(folder).as_posix()!r}, "
+                                    "the folder this command works on")
+
+    def link_problems(self):
+        """Entries whose real path (links followed) leaves the folder of their base, as text; empty when sound."""
+        problems = []
+        for entry in [*self.files, *self.dirs]:
+            base = os.path.realpath(self.base_dir(entry["base"]))
+            rel = "" if entry["path"] == "." else entry["path"]
+            real = os.path.realpath(os.path.join(base, rel))
+            if os.path.normcase(real) != os.path.normcase(base) and not os.path.normcase(real).startswith(os.path.normcase(base) + os.sep):
+                problems.append(f"{entry['path']} resolves to {Path(real).as_posix()}, outside its base")
+        return problems
 
     def text(self):
         doc = {"manifest_version": VERSION, "kind": self.kind, "bases": self.bases, "variables": self.variables,
@@ -123,17 +163,18 @@ class Manifest:
                 return e
         return None
 
-    def record(self, base, rel, data, backup=None):
+    def record(self, base, rel, data, backup=None, seed=False):
         """Record that init wrote `rel` with content `data` (bytes). `backup` is the name of the file that holds what it
         replaced. On a file already recorded the hash is replaced; the first backup stays what `uninstall` restores and a
-        later one is kept as a `previous` copy."""
+        later one is kept as a `previous` copy. `seed` marks a file the user owns after the first install."""
         if base not in self.bases:
             raise ManifestError(f"unknown base {base!r}")
         check_rel(rel)
         digest = sha256_bytes(data)
         existing = self.entry(base, rel)
         if existing is None:
-            self.files.append({"base": base, "path": rel, "sha256": digest, "backup": backup, "previous": []})
+            self.files.append({"base": base, "path": rel, "sha256": digest, "backup": backup, "previous": [],
+                               "seed": bool(seed)})
             return
         existing["sha256"] = digest
         if backup:

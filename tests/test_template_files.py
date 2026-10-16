@@ -123,10 +123,9 @@ class RenderedContracts(unittest.TestCase):
                 continue
             if rel.endswith(("spec.md", "tasks.md")):
                 # the example rows (one requirement and its task, so the files satisfy C05 and C21) are the only addition
-                kept = [ln for ln in ours[rel].decode("utf-8").split("
-") if not ln.startswith(("| REQ-EXAMPLE-001", "| T-001"))]
-                self.assertEqual("
-".join(kept).encode("utf-8"), data, rel)
+                lines = ours[rel].decode("utf-8").split("\n")
+                kept = [ln for ln in lines if not ln.startswith(("| REQ-FOUND-001", "| T-001"))]
+                self.assertEqual("\n".join(kept).encode("utf-8"), data, rel)
                 self.assertNotEqual(ours[rel], data, f"{rel} carries its example row")
             else:
                 self.assertEqual(ours[rel], data, rel)

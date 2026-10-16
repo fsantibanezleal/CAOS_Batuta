@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# REQ: REQ-FOUND-001
 class FoundationTests(unittest.TestCase):
     def test_batuta_configuration_names_the_test_command(self):
         doc = json.loads((ROOT / ".batuta" / "batuta.json").read_text(encoding="utf-8"))
