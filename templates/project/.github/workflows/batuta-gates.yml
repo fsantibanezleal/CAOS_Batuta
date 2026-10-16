@@ -1,0 +1,132 @@
+# The CI twin of the Batuta hooks: the same checks, on every push and pull request, that cannot be skipped from a
+# developer's machine. Mark the job `batuta-gates` as a required status check on the default branch.
+#
+# This file holds no GitHub expression syntax on purpose: copier renders every file of the template, and the base
+# revision is read from the event payload by the `base` step instead. The concurrency group is therefore one per project.
+name: batuta-gates
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: batuta-gates-{{ project_slug }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  batuta-gates:
+    name: batuta-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The Batuta release the checks come from; pin it to a release tag once the project adopts one.
+      BATUTA_REF: main
+      DEFAULT_BRANCH: "{{ default_branch }}"
+    steps:
+      - name: Check out the full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "{{ python_version }}"
+      - name: Fetch Batuta
+        run: |
+          git clone --depth 1 --branch "$BATUTA_REF" https://github.com/fsantibanezleal/CAOS_Batuta.git "$RUNNER_TEMP/batuta"
+          echo "BATUTA_DIR=$RUNNER_TEMP/batuta/plugins/batuta/scripts" >> "$GITHUB_ENV"
+      - name: Resolve the base revision
+        id: base
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          ZEROS = "0" * 40
+
+
+          def git(*args):
+              done = subprocess.run(["git", *args], capture_output=True, text=True)
+              return done.returncode, done.stdout.strip()
+
+
+          def known(sha):
+              return bool(sha) and sha != ZEROS and git("cat-file", "-e", sha + "^{commit}")[0] == 0
+
+
+          event = {}
+          path = os.environ.get("GITHUB_EVENT_PATH")
+          if path and os.path.exists(path):
+              with open(path, encoding="utf-8") as handle:
+                  event = json.load(handle)
+          name = os.environ.get("GITHUB_EVENT_NAME", "")
+          default = os.environ.get("DEFAULT_BRANCH", "main")
+          base = ""
+          if name == "pull_request":
+              candidate = ((event.get("pull_request") or {}).get("base") or {}).get("sha", "")
+              base = candidate if known(candidate) else ""
+          elif name == "push":
+              candidate = event.get("before", "")
+              base = candidate if known(candidate) else ""
+          if not base:
+              for ref in ("origin/" + default, default):
+                  code, found = git("merge-base", ref, "HEAD")
+                  if code == 0 and found:
+                      base = found
+                      break
+          head = git("rev-parse", "HEAD")[1]
+          if not base or base == head:
+              code, parent = git("rev-parse", "--verify", "HEAD~1")
+              if code == 0 and parent:
+                  base = parent
+              else:
+                  base = head
+                  print("::warning::no earlier commit to compare with; the base revision is HEAD")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+              handle.write("BATUTA_BASE=" + base + "\n")
+          print("base revision: " + base)
+          PY
+      - name: Tests
+        id: tests
+        run: |
+          {{ test_command }}
+      - name: Batuta gates
+        id: gates
+        run: |
+          PY="${PYTHON:-python}"
+          status=0
+          gate() {
+            echo "::group::$*"
+            rc=0
+            "$@" || rc=$?
+            echo "::endgroup::"
+            if [ "$rc" -eq 2 ]; then
+              echo "::warning::$* reported warnings (exit 2); reported, the job continues"
+            elif [ "$rc" -ne 0 ]; then
+              echo "::error::$* failed (exit $rc)"
+              status=1
+            fi
+          }
+          head="$(git rev-parse HEAD 2>/dev/null || true)"
+          if [ "$BATUTA_BASE" = "$head" ]; then
+            # the first commit of a repository: no earlier history, so the whole history is the range
+            gate "$PY" "$BATUTA_DIR/batuta.py" tdd check --replay
+          else
+            gate "$PY" "$BATUTA_DIR/batuta.py" tdd check --replay --range "$BATUTA_BASE..HEAD"
+          fi
+          for dir in specs/[0-9][0-9][0-9]-*/; do
+            [ -d "$dir" ] || continue
+            id="$(basename "$dir")"
+            [ "$id" = "000-foundation" ] && continue
+            gate "$PY" "$BATUTA_DIR/batuta.py" spec trace "$id" --root .
+            gate "$PY" "$BATUTA_DIR/batuta.py" gate check "$id" --against "$BATUTA_BASE"
+          done
+          gate "$PY" "$BATUTA_DIR/batuta.py" gate thresholds --check --against "$BATUTA_BASE"
+          gate "$PY" "$BATUTA_DIR/batuta.py" guard scan --diff "$BATUTA_BASE..HEAD"
+          gate "$PY" "$BATUTA_DIR/batuta.py" context check --project . --chain-root .
+          gate "$PY" "$BATUTA_DIR/batuta.py" leaks scan --root .
+          exit "$status"

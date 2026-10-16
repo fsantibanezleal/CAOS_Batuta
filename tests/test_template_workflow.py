@@ -166,5 +166,48 @@ class GatesStep(unittest.TestCase):
         self.assertTrue(any(c.startswith("leaks scan") for c in calls), "later checks run after a failure")
 
 
+class FreshProjectPassesItsOwnGates(unittest.TestCase):
+    """What the workflow runs, run for real on a project that `init project` just created: no check may FAIL on a fresh
+    project (a WARN, exit 2, is reported and does not fail the job), for the first commit and for a later change."""
+
+    def gates(self, project, home, base, first):
+        from test_init_support import run
+        env = {"BATUTA_HOME": str(Path(home) / "bh")}
+        commands = [
+            ("tdd", "check", "--replay", "--repo", str(project)) if first else
+            ("tdd", "check", "--replay", "--repo", str(project), "--range", base + "..HEAD"),
+            ("spec", "trace", "001-example-feature", "--root", str(project)),
+            ("gate", "check", "001-example-feature", "--root", str(project), "--against", base),
+            ("gate", "thresholds", "--check", "--root", str(project), "--against", base),
+            ("guard", "scan", "--diff", base + "..HEAD", "--root", str(project)),
+            ("context", "check", "--project", str(project), "--home", str(home), "--chain-root", str(project)),
+            ("leaks", "scan", "--root", str(project)),
+        ]
+        results = []
+        for argv in commands:
+            code, out, err = run(*argv, env=env)
+            results.append((" ".join(argv[:2]), code, out + err))
+        return results
+
+    def test_a_fresh_project_has_no_failing_check_at_its_first_commit_and_after_a_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            project = make_repo(tmp / "proj")
+            home = tmp / "home"
+            home.mkdir()
+            from test_init_support import run
+            code, out, err = run("init", "project", "--target", str(project), "--apply", env={"BATUTA_HOME": str(tmp / "bh")})
+            self.assertEqual(code, 0, out + err)
+            first = commit_all(project, "init")
+            for name, code, text in self.gates(project, home, first, first=True):
+                self.assertIn(code, (0, 2), f"{name} at the first commit: {text}")
+                self.assertNotRegex(text, r"(?m)^(FAIL|REFUSED) ", name)
+            (project / "notes.md").write_text("a change\n", encoding="utf-8")
+            commit_all(project, "a later change")
+            for name, code, text in self.gates(project, home, first, first=False):
+                self.assertIn(code, (0, 2), f"{name} after a change: {text}")
+                self.assertNotRegex(text, r"(?m)^(FAIL|REFUSED) ", name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,7 @@ EXPECTED = [
     "specs/001-example-feature/evidence/.gitkeep",
     "specs/001-example-feature/plan.md",
     "specs/001-example-feature/spec.md",
+    "specs/001-example-feature/status.md",
     "specs/001-example-feature/tasks.md",
     "tests/__init__.py",
     "tests/test_foundation.py",
@@ -53,7 +54,7 @@ class TemplateTree(unittest.TestCase):
             self.assertEqual(text.count("{{"), text.count("}}"), rel)
 
     def test_no_machine_path_in_any_template_file(self):
-        bad = re.compile(r"[A-Za-z]:[\\/]|/Users/|/home/[a-z]|\\Users\\|@[a-z0-9-]+\.(com|org|net)\b")
+        bad = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]|/Users/|/home/[a-z]|\\Users\\|@[a-z0-9-]+\.(com|org|net)\b")
         for rel, path in template_files().items():
             self.assertIsNone(bad.search(path.read_text(encoding="utf-8")), rel)
 
@@ -69,8 +70,8 @@ class TemplateTree(unittest.TestCase):
     def test_no_em_dash_or_emoji(self):
         for rel, path in template_files().items():
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn("—", text, rel)
-            self.assertFalse(re.search("[←-⇿\U0001f300-\U0001faff☀-➿]", text), rel)
+            self.assertNotIn(chr(0x2014), text, rel)
+            self.assertFalse(re.search("[\\u2190-\\u21ff\\U0001f300-\\U0001faff\\u2600-\\u27bf]", text), rel)
 
 
 class RenderedContracts(unittest.TestCase):
@@ -113,10 +114,20 @@ class RenderedContracts(unittest.TestCase):
             self.assertFalse([i for i in items if i["tag"] == "FAIL"])
             created = {k: v for k, v in snapshot(Path(tmp)).items() if k.startswith("specs/001-")}
         ours = {k: v for k, v in snapshot(self.out).items() if k.startswith("specs/001-")}
-        self.assertEqual(sorted(created), sorted(ours))
+        self.assertEqual(sorted(set(ours) - set(created)), ["specs/001-example-feature/status.md"],
+                         "the template adds only the status file (C10) that `gate check` needs")
         for rel, data in created.items():
             if data is not None:
                 self.assertEqual(ours[rel], data, rel)
+
+    def test_status_file_is_the_gate_areas_template_for_the_example_feature(self):
+        text = (self.out / "specs/001-example-feature/status.md").read_text(encoding="utf-8")
+        template = (ROOT / "plugins/batuta/templates/gates/status.md").read_text(encoding="utf-8")
+        self.assertIn("feature: 001-example-feature", text)
+        lines = template.replace("\r\n", "\n").split("\n")[1:]   # the first line is the copy instruction of the template
+        self.assertEqual(text, "\n".join(lines).replace("feature: 000-example", "feature: 001-example-feature"))
+        code, out, err = run("gate", "status", "001-example-feature", "--root", str(self.out))
+        self.assertEqual(code, 0, out + err)
 
     def test_spec_lint_and_trace_pass_on_the_rendered_project(self):
         code, out, err = run("spec", "lint", "--root", str(self.out))

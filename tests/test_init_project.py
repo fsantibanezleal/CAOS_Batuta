@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_init_support import FIXTURE_VARS, VAR_ARGS, World, make_repo, sha, snapshot  # noqa: E402
+from test_init_support import FIXTURE_VARS, VAR_ARGS, World, commit_all, make_repo, sha, snapshot  # noqa: E402
 
 from batuta_lib import install_manifest as im  # noqa: E402
 from batuta_lib.areas import init  # noqa: E402
@@ -48,6 +48,18 @@ class Apply(World):
         self.assertTrue(set(init.render_project(dict(FIXTURE_VARS))) <= paths)
         for e in manifest.files:
             self.assertEqual(e["sha256"], im.sha256_bytes((self.project / e["path"]).read_bytes()), e["path"])
+
+    def test_the_manifest_of_a_project_holds_no_machine_path(self):
+        make_repo(self.project)
+        self.init_project()
+        text = (self.project / ".batuta" / "installed.json").read_text(encoding="utf-8")
+        self.assertNotIn(str(self.root), text)
+        self.assertNotIn(self.root.as_posix(), text)
+        self.assertNotRegex(text, r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]|/Users/|/home/")
+        commit_all(self.project, "init")
+        code, out, err = self.cli("leaks", "scan", "--root", str(self.project))
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("installed.json", out)
 
     def test_no_git_warns_and_still_writes_the_ci_file(self):
         code, out, _ = self.init_project()

@@ -139,7 +139,7 @@ class ProjectUpdate(World):
 
     def test_update_keeps_a_users_edit_in_a_backup_and_uninstall_still_restores_the_original(self):
         make_repo(self.project)
-        (self.project / "AGENTS.md").write_text("original\n", encoding="utf-8")
+        (self.project / "AGENTS.md").write_bytes(b"original\n")
         before = snapshot(self.project)
         self.init_project()
         agents = self.project / "AGENTS.md"

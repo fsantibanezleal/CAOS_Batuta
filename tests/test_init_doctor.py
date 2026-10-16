@@ -22,7 +22,7 @@ def lines(out, tag):
 class DoctorBase(World):
     def doctor(self, *extra, which=None, platform=None, python_version=None, env=None):
         """Run `init doctor` in-process with the probes controlled: `which` maps a command to a path or None."""
-        table = {"node": "/fake/node", "claude": "/fake/claude", "bash": "/fake/bash", "git": "/fake/git"}
+        table = {"node": "/fake/node", "claude": "/fake/claude", "bash": "/fake/bash", "git": "/fake/git", "python3": "/fake/python3"}
         table.update(which or {})
         patches = [mock.patch.object(init, "_which", lambda name: table.get(name)),
                    mock.patch.object(init, "_node_version", lambda path: "v22.1.0" if path else None)]

@@ -48,7 +48,7 @@ class InitUser(World):
             self.assertIn(("claude", f"agents/{role}.md"), paths)
             self.assertTrue((self.home / ".claude" / "agents" / f"{role}.md").is_file(), role)
         for e in manifest.files:
-            base = Path(manifest.bases[e["base"]])
+            base = manifest.base_dir(e["base"])
             self.assertEqual(manifest.state(base, e["path"]), "SAME", e["path"])
 
     def test_no_machine_path_is_written_into_the_user_configuration(self):
@@ -112,6 +112,13 @@ class InitUser(World):
         backups = list(script.parent.glob("batuta.py.bak-*"))
         self.assertEqual(len(backups), 1)
         self.assertIn(b"# local edit", backups[0].read_bytes())
+
+    def test_a_user_value_with_braces_or_an_unknown_key_is_refused_with_nothing_written(self):
+        for bad in ("user_name=a{{b", "user_name=", "nope=1", "user_name"):
+            code, out, _ = self.init_user("--var", bad)
+            self.assertEqual(code, 1, bad)
+            self.assertIn("FAIL", out)
+        self.assertFalse(self.bh.exists())
 
     def test_a_deploy_root_inside_a_repository_is_refused(self):
         from test_init_support import make_repo
