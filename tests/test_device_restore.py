@@ -10,7 +10,7 @@ from test_device_support import DeviceCase, ROOT  # noqa: E402
 from batuta_lib import config, contract, settings_merge  # noqa: E402
 from batuta_lib.areas import device  # noqa: E402
 
-TEMPLATES = ROOT / "templates"
+TEMPLATES = ROOT / "plugins" / "batuta" / "templates"
 
 
 class Restore(DeviceCase):

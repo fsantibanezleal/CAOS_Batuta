@@ -18,8 +18,8 @@
   },
   "files": [
     "bin",
-    "plugins/batuta/scripts",
-    "plugins/batuta/.claude-plugin",
+    "plugins/batuta",
+    "copier.yml",
     "VERSION",
     "LICENSE"
   ],

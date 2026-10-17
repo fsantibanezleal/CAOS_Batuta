@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins" / "batuta" / "scripts"))
 from batuta_lib import config, contract, device_profile as dp, settings_merge  # noqa: E402
 
-PRESETS = ROOT / "templates" / "presets"
+PRESETS = ROOT / "plugins" / "batuta" / "templates" / "presets"
 C31 = contract.load_schema(contract.find_schema(config.contracts_dir(), "C31"))
 
 

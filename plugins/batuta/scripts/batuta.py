@@ -73,8 +73,18 @@ def _hoist_global_options(argv: list[str]) -> list[str]:
     return front + rest
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse exits with 2 on a usage error; here 2 means WARN only (exit codes: 0 ok, 1 failure, 2 warnings), so a usage
+    error prints the usage and exits 1, and a CI step cannot take a gate that failed to start for a warning."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
 def build_parser(areas, version_text: str) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="batuta.py", description="CAOS_Batuta command line.")
+    parser = _Parser(prog="batuta.py", description="CAOS_Batuta command line.")
     parser.add_argument("--config", metavar="PATH", default=None, help="path to batuta.json")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--version", action="version", version=f"batuta {version_text}")

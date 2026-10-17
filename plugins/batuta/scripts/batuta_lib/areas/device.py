@@ -85,19 +85,10 @@ def _home(args):
 
 
 def _write_bytes(path, data):
-    """Atomic binary write: a temp file in the same folder, then `os.replace`."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
-    return path
+    """Atomic binary write through the shared writer: a temp file in the same folder, then `os.replace`, retried on a
+    transient access error."""
+    render.write_atomic_bytes(path, data)
+    return Path(path)
 
 
 def _tree(folder):
@@ -114,17 +105,10 @@ def _tree(folder):
 
 
 def _templates_dirs():
-    """The template folders a deploy mirrors, lowest precedence first: in a repository checkout (`plugins/<name>/`
-    below a folder holding `.git`) the repository's `templates/` (presets, user core, knowledge) and then the
-    plugin's own `templates/` (the areas' templates), which wins on a shared path; in a device copy, its
-    `templates/` alone (it already holds the union). A folder above a device copy is never read."""
-    found = []
-    repo = PLUGIN_ROOT.parents[1]
-    if PLUGIN_ROOT.parent.name == "plugins" and (repo / ".git").exists() and (repo / "templates").is_dir():
-        found.append(repo / "templates")
-    if (PLUGIN_ROOT / "templates").is_dir():
-        found.append(PLUGIN_ROOT / "templates")
-    return found
+    """The template folders a deploy mirrors: the plugin's own `templates/` (presets, user core, knowledge, the project
+    template and the areas' templates) in a checkout, in a marketplace copy and in a device copy alike. A folder above
+    the plugin is never read, so a copy of `plugins/<name>/` alone deploys everything."""
+    return [PLUGIN_ROOT / "templates"] if (PLUGIN_ROOT / "templates").is_dir() else []
 
 
 def _load_config(args, items):

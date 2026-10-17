@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/specs/**/approvals/**)",
+      "Edit(/specs/**/test-change-requests.md)",
+      "Edit(/.batuta/test-locks.json)"
+    ]
+  }
+}
