@@ -11,6 +11,8 @@ import posixpath
 import re
 from pathlib import Path
 
+from batuta_lib import projectroot
+
 from . import text as textlib
 
 CONTRACT_VERSION = "1.0"
@@ -73,16 +75,15 @@ def project_root(payload) -> Path:
 
 
 def root_above(start) -> Path:
-    """The nearest folder at or above `start` that holds `.batuta` or `.git` (`start` itself when none does)."""
+    """The nearest folder at or above `start`, below the home boundary, that holds `.batuta` or `.git` (`start` itself when
+    none does)."""
     base = Path(start)
     try:
         base = base.resolve()
     except OSError:
         pass
-    for folder in (base, *base.parents):
-        if any((folder / marker).exists() for marker in ROOT_MARKERS):
-            return folder
-    return base
+    found = projectroot.find(base, lambda folder: any((folder / marker).exists() for marker in ROOT_MARKERS))
+    return found if found is not None else base
 
 
 def candidate_roots(payload, tokens=()) -> list[Path]:

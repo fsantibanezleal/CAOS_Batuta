@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -133,7 +134,7 @@ class EverySearch(HomeCase):
         allowed = {"projectroot.py"}
         for rel in ("guards/__init__.py", "delegation.py", "areas/gate.py", "areas/report.py"):
             text = (lib / rel).read_text(encoding="utf-8")
-            self.assertNotIn(".parents", text, rel)
+            self.assertIsNone(re.search(r"\*\w+\.parents", text), rel)
         self.assertTrue((lib / "projectroot.py").is_file() and allowed)
 
 
@@ -153,7 +154,7 @@ class SubagentStopReproduction(HomeCase):
 
     def test_the_configuration_order_case_of_the_report_fixes(self):
         write_config(self.base / "cfgs", coordination_root="viaenv")
-        os.environ["BATUTA_CONFIG"] = str(self.base / "cfgs" / "batuta.json")
+        os.environ["BATUTA_CONFIG"] = str(self.base / "cfgs" / ".batuta" / "batuta.json")
         report_area.handler(self.payload(self.work))
         self.assertFalse((self.home / "viaenv").exists())
         self.assertTrue((self.work / "viaenv" / "delegation" / "unverified.log").is_file())

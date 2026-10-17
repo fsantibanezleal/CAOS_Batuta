@@ -1,0 +1,3 @@
+# Delegation records carry machine paths (brief new writes absolute paths, contract C02): keep them out of this
+# repository; they belong in a private coordination repository.
+.batuta/delegation/

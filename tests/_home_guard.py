@@ -21,6 +21,9 @@ import unittest
 from pathlib import Path
 
 _STATE: dict = {}
+# The Claude Code CLI keeps its own state in the home (`.claude/`, `.claude.json`, their lock and temporary files) and
+# rewrites it while a suite runs inside a session; it is not a test's write, so it is not compared.
+IGNORED_PREFIXES = (".claude",)
 
 
 def real_home() -> Path:
@@ -39,6 +42,8 @@ def snapshot(home) -> dict:
     except OSError:
         return out
     for entry in entries:
+        if entry.name.startswith(IGNORED_PREFIXES):
+            continue
         try:
             st = entry.stat(follow_symlinks=False)
         except OSError:

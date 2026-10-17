@@ -23,3 +23,5 @@ short core of the same rules.
 - Project configuration is `.batuta/batuta.json`; roots (temp, data, worktrees) come from environment variables
   (`BATUTA_TEMP`, `BATUTA_DATA`, `BATUTA_WORKTREES`), never from a path written in this repository.
 - English only in code, comments, docs and commit messages.
+- Delegation records (`.batuta/delegation/`) carry machine paths and are ignored by git here; keep them in a private
+  coordination repository, never in this one.

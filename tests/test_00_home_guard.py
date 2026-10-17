@@ -46,6 +46,15 @@ class Guard(unittest.TestCase):
             (home / "viaenv").mkdir()
             self.assertEqual(_home_guard.changed(before, _home_guard.snapshot(home)), [".batuta/temp", "viaenv"])
 
+    def test_the_state_files_of_the_claude_cli_are_not_a_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude.json").write_text("{}", encoding="utf-8")
+            before = _home_guard.snapshot(home)
+            (home / ".claude.json").write_text('{"a": 1}', encoding="utf-8")
+            (home / ".claude.json.lock").mkdir()
+            self.assertEqual(_home_guard.changed(before, _home_guard.snapshot(home)), [])
+
     def test_the_real_home_is_untouched_so_far(self):
         self.assertEqual(_home_guard.final_check(), [])
 
