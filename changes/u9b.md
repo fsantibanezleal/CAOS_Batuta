@@ -8,3 +8,4 @@
 - Safety: `Manifest.load` refuses a base that leaves the project or the Batuta home (a committed manifest is untrusted input) and `init uninstall` refuses the whole manifest, deleting nothing, for a base, a path or a link that points elsewhere; the dispatcher's usage errors exit 1 (2 means WARN only) and the workflow's gates step fails when the Batuta script is missing; `render.write_atomic` and the new `write_atomic_bytes` retry `os.replace` a few times on a transient Windows access error.
 - The example feature carries one valid requirement and task (C05 and C21 hold for every rendered file); `changes/u0r3.md` holds bullets only and `fragments changelog` skips `*-plugin-readme.md`.
 - The doctor skill runs `init doctor --channel plugin` first and keeps its other checks.
+- Manifest anchor: it holds folders only, and only folders on the project's own path or inside it; the settings merge and the device area write through the shared retrying writer.

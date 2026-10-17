@@ -16,7 +16,7 @@ LEFTOVER = re.compile(r"\{\{[^{}\n]*\}\}")
 
 
 RETRY_DELAYS = (0.05, 0.1, 0.2, 0.3, 0.4)   # seconds between the tries of `os.replace` after a transient access error
-_replace = os.replace                       # injectable by tests
+_replace = None                             # injectable by tests; None means `os.replace` as it is when called
 _sleep = time.sleep                         # injectable by tests
 
 
@@ -67,7 +67,7 @@ def replace_with_retry(tmp, path):
     raised; any other error is raised at once."""
     for delay in (*RETRY_DELAYS, None):
         try:
-            _replace(tmp, path)
+            (_replace or os.replace)(tmp, path)
             return
         except OSError as exc:
             if delay is None or not _transient(exc):

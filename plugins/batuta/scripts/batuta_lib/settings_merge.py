@@ -243,7 +243,7 @@ def _write_atomic(path, data, expected, read):
             handle.write(_dump(data))
         if read(path) != expected:
             raise _Changed()
-        os.replace(tmp, path)
+        render.replace_with_retry(tmp, path)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)

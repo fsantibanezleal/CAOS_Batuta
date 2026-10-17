@@ -98,6 +98,7 @@ class Manifest:
                 raise ManifestError(f"{path.as_posix()} has a folder entry with an unknown base: {entry!r}")
             check_rel(entry.get("path"), allow_dot=True)
             manifest.dirs.append({"base": entry["base"], "path": entry["path"]})
+        manifest.check_anchor_entries()
         return manifest
 
     def check_bases(self, expect=None):
@@ -123,6 +124,29 @@ class Manifest:
             if key in bases and not same(bases[key], folder):
                 raise ManifestError(f"{name}: the {key} base {bases[key]!r} is not {Path(folder).as_posix()!r}, "
                                     "the folder this command works on")
+
+    def check_anchor_entries(self):
+        """The `anchor` base (the nearest folder that existed when a nested project was created, an ancestor of the project)
+        holds folders only, and only folders on the project's own path or inside the project: a file entry on it, or a folder
+        beside the project, is refused."""
+        if self.kind != "project" or "anchor" not in self.bases:
+            return
+        name = self.path.as_posix()
+        project = os.path.normcase(os.path.normpath(self.path.parent.parent))
+        anchor = self.base_dir("anchor")
+        for entry in self.files:
+            if entry["base"] == "anchor":
+                raise ManifestError(f"{name}: a file entry on the anchor ({entry['path']}); the anchor holds folders only")
+        for entry in self.dirs:
+            if entry["base"] != "anchor":
+                continue
+            rel = "" if entry["path"] == "." else entry["path"]
+            folder = os.path.normcase(os.path.normpath(anchor / rel))
+            on_path = project == folder or project.startswith(folder + os.sep)
+            inside = folder.startswith(project + os.sep)
+            if not (on_path or inside):
+                raise ManifestError(f"{name}: the anchor folder {entry['path']!r} is neither on the project's own path nor "
+                                    "inside the project")
 
     def link_problems(self):
         """Entries whose real path (links followed) leaves the folder of their base, as text; empty when sound."""

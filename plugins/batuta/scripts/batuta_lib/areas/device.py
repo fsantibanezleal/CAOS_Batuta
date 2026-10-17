@@ -85,19 +85,10 @@ def _home(args):
 
 
 def _write_bytes(path, data):
-    """Atomic binary write: a temp file in the same folder, then `os.replace`."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
-    return path
+    """Atomic binary write through the shared writer: a temp file in the same folder, then `os.replace`, retried on a
+    transient access error."""
+    render.write_atomic_bytes(path, data)
+    return Path(path)
 
 
 def _tree(folder):
