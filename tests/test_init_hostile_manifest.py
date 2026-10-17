@@ -59,6 +59,39 @@ class LoadRefusesForeignBases(unittest.TestCase):
                 im.Manifest.load(path, expect={"deploy": deploy, "claude": claude})
 
 
+class AnchorIsForFoldersOnTheProjectsOwnPath(unittest.TestCase):
+    """The anchor (the nearest folder that existed when a nested project was created) holds only folders, and only folders on
+    the project's own path or inside it; `..` with a sibling folder is the reviewer's variant E."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self.path = self.root / "outer" / "sub dir" / "app" / ".batuta" / "installed.json"
+
+    def write(self, anchor, files=(), dirs=()):
+        write_manifest(self.path, {"manifest_version": 1, "kind": "project", "bases": {"project": ".", "anchor": anchor},
+                                   "variables": {}, "files": [{"base": b, "path": p, "sha256": "0" * 64, "backup": None}
+                                                              for b, p in files],
+                                   "dirs": [{"base": "anchor", "path": d} for d in dirs]})
+
+    def test_the_folders_a_nested_install_created_load(self):
+        self.write("../..", dirs=[".", "sub dir", "sub dir/app", "sub dir/app/.batuta", "sub dir/app/specs/000-foundation"])
+        self.assertIsNotNone(im.Manifest.load(self.path))
+
+    def test_a_sibling_folder_under_a_dotdot_anchor_is_refused(self):
+        for anchor, dirs in ((".." , ["victim/sub", "victim"]), ("../..", ["victim"]), ("..", ["../victim"]),
+                             ("../..", ["sub dir/other"]), ("..", ["app2"])):
+            self.write(anchor, dirs=dirs)
+            with self.assertRaises(im.ManifestError, msg=f"{anchor} {dirs}"):
+                im.Manifest.load(self.path)
+
+    def test_a_file_entry_on_the_anchor_is_refused(self):
+        self.write("../..", files=[("anchor", "sub dir/app/AGENTS.md")])
+        with self.assertRaises(im.ManifestError):
+            im.Manifest.load(self.path)
+
+
 class UninstallRefusesTheWholeManifest(World):
     def setUp(self):
         super().setUp()
@@ -88,6 +121,22 @@ class UninstallRefusesTheWholeManifest(World):
             doc["bases"]["evil"] = "../victim"
             doc["files"].append({"base": "evil", "path": "v.txt", "sha256": sha(b"precious\n"), "backup": None, "previous": []})
             doc["dirs"].append({"base": "evil", "path": "."})
+        self.tamper(change)
+        self.uninstall()
+
+    def test_variant_e_a_dotdot_anchor_with_a_sibling_folder_and_a_file_deletes_nothing(self):
+        def change(doc):
+            doc["bases"]["anchor"] = ".."
+            doc["dirs"].append({"base": "anchor", "path": "victim/sub"})
+            doc["files"].append({"base": "anchor", "path": "victim/v.txt", "sha256": sha(b"precious\n"), "backup": None,
+                                 "previous": []})
+        self.tamper(change)
+        self.uninstall()
+
+    def test_variant_e_with_a_folder_entry_only(self):
+        def change(doc):
+            doc["bases"]["anchor"] = ".."
+            doc["dirs"].append({"base": "anchor", "path": "victim/sub"})
         self.tamper(change)
         self.uninstall()
 

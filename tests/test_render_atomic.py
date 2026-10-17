@@ -79,3 +79,48 @@ class AtomicWrite(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryWriterUsesTheSharedRetry(unittest.TestCase):
+    """The settings merge and the device area wrote with `os.replace` directly; both now go through the shared helper, so one
+    transient access error does not fail the write."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+
+    def patched(self, flaky):
+        sleeps = []
+        return mock.patch.object(render, "_replace", flaky), mock.patch.object(render, "_sleep", sleeps.append)
+
+    def test_the_settings_merge_write_survives_one_transient_error(self):
+        from batuta_lib import settings_merge as sm
+        flaky = Flaky(1)
+        target = self.dir / "settings.json"
+        a, b = self.patched(flaky)
+        with a, b:
+            sm._write_atomic(target, {"model": "opus"}, None, sm._read)
+        self.assertEqual(flaky.calls, 2, "the write went through the shared helper and was retried once")
+        self.assertIn("opus", target.read_text(encoding="utf-8"))
+        self.assertEqual([p.name for p in self.dir.iterdir()], ["settings.json"])
+
+    def test_the_device_area_write_survives_one_transient_error(self):
+        from batuta_lib.areas import device
+        flaky = Flaky(1)
+        target = self.dir / "sub" / "f.bin"
+        a, b = self.patched(flaky)
+        with a, b:
+            device._write_bytes(target, b"\x00\x01")
+        self.assertEqual(flaky.calls, 2)
+        self.assertEqual(target.read_bytes(), b"\x00\x01")
+        self.assertEqual([p.name for p in target.parent.iterdir()], ["f.bin"])
+
+    def test_the_settings_merge_still_refuses_a_file_that_changed_meanwhile(self):
+        from batuta_lib import settings_merge as sm
+        target = self.dir / "settings.json"
+        target.write_text("{}", encoding="utf-8")
+        with self.assertRaises(sm._Changed):
+            sm._write_atomic(target, {"a": 1}, b"something else", sm._read)
+        self.assertEqual(target.read_text(encoding="utf-8"), "{}")
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["settings.json"])
