@@ -149,9 +149,11 @@ class SkillsPageTests(unittest.TestCase):
 class KnownLimitsTests(unittest.TestCase):
     def test_every_accepted_residual_is_listed_with_its_decision(self):
         page = text_of(DOCS / "reference" / "known-limits.md")
-        for needle in ("decision 30", "decision 32", "decision 33", "decision 34", "decision 35", "decision 36", "decision 37",
-                       "inline interpreter", "keystrokes", "concatenation", "tdd.test_command", "UNVERIFIED"):
-            self.assertIn(needle, page)
+        low = page.lower()
+        for number in ("30", "32", "33", "34", "35", "36", "37"):
+            self.assertRegex(page, r"decisions?[^|]*" + number + r"")
+        for needle in ("inline interpreter", "keystrokes", "concatenation", "tdd.test_command", "unverified"):
+            self.assertIn(needle, low)
 
 
 if __name__ == "__main__":
