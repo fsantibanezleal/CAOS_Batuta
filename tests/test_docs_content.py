@@ -8,7 +8,7 @@ from _support import ROOT, load_module, load_batuta
 
 DOCS = ROOT / "docs"
 PAGES = sorted(p for p in DOCS.rglob("*.md"))
-PRIVATE_TERMS = ("accenture", "codelco", "alaya", "felipe.santibanez", "caos_manage", "fasl_priv", "d:\_", "e:\_", "/users/")
+PRIVATE_TERMS = ("accenture", "codelco", "alaya", "felipe.santibanez", "caos_manage", "fasl_priv", "d:" + chr(92) + "_", "e:" + chr(92) + "_", "/users/")
 
 
 def text_of(path):
@@ -151,7 +151,7 @@ class KnownLimitsTests(unittest.TestCase):
         page = text_of(DOCS / "reference" / "known-limits.md")
         low = page.lower()
         for number in ("30", "32", "33", "34", "35", "36", "37"):
-            self.assertRegex(page, r"decisions?[^|]*" + number + r"")
+            self.assertRegex(page, r"decisions?[^|]*" + number)
         for needle in ("inline interpreter", "keystrokes", "concatenation", "tdd.test_command", "unverified"):
             self.assertIn(needle, low)
 
