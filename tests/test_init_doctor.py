@@ -107,7 +107,7 @@ class DeviceDoctor(DoctorBase):
 
     def test_an_unset_plugin_option_is_reported_as_not_set(self):
         self.init_user()
-        code, out, _ = self.doctor("--channel", "plugin")
+        code, out, _ = self.doctor("--channel", "plugin", platform="linux")
         self.assertRegex(out, r"(OK|SKIP) .*plugin option python.*not set")
 
     def test_an_unset_plugin_option_on_windows_warns_with_the_exact_fix(self):

@@ -1026,7 +1026,12 @@ def _python_command_version(value):
 def _probe_plugin_python(home):
     value, where = _plugin_option_python(home)
     if value is None:
-        if _which("python3") or _platform() == "win32":
+        if _platform() == "win32":
+            return _bad("plugin option python is not set: the hooks run with the default interpreter name `python3`, which may "
+                        "not exist on Windows",
+                        "set the plugin option python to Python 3.10 or newer (on Windows `py` or the full path of python.exe)",
+                        "WARN")
+        if _which("python3"):
             return item("OK", "plugin option python not set; the default `python3` is used")
         return _bad("plugin option python is not set and `python3` is not on PATH",
                     "set the plugin option python to Python 3.10 or newer (on Windows `py` or the full path of python.exe)",
