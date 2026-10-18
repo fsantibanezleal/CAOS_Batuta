@@ -37,8 +37,8 @@ that wants the strongest model at L8 lists `L8-integrate` in `gates.critical`; t
 A gate listed in `gates.critical` (and the `L7-build` gate of a unit listed in `gates.critical_units`) needs evidence from
 `role: reviewer` on the model of `gates.adversary_model_critical` (opus by default). Every other gate needs
 `role: adversary` on `gates.adversary_model_routine` (sonnet by default). A script, or the builder, is never the
-independent check. The reasoning is economic as well as safety: the evaluator "was only worth its cost for tasks beyond
-what the model could reliably do alone" (https://www.anthropic.com/engineering/harness-design-long-running-apps), so the
+independent check. The reasoning is economic as well as safety: the post says of the evaluator "It is worth the cost when the task sits
+beyond what the current model does reliably solo." (https://www.anthropic.com/engineering/harness-design-long-running-apps), so the
 strong model is spent where a wrong decision is most expensive to undo: the stack, the freeze and the release.
 
 ## Evidence, status and the gate check

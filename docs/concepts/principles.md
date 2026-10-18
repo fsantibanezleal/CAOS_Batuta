@@ -45,8 +45,8 @@ Findings:
 - "A fresh context improves code review since Claude won't be biased toward code it just wrote", and a verification
   subagent exists so that "the agent doing the work isn't the one grading it" (best-practices page above).
 - "Out of the box, Claude is a poor QA agent" and tends toward leniency; the evaluator has to be tuned against human
-  judgment (https://www.anthropic.com/engineering/harness-design-long-running-apps, March 24, 2026). The same post found
-  the evaluator "only worth its cost for tasks beyond what the model could reliably do alone", which is why Batuta
+  judgment (https://www.anthropic.com/engineering/harness-design-long-running-apps, March 24, 2026). The same post says
+  the evaluator "is worth the cost when the task sits beyond what the current model does reliably solo", which is why Batuta
   makes the strong model critical only at three gates (see [the lifecycle](lifecycle.md)).
 - A reviewer told to find gaps "will usually report some, even when the work is sound", so the reviewer is told to flag
   only gaps that affect correctness or the stated requirements (best-practices page).
@@ -112,7 +112,7 @@ Findings:
 - `allowManagedHooksOnly` in managed settings blocks user, project, local and plugin hooks, and a PreToolUse "allow" never
   widens access past a deny rule (hooks reference; https://code.claude.com/docs/en/permissions).
 - A running session can rewrite user settings. Issue 82167 reports `~/.claude/settings.json` replaced by `{}` five times
-  in three days with about 15 concurrent sessions and 12 hooks silently ceasing to fire
+  over two days (by the reporter's count) with about 15 concurrent sessions and 12 hooks silently ceasing to fire
   (https://github.com/anthropics/claude-code/issues/82167, closed as not planned by a stale bot on 2026-10-09; behavioural
   evidence, not confirmed by maintainers).
 

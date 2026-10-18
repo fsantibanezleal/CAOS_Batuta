@@ -31,7 +31,7 @@ reasoning is in [hooks and guardrails](../concepts/hooks-and-guardrails.md).
   between restore's compare read and its `os.replace` is lost and restore still reports success; closing it needs a file lock
   that Claude Code does not take.
 - A plugin cannot carry `env`, permissions, deny rules or a CLAUDE.md, so the cost guardrails reach a machine only through the
-  device channel or the project template (https://code.claude.com/docs/en/plugins).
+  device channel or the project template (https://code.claude.com/docs/en/plugins/components).
 - A call that omits `model` is never matched by `Agent(model:opus)`, so an Opus inheritance from the session is invisible to
   that permission rule (https://code.claude.com/docs/en/permissions).
 - Whether the skill listing cap of 1 percent of the context window is applied in characters or tokens is UNVERIFIED (the page says

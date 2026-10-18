@@ -29,7 +29,7 @@ endings, uses `pathlib`, and has no shell-specific syntax, so the same code runs
 
 A plugin cannot carry `env`, permissions or deny rules, a model, or a CLAUDE.md: "a `CLAUDE.md` at the plugin root is NOT
 loaded and validation warns", and only `agent` and `subagentStatusLine` of a plugin's `settings.json` take effect
-(https://code.claude.com/docs/en/plugins, manifest reference). That is the main portability limit, and it is why the settings
+(https://code.claude.com/docs/en/plugins/components). That is the main portability limit, and it is why the settings
 presets, the cost guardrails of [routing](routing.md) and the always-loaded core travel through the device channel and the
 project template, not through the plugin install.
 
@@ -47,7 +47,7 @@ itself.
 
 Running sessions rewrite `~/.claude/settings.json` as part of normal operation (the model, the effort, plugin and update
 choices), and the settings files are reloaded live in every running session. There is no documented guarantee about
-concurrent writes: issue 82167 reports the file replaced by exactly `{}` five times in three days with about 15 concurrent
+concurrent writes: issue 82167 reports the file replaced by exactly `{}` five times over two days (by the reporter's count) with about 15 concurrent
 sessions, and issue 95347 reports cross-session collisions on `effortLevel`
 (https://github.com/anthropics/claude-code/issues/82167, https://github.com/anthropics/claude-code/issues/95347; behavioural
 evidence from users, not confirmed by maintainers; the official pages say nothing about atomicity or locking, UNVERIFIED

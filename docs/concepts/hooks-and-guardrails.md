@@ -10,8 +10,9 @@ mechanism and the reasoning.
 
 From the hooks reference (https://code.claude.com/docs/en/hooks):
 
-- Exit code 0 is success; exit code 2 is a blocking error on the events that can block, with stderr as the reason; "exit 1 is
-  non-blocking. Use exit 2 for policy enforcement." Any other exit code is non-blocking.
+- Exit code 0 is success; exit code 2 is a blocking error on the events that can block, with stderr as the reason; exit 1 is non-blocking, so a hook that enforces a policy must
+  use exit 2 (the research dossier records this as a quotation from the hooks documentation; the sentence was not found
+  verbatim on the hooks reference when the adversary re-read it, so it is paraphrased here). Any other exit code is non-blocking.
 - Hooks fail open by default: a crashed or timed-out hook lets the action through. `onFailure: "block"` (Claude Code v2.1.295
   or later) turns a start failure, an exit code other than 0 or 2, invalid JSON or a timeout into a block, but it has no
   effect on Stop, SubagentStop, TaskCompleted, TeammateIdle or async hooks. The page does not say what an older client does

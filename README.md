@@ -50,6 +50,8 @@ first release tag exists).
 
 ## Quick start
 
+Run these in an empty scratch project (the last command creates `specs/` where it runs), with the plugin folder path adjusted.
+
 ```
 python plugins/batuta/scripts/batuta.py version show          # prints 0.01.000
 python plugins/batuta/scripts/batuta.py contract lint         # checks every contract and its fixtures

@@ -149,6 +149,7 @@ spec lint: 1 ok, 0 warning(s), 0 failure(s)
 
 batuta spec trace 002-greeting
 NEW trace.json for 002-greeting: 2 requirement(s), ok=true (dry run; --apply writes it) (specs/002-greeting/trace.json)
+spec trace: 0 ok, 0 warning(s), 0 failure(s)
 ```
 
 ## 4. Approve the spec (a person types the phrase)

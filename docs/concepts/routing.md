@@ -70,7 +70,7 @@ into permission rules instead of prose:
 Two limits are documented and stay: a call that omits `model` is never matched by `Agent(model:opus)`, so an Opus
 inheritance from the session is invisible to that rule (permissions documentation,
 https://code.claude.com/docs/en/permissions); and a plugin cannot carry `env`, permissions or a CLAUDE.md
-(https://code.claude.com/docs/en/plugins, manifest reference), which is why these settings reach a machine through the
+(https://code.claude.com/docs/en/plugins/components), which is why these settings reach a machine through the
 device channel and not through the plugin install. See [devices and portability](devices-and-portability.md).
 
 A PreToolUse hook closes part of the first gap: `guard-require-brief` inspects the `Agent` call and denies (or asks about,

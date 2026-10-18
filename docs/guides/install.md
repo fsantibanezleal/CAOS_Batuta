@@ -59,7 +59,7 @@ UNVERIFIED here.
 
 Update with `claude plugin update batuta@caos-batuta`. Third-party marketplaces do not auto-update, and Claude Code keeps the
 cached copy until the plugin's `version` string changes, so a release bumps `version` in `plugin.json` and tags the commit
-(https://code.claude.com/docs/en/plugins/marketplace-reference). Remove with `claude plugin uninstall batuta`.
+(https://code.claude.com/docs/en/plugins/loading, section on versions and updates). Remove with `claude plugin uninstall batuta`.
 `claude plugin details batuta` prints the always-on token cost of the plugin.
 
 ## 2. npx, no install
@@ -137,7 +137,7 @@ Run the [first project walkthrough](first-project.md), then read the [concepts](
 - The `init`, `fragments` and `reserve` area fragment and the skills, hooks and plugin manifest fragment, summarized in the
   [command reference](../reference/cli.md); `.claude-plugin/marketplace.json`, `plugins/batuta/.claude-plugin/plugin.json`,
   `package.json`, `copier.yml`, `bin/batuta.mjs`.
-- https://code.claude.com/docs/en/plugins/install, /plugins/marketplace-reference, /hooks (the `onFailure` note);
+- https://code.claude.com/docs/en/plugins/install, /plugins/loading, /hooks (the `onFailure` note);
   https://docs.npmjs.com/cli/v10/commands/npm-exec; research dossier on official guidance, section D2 (2026-10-11).
 - The validation record of Claude Code 2.1.301 (`claude plugin validate --strict`, both manifests, exit 0), in the project's
   coordination records.
