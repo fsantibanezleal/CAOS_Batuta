@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from batuta_lib import config, contract, render
+from batuta_lib import config, contract, projectroot, render
 
 PROFILE_FILE = "device.json"
 ROOT_KEYS = {"temp": "temp_root", "data": "data_root", "models": "models_root", "worktrees": "worktrees_root"}
@@ -35,14 +35,7 @@ def deploy_root(flag=None, env=None):
 
 def repository_of(path):
     """The nearest folder at or above `path` that holds a `.git` entry (a repository or worktree root), else None."""
-    p = Path(os.path.abspath(path))
-    for folder in [p, *p.parents]:
-        try:
-            if (folder / ".git").exists():
-                return folder
-        except OSError:
-            continue
-    return None
+    return projectroot.find(os.path.abspath(path), lambda folder: (folder / ".git").exists())
 
 
 def _inside(child, parent):

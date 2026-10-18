@@ -22,6 +22,7 @@ from pathlib import Path
 
 from batuta_lib import config
 from batuta_lib import contract
+from batuta_lib import projectroot
 
 MODELS = ("haiku", "sonnet", "opus", "fable")
 # The default kind of the roles that ship; an agent file with no entry here needs --kind.
@@ -106,15 +107,17 @@ def find_project_root(cwd):
         home = config.home_dir().resolve()
     except OSError:
         home = None
-    for folder in [start, *start.parents]:
+
+    def holds_root(folder):
         marker = folder / config.PROJECT_DIR
         if (marker / config.FILE_NAME).is_file():
-            return folder
+            return True
         if marker.is_dir() and (home is None or marker.resolve() != home):
-            return folder
-        if (folder / ".git").exists():
-            return folder
-    return start
+            return True
+        return (folder / ".git").exists()
+
+    found = projectroot.find(start, holds_root)
+    return found if found is not None else start
 
 
 def unlisted_briefs(folder):

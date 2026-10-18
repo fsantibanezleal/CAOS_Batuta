@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from batuta_lib import config, evidence, gate_model, promote, readiness, thresholds
+from batuta_lib import config, evidence, gate_model, projectroot, promote, readiness, thresholds
 from batuta_lib import contract as core
 from batuta_lib import frontmatter as fm
 from batuta_lib.output import emit, item
@@ -292,11 +292,7 @@ def _tests_record(args):
 # ------------------------------------------------------------------ the Stop handler
 
 def _project_root(start):
-    cur = Path(start).resolve()
-    for p in [cur, *list(cur.parents)[:6]]:
-        if (p / "specs").is_dir():
-            return p
-    return None
+    return projectroot.find(start, lambda p: (p / "specs").is_dir(), limit=7)
 
 
 def _brace_expand(pattern):
