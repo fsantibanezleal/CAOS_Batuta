@@ -148,6 +148,12 @@ class DeviceDoctor(DoctorBase):
         self.assertRegex(out, r"WARN .*plugin option python.*not set.*Microsoft Store.*" + self.FIX)
         self.assertEqual(calls, [], "the stub is never run")
 
+    def test_windows_unset_option_with_the_store_alias_stub_given_with_backslashes_warns(self):
+        stub = r"C:\Users\someone\AppData\Local\Microsoft\WindowsApps\python3.exe"
+        code, out, calls = self.windows_default(stub, "3.12")
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*Microsoft Store.*" + self.FIX)
+        self.assertEqual(calls, [], "the stub is never run")
+
     def test_a_plugin_option_below_python_3_10_fails(self):
         self.init_user()
         with mock.patch.object(init, "_python_command_version", lambda value: "3.9"):
