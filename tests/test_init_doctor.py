@@ -110,6 +110,20 @@ class DeviceDoctor(DoctorBase):
         code, out, _ = self.doctor("--channel", "plugin")
         self.assertRegex(out, r"(OK|SKIP) .*plugin option python.*not set")
 
+    def test_an_unset_plugin_option_on_windows_warns_with_the_exact_fix(self):
+        self.init_user()
+        code, out, _ = self.doctor("--channel", "plugin", platform="win32")
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*default interpreter.*fix: set the plugin option python")
+        self.assertIn("py", out.split("fix:", 1)[1])
+        self.assertNotRegex(out, r"OK .*plugin option python")
+
+    def test_a_plugin_option_below_python_3_10_fails(self):
+        self.init_user()
+        with mock.patch.object(init, "_python_command_version", lambda value: "3.9"):
+            code, out, _ = self.doctor("--channel", "plugin", env={"CLAUDE_PLUGIN_OPTION_PYTHON": "py -3.9"})
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"FAIL .*plugin option python.*3\.9.*older than 3\.10")
+
     def test_an_invalid_configuration_fails(self):
         self.init_user()
         (self.bh / "batuta.json").write_text('{"contract_version": "1.0"}', encoding="utf-8")
