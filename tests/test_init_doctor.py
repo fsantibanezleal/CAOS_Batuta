@@ -110,12 +110,43 @@ class DeviceDoctor(DoctorBase):
         code, out, _ = self.doctor("--channel", "plugin", platform="linux")
         self.assertRegex(out, r"(OK|SKIP) .*plugin option python.*not set")
 
-    def test_an_unset_plugin_option_on_windows_warns_with_the_exact_fix(self):
+    def windows_default(self, path, version):
+        """`init doctor` on win32 with the option unset, `python3` resolving to `path` and `python3 --version` to `version`."""
         self.init_user()
-        code, out, _ = self.doctor("--channel", "plugin", platform="win32")
-        self.assertRegex(out, r"WARN .*plugin option python.*not set.*default interpreter.*fix: set the plugin option python")
-        self.assertIn("py", out.split("fix:", 1)[1])
-        self.assertNotRegex(out, r"OK .*plugin option python")
+        calls = []
+
+        def fake(found):
+            calls.append(found)
+            return version
+        with mock.patch.object(init, "_python3_version", fake):
+            code, out, _ = self.doctor("--channel", "plugin", platform="win32", which={"python3": path})
+        return code, out, calls
+
+    FIX = r"fix: set the plugin option python to Python 3\.10 or newer.*`py`"
+
+    def test_windows_unset_option_with_a_real_python_3_10_or_newer_on_path_is_ok(self):
+        code, out, calls = self.windows_default("C:/Python312/python3.exe", "3.12")
+        self.assertRegex(out, r"OK .*plugin option python.*not set.*python3")
+        self.assertEqual(calls, ["C:/Python312/python3.exe"])
+
+    def test_windows_unset_option_with_python3_missing_from_path_warns_with_the_fix(self):
+        code, out, calls = self.windows_default(None, "3.12")
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*python3.*not on PATH.*" + self.FIX)
+        self.assertEqual(calls, [])
+
+    def test_windows_unset_option_with_python3_that_fails_warns_with_the_fix(self):
+        code, out, calls = self.windows_default("C:/Python312/python3.exe", None)
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*cannot be run.*" + self.FIX)
+
+    def test_windows_unset_option_with_python3_below_3_10_warns_with_the_fix(self):
+        code, out, calls = self.windows_default("C:/Python39/python3.exe", "3.9")
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*3\.9.*older than 3\.10.*" + self.FIX)
+
+    def test_windows_unset_option_with_the_store_alias_stub_warns_without_running_it(self):
+        stub = "C:/Users/someone/AppData/Local/Microsoft/WindowsApps/python3.exe"
+        code, out, calls = self.windows_default(stub, "3.12")
+        self.assertRegex(out, r"WARN .*plugin option python.*not set.*Microsoft Store.*" + self.FIX)
+        self.assertEqual(calls, [], "the stub is never run")
 
     def test_a_plugin_option_below_python_3_10_fails(self):
         self.init_user()
