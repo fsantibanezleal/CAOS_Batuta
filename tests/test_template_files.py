@@ -19,6 +19,7 @@ EXPECTED = [
     ".batuta/batuta.json",
     ".claude/settings.json",
     ".github/workflows/batuta-gates.yml",
+    ".gitignore",
     "AGENTS.md",
     "CLAUDE.md",
     "specs/000-foundation/constitution.md",

@@ -1023,10 +1023,44 @@ def _python_command_version(value):
     return text if done.returncode == 0 and re.fullmatch(r"\d+\.\d+", text) else None
 
 
+_FIX_PLUGIN_PYTHON = "set the plugin option python to Python 3.10 or newer (on Windows `py` or the full path of python.exe)"
+
+
+def _python3_version(path):
+    """`major.minor` that `<path> --version` reports (text such as `Python 3.12.1`), or None (injectable by tests)."""
+    try:
+        done = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"Python (\d+\.\d+)", done.stdout + done.stderr)
+    return match.group(1) if done.returncode == 0 and match else None
+
+
+def _probe_windows_default_python():
+    """The plugin option python is unset on Windows: the hooks run the default name `python3` through bash, so resolve it
+    on PATH as bash would. OK only for a real Python 3.10 or newer; the Microsoft Store alias stub (under WindowsApps) is
+    never run."""
+    head = "plugin option python is not set and the default `python3`"
+    path = _which("python3")
+    if not path:
+        return _bad(f"{head} is not on PATH", _FIX_PLUGIN_PYTHON, "WARN")
+    if re.search(r"(?i)[\\/]WindowsApps[\\/]", str(path)):
+        return _bad(f"{head} ({path}) is the Microsoft Store alias stub, not a Python", _FIX_PLUGIN_PYTHON, "WARN")
+    version = _python3_version(path)
+    if version is None:
+        return _bad(f"{head} ({path}) cannot be run", _FIX_PLUGIN_PYTHON, "WARN")
+    major, minor = (int(n) for n in version.split("."))
+    if (major, minor) < MIN_PYTHON:
+        return _bad(f"{head} ({path}) is Python {version}, older than 3.10", _FIX_PLUGIN_PYTHON, "WARN")
+    return item("OK", f"plugin option python not set; the default `python3` ({path}) is Python {version}")
+
+
 def _probe_plugin_python(home):
     value, where = _plugin_option_python(home)
     if value is None:
-        if _which("python3") or _platform() == "win32":
+        if _platform() == "win32":
+            return _probe_windows_default_python()
+        if _which("python3"):
             return item("OK", "plugin option python not set; the default `python3` is used")
         return _bad("plugin option python is not set and `python3` is not on PATH",
                     "set the plugin option python to Python 3.10 or newer (on Windows `py` or the full path of python.exe)",

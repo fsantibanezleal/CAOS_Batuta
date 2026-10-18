@@ -21,4 +21,5 @@ constitution and the specs, which you read on demand.
 - Work on a task branch, never directly on `{{ default_branch }}`; commits are small and each is one logical unit.
 - Never edit `specs/*/approvals/`, `.batuta/test-locks.json` or a locked test; the guards deny it and CI fails it.
 - No machine paths, secrets or personal data in any file of this repository.
+- Delegation records carry machine paths: they are git-ignored here and belong in a private coordination repository.
 - Report what was verified and what was not; a claim without evidence is marked unverified.
