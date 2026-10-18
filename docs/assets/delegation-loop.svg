@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" role="img" aria-labelledby="t d">
+  <title id="t">The delegation loop</title>
+  <desc id="d">The main session writes a brief and lints it, plans a lane and launches an agent on an explicit model. The agent works inside the brief's write scope and writes a report. The SubagentStop hook and the report check test the report; a defective report goes back once. The main session re-checks the load-bearing claims and only then marks the ledger row accepted.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --box:#eef3f9; --line:#3b6ea5; --accent:#b45309; --accent-bg:#fff4e0; --ok:#2f855a; --ok-bg:#e8f5ee; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa7b4; --box:#161f2b; --line:#6aa5e0; --accent:#f0a64a; --accent-bg:#2b2113; --ok:#56c28a; --ok-bg:#12261c; }
+    }
+    .bg { fill:var(--bg); }
+    .box { fill:var(--box); stroke:var(--line); stroke-width:1.5; }
+    .warm { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+    .good { fill:var(--ok-bg); stroke:var(--ok); stroke-width:1.5; }
+    text { font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--fg); font-size:13.5px; }
+    .h { font-size:15px; font-weight:600; }
+    .s { font-size:12.5px; fill:var(--muted); }
+    .arrow { stroke:var(--line); stroke-width:1.8; fill:none; marker-end:url(#a); }
+    .back { stroke:var(--accent); stroke-width:1.8; fill:none; stroke-dasharray:6 4; marker-end:url(#b); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="900" height="420"/>
+
+  <rect class="warm" x="20" y="30" width="190" height="96" rx="6"/>
+  <text class="h" x="34" y="54">1. Brief</text>
+  <text class="s" x="34" y="74">brief new, then fill every slot</text>
+  <text class="s" x="34" y="92">brief lint must pass (C02)</text>
+  <text class="s" x="34" y="110">ledger row: drafted</text>
+
+  <rect class="box" x="255" y="30" width="190" height="96" rx="6"/>
+  <text class="h" x="269" y="54">2. Plan the lane</text>
+  <text class="s" x="269" y="74">dispatch plan (C30 request)</text>
+  <text class="s" x="269" y="92">subagent, sdk, provider:name</text>
+  <text class="s" x="269" y="110">cost and time caps from C01</text>
+
+  <rect class="box" x="490" y="30" width="190" height="96" rx="6"/>
+  <text class="h" x="504" y="54">3. Launch</text>
+  <text class="s" x="504" y="74">model set explicitly per role</text>
+  <text class="s" x="504" y="92">guards bound tools and scope</text>
+  <text class="s" x="504" y="110">the agent never grades itself</text>
+
+  <rect class="good" x="715" y="30" width="165" height="96" rx="6"/>
+  <text class="h" x="729" y="54">4. Agent works</text>
+  <text class="s" x="729" y="74">fresh context, the brief</text>
+  <text class="s" x="729" y="92">only; stays inside its</text>
+  <text class="s" x="729" y="110">write scope; then reports</text>
+
+  <rect class="box" x="715" y="190" width="165" height="96" rx="6"/>
+  <text class="h" x="729" y="214">5. Report check</text>
+  <text class="s" x="729" y="234">SubagentStop hook, once</text>
+  <text class="s" x="729" y="252">report check: 0 done,</text>
+  <text class="s" x="729" y="270">1 defective, 2 partial</text>
+
+  <rect class="box" x="490" y="190" width="190" height="96" rx="6"/>
+  <text class="h" x="504" y="214">6. Re-check by the main</text>
+  <text class="s" x="504" y="234">session: re-run the load-</text>
+  <text class="s" x="504" y="252">bearing commands itself;</text>
+  <text class="s" x="504" y="270">PARTIAL stays partial</text>
+
+  <rect class="warm" x="255" y="190" width="190" height="96" rx="6"/>
+  <text class="h" x="269" y="214">7. Ledger and gate</text>
+  <text class="s" x="269" y="234">report ledger-status --write</text>
+  <text class="s" x="269" y="252">Accepted: yes, evidence in Notes</text>
+  <text class="s" x="269" y="270">next: verify with the adversary</text>
+
+  <path class="arrow" d="M210 78 L253 78"/>
+  <path class="arrow" d="M445 78 L488 78"/>
+  <path class="arrow" d="M680 78 L713 78"/>
+  <path class="arrow" d="M797 126 L797 188"/>
+  <path class="arrow" d="M715 238 L682 238"/>
+  <path class="arrow" d="M490 238 L447 238"/>
+  <path class="back" d="M797 288 L797 330 L115 330 L115 128"/>
+  <text class="s" x="300" y="352">a defective report goes back to the agent once; on the second attempt the hook allows the stop</text>
+  <text class="s" x="300" y="370">and appends a dated UNVERIFIED line to delegation/unverified.log, so it never loops</text>
+</svg>

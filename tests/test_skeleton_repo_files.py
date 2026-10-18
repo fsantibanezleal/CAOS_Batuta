@@ -54,9 +54,11 @@ class ReadmeHonestyTests(unittest.TestCase):
         self.assertIn("pre-release", self.text)
         self.assertIn("under construction toward 0.01.000", self.text)
 
-    def test_install_channels_are_marked_planned(self):
-        self.assertRegex(self.text, r"(?i)planned")
-        self.assertRegex(self.text, r"(?i)not yet available")
+    def test_install_channels_are_stated_as_they_work(self):
+        # U10: the channels exist after U9; the README states them and the one-step marketplace line.
+        self.assertIn("/plugin install batuta --marketplace fsantibanezleal/CAOS_Batuta", self.text)
+        self.assertIn("npx github:fsantibanezleal/CAOS_Batuta", self.text)
+        self.assertIn("copier copy", self.text)
 
     def test_no_static_claim_badges(self):
         self.assertNotRegex(self.text, r"img\.shields\.io/badge/")
@@ -65,10 +67,9 @@ class ReadmeHonestyTests(unittest.TestCase):
         for needle in ("plugins/batuta", "bin/batuta.mjs", "batuta.py", "docs/"):
             self.assertIn(needle, self.text)
 
-    def test_does_not_claim_unshipped_areas_as_available(self):
-        # `version` and `contract` ship; every other area must be listed as planned.
-        self.assertRegex(self.text, r"(?i)two areas: `version`, and `contract`")
-        self.assertRegex(self.text, r"(?i)is planned and is not available yet")
+    def test_links_the_documentation_map(self):
+        for needle in ("docs/concepts/principles.md", "docs/guides/install.md", "docs/reference/cli.md"):
+            self.assertIn(needle, self.text)
 
 
 class DocsSkeletonTests(unittest.TestCase):
