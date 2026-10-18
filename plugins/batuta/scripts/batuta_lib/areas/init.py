@@ -1044,7 +1044,7 @@ def _probe_windows_default_python():
     path = _which("python3")
     if not path:
         return _bad(f"{head} is not on PATH", _FIX_PLUGIN_PYTHON, "WARN")
-    if re.search(r"(?i)[\/]WindowsApps[\/]", str(path)):
+    if re.search(r"(?i)[\\/]WindowsApps[\\/]", str(path)):
         return _bad(f"{head} ({path}) is the Microsoft Store alias stub, not a Python", _FIX_PLUGIN_PYTHON, "WARN")
     version = _python3_version(path)
     if version is None:
