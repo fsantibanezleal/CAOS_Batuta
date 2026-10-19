@@ -46,7 +46,7 @@ def snapshot(folder):
 def git(root, *args, check=True):
     """Run git in `root` with a fixed identity and no signing; returns stdout stripped."""
     base = ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.org", "-c", "commit.gpgsign=false",
-            "-c", "core.autocrlf=false"]
+            "-c", "core.autocrlf=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"]   # no detached maintenance after a commit
     done = subprocess.run([*base, *args], capture_output=True, text=True, encoding="utf-8", timeout=120)
     if check and done.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {done.stderr}")
@@ -58,6 +58,8 @@ def make_repo(path):
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     git(path, "init", "-q", "-b", "main")
+    git(path, "config", "gc.auto", "0")                  # `git commit` would start a detached `git maintenance run --auto` that
+    git(path, "config", "maintenance.auto", "false")     # can still write into .git/objects while the folder is being removed
     return path
 
 
