@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import socket
 import sys
 import threading
 import unittest
@@ -23,10 +24,21 @@ def request_read(conn):
         data += conn.recv(65536)
 
 
+def finish(conn):
+    """An orderly end of the answer: stop sending, then wait for the client to close, so no reset overtakes the data."""
+    try:
+        conn.shutdown(socket.SHUT_WR)
+        while conn.recv(1024):
+            pass
+    except OSError:
+        pass
+
+
 def short_body(length, sent):
     def handler(conn, stopped):
         request_read(conn)
         conn.sendall(f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n".encode() + b"x" * sent)
+        finish(conn)
     return handler
 
 
@@ -50,9 +62,9 @@ class NoPartialBody(unittest.TestCase):
 
     def test_a_body_without_content_length_ends_with_the_connection(self):
         def handler(conn, stopped):
-            conn.settimeout(2)
-            conn.recv(65536)
+            request_read(conn)
             conn.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nhello")
+            finish(conn)
         self.assertEqual(send(handler).body, b"hello")
 
 
