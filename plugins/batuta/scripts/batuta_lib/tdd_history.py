@@ -456,9 +456,15 @@ _PYTEST_WORD = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "XFAIL
 
 def parse_unittest_verbose(text):
     """[{"id", "outcome"}] from the output of a verbose unittest run (`test_x (module.Class.test_x) ... ok|FAIL|ERROR|skipped
-    '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between)."""
+    '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between). The id is `module.Class.method`
+    for every interpreter: before Python 3.11 the parentheses hold `module.Class` only, so the method is appended there."""
+    matches = list(_VERBOSE_LINE.finditer(text))
+    # the two forms are told apart over the whole output, by the larger group: lines whose parentheses end with their own method
+    # name (the new form; in the old form only a method named like its class does) against lines that do not (the old form)
+    ends = sum(1 for m in matches if m.group(2).endswith("." + m.group(1)))
+    old_form = len(matches) - ends > ends
     out = []
-    for match in _VERBOSE_LINE.finditer(text):
+    for match in matches:
         result = match.group(4)
         if result == "ok":
             outcome = "passed"
@@ -474,7 +480,8 @@ def parse_unittest_verbose(text):
             outcome = "unexpected success"
         else:
             continue
-        out.append({"id": match.group(2), "outcome": outcome, "sub": bool(match.group(3))})
+        ident = f"{match.group(2)}.{match.group(1)}" if old_form else match.group(2)
+        out.append({"id": ident, "outcome": outcome, "sub": bool(match.group(3))})
     return out
 
 
