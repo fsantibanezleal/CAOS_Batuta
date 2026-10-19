@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" role="img" aria-labelledby="t d">
+  <title id="t">Contract-first parallel delivery</title>
+  <desc id="d">Work goes in a fixed order. Sizing and the contract catalog come first, then fixture providers that honour each contract, then a walking skeleton deployed on those fixtures. Only then do parallel waves build the units; units in one wave share no contract change, and each wave starts when the previous one passed its gates. Real providers replace the fixtures one at a time afterwards.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --box:#eef3f9; --line:#3b6ea5; --accent:#b45309; --accent-bg:#fff4e0; --ok:#2f855a; --ok-bg:#e8f5ee; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa7b4; --box:#161f2b; --line:#6aa5e0; --accent:#f0a64a; --accent-bg:#2b2113; --ok:#56c28a; --ok-bg:#12261c; }
+    }
+    .bg { fill:var(--bg); }
+    .box { fill:var(--box); stroke:var(--line); stroke-width:1.5; }
+    .warm { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+    .good { fill:var(--ok-bg); stroke:var(--ok); stroke-width:1.5; }
+    text { font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--fg); font-size:13.5px; }
+    .h { font-size:15px; font-weight:600; }
+    .s { font-size:12.5px; fill:var(--muted); }
+    .arrow { stroke:var(--line); stroke-width:1.8; fill:none; marker-end:url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="900" height="470"/>
+
+  <rect class="warm" x="20" y="20" width="200" height="104" rx="6"/>
+  <text class="h" x="34" y="44">1. Size and decompose</text>
+  <text class="s" x="34" y="64">sizing.md (C23): components,</text>
+  <text class="s" x="34" y="82">units with disjoint write</text>
+  <text class="s" x="34" y="100">scopes, size lint</text>
+
+  <rect class="warm" x="250" y="20" width="200" height="104" rx="6"/>
+  <text class="h" x="264" y="44">2. Contract catalog</text>
+  <text class="s" x="264" y="64">one row per interface (C22),</text>
+  <text class="s" x="264" y="82">schema, missing-data behavior,</text>
+  <text class="s" x="264" y="100">frozen flag; contract graph</text>
+
+  <rect class="box" x="480" y="20" width="200" height="104" rx="6"/>
+  <text class="h" x="494" y="44">3. Boundaries</text>
+  <text class="s" x="494" y="64">fixture provider per external</text>
+  <text class="s" x="494" y="82">dependency, labelled degraded;</text>
+  <text class="s" x="494" y="100">provider lint</text>
+
+  <rect class="box" x="710" y="20" width="170" height="104" rx="6"/>
+  <text class="h" x="724" y="44">4. Walking skeleton</text>
+  <text class="s" x="724" y="64">thin slice on a preview,</text>
+  <text class="s" x="724" y="82">contract tests in CI;</text>
+  <text class="s" x="724" y="100">skeleton check</text>
+
+  <path class="arrow" d="M220 72 L248 72"/>
+  <path class="arrow" d="M450 72 L478 72"/>
+  <path class="arrow" d="M680 72 L708 72"/>
+  <path class="arrow" d="M795 124 L795 198"/>
+
+  <text class="h" x="20" y="186">5. Parallel waves from wave 2 (L7-build); wave 0 is the contracts, wave 1 the skeleton</text>
+  <rect class="good" x="20" y="200" width="270" height="110" rx="6"/>
+  <text class="h" x="34" y="224">Wave 2</text>
+  <text class="s" x="34" y="244">units that need only frozen</text>
+  <text class="s" x="34" y="262">contracts: data, a model baseline,</text>
+  <text class="s" x="34" y="280">an API on fixtures, the docs</text>
+  <rect class="good" x="315" y="200" width="270" height="110" rx="6"/>
+  <text class="h" x="329" y="224">Wave 3</text>
+  <text class="s" x="329" y="244">a unit that needs a contract another</text>
+  <text class="s" x="329" y="262">unit owns starts after that unit;</text>
+  <text class="s" x="329" y="280">it uses the contract, never the code</text>
+  <rect class="good" x="610" y="200" width="270" height="110" rx="6"/>
+  <text class="h" x="624" y="224">Wave n</text>
+  <text class="s" x="624" y="244">contract graph computes the</text>
+  <text class="s" x="624" y="262">wave of each unit and task from</text>
+  <text class="s" x="624" y="280">the catalog, sizing and tasks table</text>
+  <path class="arrow" d="M290 255 L313 255"/>
+  <path class="arrow" d="M585 255 L608 255"/>
+
+  <rect class="box" x="20" y="344" width="420" height="96" rx="6"/>
+  <text class="h" x="34" y="368">Availability states (CAOS ADR-0080)</text>
+  <text class="s" x="34" y="388">available, partial, stale, provider, training, missing:</text>
+  <text class="s" x="34" y="406">declared per boundary in the catalog, never silent;</text>
+  <text class="s" x="34" y="424">a fallback is a fixture of the real contract, labelled.</text>
+
+  <rect class="warm" x="470" y="344" width="410" height="96" rx="6"/>
+  <text class="h" x="484" y="368">6. Real providers replace fixtures (L8)</text>
+  <text class="s" x="484" y="388">one at a time behind flags; a real provider passes</text>
+  <text class="s" x="484" y="406">the same contract tests as its fixture; the readiness</text>
+  <text class="s" x="484" y="424">matrix moves to real per interface (provider check).</text>
+  <path class="arrow" d="M745 310 L745 342"/>
+</svg>

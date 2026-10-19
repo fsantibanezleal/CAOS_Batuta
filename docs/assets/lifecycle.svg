@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 450" role="img" aria-labelledby="t d">
+  <title id="t">The governed delivery lifecycle L0 to L10</title>
+  <desc id="d">Eleven phases in two rows. Each phase shows what it produces, the deterministic gate that checks it and the model of the independent check. The three critical gates L2 decide, L5 freeze and L9 promote are highlighted and are checked by the reviewer on the strongest model; every other gate is checked by the adversary on the routine model.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --box:#eef3f9; --line:#3b6ea5; --accent:#b45309; --accent-bg:#fff4e0; --ok:#2f855a; --ok-bg:#e8f5ee; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa7b4; --box:#161f2b; --line:#6aa5e0; --accent:#f0a64a; --accent-bg:#2b2113; --ok:#56c28a; --ok-bg:#12261c; }
+    }
+    .bg { fill:var(--bg); }
+    .box { fill:var(--box); stroke:var(--line); stroke-width:1.5; }
+    .warm { fill:var(--accent-bg); stroke:var(--accent); stroke-width:2; }
+    .good { fill:var(--ok-bg); stroke:var(--ok); stroke-width:1.5; }
+    text { font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--fg); font-size:12.5px; }
+    .h { font-size:14px; font-weight:600; }
+    .k { fill:var(--muted); font-size:11.5px; }
+    .s { fill:var(--muted); }
+    .arrow { stroke:var(--line); stroke-width:1.8; fill:none; marker-end:url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="900" height="450"/>
+  <rect class="box" x="14" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="24" y="42">L0 understand</text>
+  <text class="k" x="24" y="60">produces</text>
+  <text x="24" y="75">problem, users,</text>
+  <text x="24" y="89">sources cited</text>
+  <text class="k" x="24" y="108">gate</text>
+  <text x="24" y="122">report check</text>
+  <text class="k" x="24" y="159">check: sonnet</text>
+  <rect class="box" x="160" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="170" y="42">L1 size</text>
+  <text class="k" x="170" y="60">produces</text>
+  <text x="170" y="75">components, sizes,</text>
+  <text x="170" y="89">risks</text>
+  <text class="k" x="170" y="108">gate</text>
+  <text x="170" y="122">size lint</text>
+  <text class="k" x="170" y="159">check: sonnet</text>
+  <rect class="warm" x="306" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="316" y="42">L2 decide</text>
+  <text class="k" x="316" y="60">produces</text>
+  <text x="316" y="75">ADRs, technology</text>
+  <text x="316" y="89">evaluations</text>
+  <text class="k" x="316" y="108">gate</text>
+  <text x="316" y="122">adr lint,</text>
+  <text x="316" y="136">tech lint</text>
+  <text class="k" x="316" y="159">check: opus (critical)</text>
+  <rect class="box" x="452" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="462" y="42">L3 contracts</text>
+  <text class="k" x="462" y="60">produces</text>
+  <text x="462" y="75">a contract per</text>
+  <text x="462" y="89">interface</text>
+  <text class="k" x="462" y="108">gate</text>
+  <text x="462" y="122">contract lint,</text>
+  <text x="462" y="136">contract graph</text>
+  <text class="k" x="462" y="159">check: sonnet</text>
+  <rect class="box" x="598" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="608" y="42">L4 boundaries</text>
+  <text class="k" x="608" y="60">produces</text>
+  <text x="608" y="75">adapters, fixture</text>
+  <text x="608" y="89">providers</text>
+  <text class="k" x="608" y="108">gate</text>
+  <text x="608" y="122">provider lint</text>
+  <text class="k" x="608" y="159">check: sonnet</text>
+  <rect class="warm" x="744" y="20" width="138" height="148" rx="6"/>
+  <text class="h" x="754" y="42">L5 freeze</text>
+  <text class="k" x="754" y="60">produces</text>
+  <text x="754" y="75">EARS spec, typed</text>
+  <text x="754" y="89">human approval</text>
+  <text class="k" x="754" y="108">gate</text>
+  <text x="754" y="122">spec lint,</text>
+  <text x="754" y="136">gate check</text>
+  <text class="k" x="754" y="159">check: opus (critical)</text>
+  <path class="arrow" d="M153 86 L159 86"/>
+  <path class="arrow" d="M299 86 L305 86"/>
+  <path class="arrow" d="M445 86 L451 86"/>
+  <path class="arrow" d="M591 86 L597 86"/>
+  <path class="arrow" d="M737 86 L743 86"/>
+  <path class="arrow" d="M813 168 L813 190 L83 190 L83 230"/>
+  <rect class="box" x="14" y="232" width="138" height="148" rx="6"/>
+  <text class="h" x="24" y="254">L6 skeleton</text>
+  <text class="k" x="24" y="272">produces</text>
+  <text x="24" y="287">thin slice on</text>
+  <text x="24" y="301">fixture providers</text>
+  <text class="k" x="24" y="320">gate</text>
+  <text x="24" y="334">skeleton check</text>
+  <text class="k" x="24" y="371">check: sonnet</text>
+  <rect class="box" x="160" y="232" width="138" height="148" rx="6"/>
+  <text class="h" x="170" y="254">L7 build</text>
+  <text class="k" x="170" y="272">produces</text>
+  <text x="170" y="287">red, then green,</text>
+  <text x="170" y="301">per unit</text>
+  <text class="k" x="170" y="320">gate</text>
+  <text x="170" y="334">tdd check</text>
+  <text class="k" x="170" y="371">check: sonnet</text>
+  <rect class="box" x="306" y="232" width="138" height="148" rx="6"/>
+  <text class="h" x="316" y="254">L8 integrate</text>
+  <text class="k" x="316" y="272">produces</text>
+  <text x="316" y="287">real providers</text>
+  <text x="316" y="301">replace fixtures</text>
+  <text class="k" x="316" y="320">gate</text>
+  <text x="316" y="334">provider check</text>
+  <text class="k" x="316" y="371">check: sonnet</text>
+  <rect class="warm" x="452" y="232" width="138" height="148" rx="6"/>
+  <text class="h" x="462" y="254">L9 promote</text>
+  <text class="k" x="462" y="272">produces</text>
+  <text x="462" y="287">thresholds, replay,</text>
+  <text x="462" y="301">release</text>
+  <text class="k" x="462" y="320">gate</text>
+  <text x="462" y="334">gate check,</text>
+  <text x="462" y="348">CI batuta-gates</text>
+  <text class="k" x="462" y="371">check: opus (critical)</text>
+  <rect class="box" x="598" y="232" width="138" height="148" rx="6"/>
+  <text class="h" x="608" y="254">L10 lessons</text>
+  <text class="k" x="608" y="272">produces</text>
+  <text x="608" y="287">dated lesson</text>
+  <text x="608" y="301">per unit</text>
+  <text class="k" x="608" y="320">gate</text>
+  <text x="608" y="334">lessons check,</text>
+  <text x="608" y="348">adr lint</text>
+  <text class="k" x="608" y="371">check: none</text>
+  <path class="arrow" d="M153 298 L159 298"/>
+  <path class="arrow" d="M299 298 L305 298"/>
+  <path class="arrow" d="M445 298 L451 298"/>
+  <path class="arrow" d="M591 298 L597 298"/>
+  <text class="s" x="14" y="406">Every gate passes only with an evidence file from an agent that did not build the result. Highlighted gates are critical (gates.critical);</text>
+  <text class="s" x="14" y="424">the reviewer on the strongest model checks them, and the adversary on the routine model checks every other gate.</text>
+</svg>

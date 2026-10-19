@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-labelledby="t d">
+  <title id="t">Batuta architecture</title>
+  <desc id="d">Four layers. The person and the main Claude Code session sit on top. Below them the plugin carries agents, skills and hooks. The hooks and the skills call one command line, batuta.py, whose areas read and write versioned artifacts under data contracts. The same checks run in CI without hooks.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --box:#eef3f9; --line:#3b6ea5; --accent:#b45309; --accent-bg:#fff4e0; --ok:#2f855a; --ok-bg:#e8f5ee; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa7b4; --box:#161f2b; --line:#6aa5e0; --accent:#f0a64a; --accent-bg:#2b2113; --ok:#56c28a; --ok-bg:#12261c; }
+    }
+    .bg { fill:var(--bg); }
+    .box { fill:var(--box); stroke:var(--line); stroke-width:1.5; }
+    .warm { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+    .good { fill:var(--ok-bg); stroke:var(--ok); stroke-width:1.5; }
+    .layer { fill:none; stroke:var(--muted); stroke-width:1; stroke-dasharray:6 4; }
+    text { font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--fg); font-size:14px; }
+    .h { font-size:15px; font-weight:600; }
+    .s { font-size:12.5px; fill:var(--muted); }
+    .lab { font-size:13px; font-weight:600; fill:var(--muted); }
+    .arrow { stroke:var(--line); stroke-width:1.8; fill:none; marker-end:url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="900" height="560"/>
+
+  <rect class="layer" x="14" y="14" width="872" height="86" rx="8"/>
+  <text class="lab" x="26" y="34">1. The person and the main session</text>
+  <rect class="warm" x="40" y="44" width="360" height="46" rx="6"/>
+  <text class="h" x="56" y="64">The user picks the main model and effort</text>
+  <text class="s" x="56" y="82">Reasoning, plans, specs and integration stay here</text>
+  <rect class="warm" x="440" y="44" width="420" height="46" rx="6"/>
+  <text class="h" x="456" y="64">Typed approvals: spec freeze, change requests</text>
+  <text class="s" x="456" y="82">Only the person types the phrase; agents never do</text>
+
+  <rect class="layer" x="14" y="120" width="872" height="132" rx="8"/>
+  <text class="lab" x="26" y="140">2. The Claude Code plugin "batuta" (no CLAUDE.md, no settings of its own)</text>
+  <rect class="box" x="40" y="152" width="250" height="88" rx="6"/>
+  <text class="h" x="56" y="174">7 agents</text>
+  <text class="s" x="56" y="194">searcher, runner (haiku)</text>
+  <text class="s" x="56" y="212">implementer, test-author, doc-writer,</text>
+  <text class="s" x="56" y="228">adversary (sonnet); reviewer (opus)</text>
+  <rect class="box" x="325" y="152" width="250" height="88" rx="6"/>
+  <text class="h" x="341" y="174">13 skills</text>
+  <text class="s" x="341" y="194">route, brief, delegate, spec, freeze,</text>
+  <text class="s" x="341" y="212">red, green, gate, verify, promote,</text>
+  <text class="s" x="341" y="228">context-audit, doctor, lessons</text>
+  <rect class="box" x="610" y="152" width="250" height="88" rx="6"/>
+  <text class="h" x="626" y="174">hooks.json, one launcher</text>
+  <text class="s" x="626" y="194">scripts/hook.py runs every handler:</text>
+  <text class="s" x="626" y="212">5 fail-closed guards, report check,</text>
+  <text class="s" x="626" y="228">approval capture, gate stop, doctor</text>
+
+  <rect class="layer" x="14" y="272" width="872" height="104" rx="8"/>
+  <text class="lab" x="26" y="292">3. One command line: batuta.py, standard-library Python 3.10+</text>
+  <rect class="box" x="40" y="304" width="820" height="60" rx="6"/>
+  <text class="h" x="56" y="322">24 areas, one module each, found by the dispatcher</text>
+  <text class="s" x="56" y="340">route brief report | spec size adr tech | tdd | gate skeleton provider lessons | context memory | device preflight</text>
+  <text class="s" x="56" y="356">guard leaks | init fragments reserve | dispatch | contract | version</text>
+
+  <rect class="layer" x="14" y="396" width="872" height="150" rx="8"/>
+  <text class="lab" x="26" y="416">4. Artifacts under data contracts C01 to C34</text>
+  <rect class="good" x="40" y="428" width="190" height="104" rx="6"/>
+  <text class="h" x="54" y="450">Delegation</text>
+  <text class="s" x="54" y="470">briefs, reports, ledger</text>
+  <text class="s" x="54" y="488">dispatch request and result</text>
+  <text class="s" x="54" y="506">(C02, C03, C04, C30)</text>
+  <rect class="good" x="250" y="428" width="190" height="104" rx="6"/>
+  <text class="h" x="264" y="450">Specs and tests</text>
+  <text class="s" x="264" y="470">spec, approval, trace, locks,</text>
+  <text class="s" x="264" y="488">commit grammar, requests</text>
+  <text class="s" x="264" y="506">(C05 to C08, C32, C33)</text>
+  <rect class="good" x="460" y="428" width="190" height="104" rx="6"/>
+  <text class="h" x="474" y="450">Gates</text>
+  <text class="s" x="474" y="470">evidence, status, thresholds,</text>
+  <text class="s" x="474" y="488">readiness, contract tests</text>
+  <text class="s" x="474" y="506">(C09 to C11, C27, C34)</text>
+  <rect class="good" x="670" y="428" width="190" height="104" rx="6"/>
+  <text class="h" x="684" y="450">Context and device</text>
+  <text class="s" x="684" y="470">config, manifest, topics,</text>
+  <text class="s" x="684" y="488">device profile, presets</text>
+  <text class="s" x="684" y="506">(C01, C12 to C15, C17)</text>
+
+  <path class="arrow" d="M735 90 L735 150"/>
+  <path class="arrow" d="M450 240 L450 302"/>
+  <path class="arrow" d="M735 240 L735 302"/>
+  <path class="arrow" d="M735 364 L735 426"/>
+  <text class="s" text-anchor="end" x="722" y="416">read, validate, write; dry run unless --apply</text>
+</svg>
