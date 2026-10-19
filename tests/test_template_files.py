@@ -185,7 +185,7 @@ class RenderedContracts(unittest.TestCase):
         done = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-v"],
                               cwd=self.out, capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        self.assertRegex(done.stderr, r"test_\w+ \(tests\.test_foundation\.\w+\.test_\w+\) \.\.\. ok")
+        self.assertRegex(done.stderr, r"test_\w+ \(tests\.test_foundation\.\w+(\.test_\w+)?\) \.\.\. ok")   # before Python 3.11 the id stops at the class
 
     def test_render_refuses_a_missing_or_unsafe_variable(self):
         with self.assertRaises(init.InitError):
