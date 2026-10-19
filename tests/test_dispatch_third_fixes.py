@@ -173,7 +173,9 @@ class M2Proxy(unittest.TestCase):
                     transport.UrllibTransport().send("POST", "https://api.example.org/v1/x", {}, b"{}", 5)
         finally:
             server.stop()
-        self.assertEqual(seen, ["CONNECT api.example.org:443 HTTP/1.1"])
+        # the protocol version of the CONNECT line is the interpreter's own (HTTP/1.0 before Python 3.12): method, host and port are exact
+        self.assertEqual(len(seen), 1, seen)
+        self.assertRegex(seen[0], r"^CONNECT api\.example\.org:443 HTTP/1\.[01]$")
         self.assertFalse(cm.exception.sent)                         # a failed tunnel is before the send
 
     def test_no_proxy_keeps_the_call_off_the_proxy(self):
