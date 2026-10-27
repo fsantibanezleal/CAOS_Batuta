@@ -152,7 +152,10 @@ class UrllibTransport:
         fired = []
 
         def cut():
-            # close() alone does not wake a thread blocked in a read: shut the socket down first, then close it
+            # close() alone does not wake a thread blocked in a read: shut the socket down first, then close it. The close races
+            # the reading thread (on Linux the read then ends empty and http.client closes a response whose file this thread
+            # already dropped), so `fired` is set first and the reading side turns anything that happens after it into the
+            # time-budget error, and never returns what it read as a complete answer
             fired.append(True)
             sock = getattr(conn, "sock", None)
             if sock is not None:
@@ -167,7 +170,7 @@ class UrllibTransport:
         try:
             try:
                 conn.connect()
-            except (OSError, http.client.HTTPException, ValueError) as exc:
+            except Exception as exc:    # nothing but TransportError leaves `send`
                 text = "the call exceeded its time budget while connecting" if fired else f"{type(exc).__name__}: {exc}"
                 raise TransportError(text, sent=False) from exc    # nothing was sent before the connection stood
             try:
@@ -176,11 +179,16 @@ class UrllibTransport:
                 header_list = list(resp.getheaders())
                 if sum(len(str(k)) + len(str(v)) for k, v in header_list) > MAX_HEADER_BYTES:
                     raise TransportError(f"the response headers exceed {MAX_HEADER_BYTES} bytes")
+                declared = getattr(resp, "length", None)    # the Content-Length still to come (None: chunked, or to the close)
                 data = _read_bounded(resp, started, timeout)
+                if fired:                   # a read that ended because the watchdog shut the socket down is not a complete answer
+                    raise TransportError("the call exceeded its time budget while reading the answer", sent=True)
+                if declared is not None and len(data) != declared:
+                    raise TransportError(f"the answer ended after {len(data)} of {declared} bytes (connection closed early)", sent=True)
                 return Response(resp.status, dict(header_list), data)
             except TransportError:
                 raise
-            except (OSError, http.client.HTTPException, ValueError) as exc:
+            except Exception as exc:        # nothing but TransportError leaves `send`
                 text = "the call exceeded its time budget" if fired else f"{type(exc).__name__}: {exc}"
                 raise TransportError(text, sent=True) from exc
         finally:

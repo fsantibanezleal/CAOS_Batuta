@@ -24,6 +24,17 @@ _STATE: dict = {}
 # The Claude Code CLI keeps its own state in the home (`.claude/`, `.claude.json`, their lock and temporary files) and
 # rewrites it while a suite runs inside a session; it is not a test's write, so it is not compared.
 IGNORED_PREFIXES = (".claude",)
+# On Windows the operating system itself rewrites the registry hive of the user (`NTUSER.DAT`, its `.LOG1` and `.LOG2` logs, the
+# `{guid}.TM*` transaction files) and `ntuser.ini` while a suite runs; they are not a test's write either (matched case-insensitively).
+IS_WINDOWS = sys.platform.startswith("win")
+OS_OWNED_PREFIXES = ("ntuser.dat",)
+OS_OWNED_NAMES = ("ntuser.ini",)
+
+
+def os_owned(name) -> bool:
+    """True for a top-level home entry the operating system owns (Windows only), which no test writes."""
+    lowered = name.lower()
+    return IS_WINDOWS and (lowered.startswith(OS_OWNED_PREFIXES) or lowered in OS_OWNED_NAMES)
 
 
 def real_home() -> Path:
@@ -42,7 +53,7 @@ def snapshot(home) -> dict:
     except OSError:
         return out
     for entry in entries:
-        if entry.name.startswith(IGNORED_PREFIXES):
+        if entry.name.startswith(IGNORED_PREFIXES) or os_owned(entry.name):
             continue
         try:
             st = entry.stat(follow_symlinks=False)

@@ -121,14 +121,14 @@ def _same_file(u):
 
 def _linker(base, folder):
     """A function mapping a unit to its file path relative to `folder` (`base` holds the unit files), so a link in a
-    rendered page resolves from where the page is written. Falls back to the manifest-relative path across drives."""
+    rendered page resolves from where the page is written. Falls back to the absolute path of the unit file across drives."""
     base, folder = Path(base).resolve(), Path(folder).resolve()
 
     def link(u):
         try:
             return Path(os.path.relpath(base / u["file"], folder)).as_posix()
-        except ValueError:
-            return u["file"]
+        except ValueError:      # another drive: no relative path exists, so the absolute one (it resolves from anywhere)
+            return (base / u["file"]).as_posix()
 
     return link
 

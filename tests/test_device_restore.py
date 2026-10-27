@@ -325,6 +325,14 @@ class Stubs(DeviceCase):
     def test_the_build_layout_link_alone_would_not_resolve_after_install(self):
         built = next((self.out / "rules").glob("*.md")).read_text(encoding="utf-8")
         link = self.LINK.findall(built)[0]
+        if Path(link).is_absolute():
+            # the build folder and the unit files are on different drives (a Windows runner: temp on one, checkout on another):
+            # `context build` wrote the absolute path, which resolves from anywhere, so the install keeps it as it is
+            self.assertTrue(Path(link).is_file(), link)
+            self.install()
+            installed = next(self.rules.glob("*.md")).read_text(encoding="utf-8")
+            self.assertIn(f"`{link}`", installed)
+            return
         self.assertFalse((self.rules / link).resolve().is_file())   # why the rewrite exists
         self.install()
         installed = next(self.rules.glob("*.md")).read_text(encoding="utf-8")

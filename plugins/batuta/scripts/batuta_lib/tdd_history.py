@@ -321,10 +321,11 @@ def judge_red(rc, output, paths, passes_paths):
     """[(path, ok, reason)] for the test files of a red commit, from one run's exit code and output. A red counts only when
     a test of its own failed or errored: exit 0, exit 5, `Ran 0 tests` and a failure of somebody else's test do not."""
     ran = re.search(r"^Ran (\d+) tests?\b", output, re.MULTILINE)
-    if rc == 0:
-        return [(p, False, f"tests pass at the red commit (exit 0); a red test must fail before the code exists") for p in paths]
+    # an empty run is told first: before Python 3.12 unittest exits 0 on `Ran 0 tests`, from 3.12 it exits 5
     if rc == 5 or (ran and int(ran.group(1)) == 0) or _NO_TESTS.search(output):
         return [(p, False, f"no test ran (exit {rc}); a red reports a failing test of its own, not an empty run") for p in paths]
+    if rc == 0:
+        return [(p, False, f"tests pass at the red commit (exit 0); a red test must fail before the code exists") for p in paths]
     failing = "\n".join(_FAILED_LINE.findall(output))
     out = []
     for p in paths:
@@ -456,9 +457,15 @@ _PYTEST_WORD = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error", "XFAIL
 
 def parse_unittest_verbose(text):
     """[{"id", "outcome"}] from the output of a verbose unittest run (`test_x (module.Class.test_x) ... ok|FAIL|ERROR|skipped
-    '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between)."""
+    '..'|expected failure|unexpected success`, with a docstring line or a subtest suffix between). The id is `module.Class.method`
+    for every interpreter: before Python 3.11 the parentheses hold `module.Class` only, so the method is appended there."""
+    matches = list(_VERBOSE_LINE.finditer(text))
+    # the two forms are told apart over the whole output, by the larger group: lines whose parentheses end with their own method
+    # name (the new form; in the old form only a method named like its class does) against lines that do not (the old form)
+    ends = sum(1 for m in matches if m.group(2).endswith("." + m.group(1)))
+    old_form = len(matches) - ends > ends
     out = []
-    for match in _VERBOSE_LINE.finditer(text):
+    for match in matches:
         result = match.group(4)
         if result == "ok":
             outcome = "passed"
@@ -474,7 +481,8 @@ def parse_unittest_verbose(text):
             outcome = "unexpected success"
         else:
             continue
-        out.append({"id": match.group(2), "outcome": outcome, "sub": bool(match.group(3))})
+        ident = f"{match.group(2)}.{match.group(1)}" if old_form else match.group(2)
+        out.append({"id": ident, "outcome": outcome, "sub": bool(match.group(3))})
     return out
 
 
