@@ -45,8 +45,8 @@ What ships:
 
 Every write is a dry run until `--apply`. The one-step line is the form `claude plugin validate` advises; from a shell it needs
 Claude Code 2.1.292 or later. The [install guide](docs/guides/install.md) has the details, the plugin option `python` the hooks
-need, and what has and has not been verified end to end (the install from GitHub and the real `npx` run are UNVERIFIED until the
-first release tag exists).
+need, and what has and has not been verified end to end (the marketplace install and the `npx github:` run were verified from this
+repository on 2026-10-26).
 
 ## Quick start
 
