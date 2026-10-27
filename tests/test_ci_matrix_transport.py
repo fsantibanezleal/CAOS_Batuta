@@ -1,5 +1,7 @@
-"""The transport never returns a partial body and raises nothing but TransportError; the watchdog only shuts the socket down
-(closing it from the timer thread races the reading thread on Linux). Loopback servers started and stopped by the test."""
+"""The transport never returns a partial body and raises nothing but TransportError. The watchdog shuts the socket down and
+closes the connection from the timer thread, which races the reading thread (on Linux, http.client then closes a response
+whose file is gone); what the race raises, and a read it ends early, become the time-budget error. Loopback servers started
+and stopped by the test."""
 from __future__ import annotations
 
 import http.client
@@ -68,26 +70,22 @@ class NoPartialBody(unittest.TestCase):
         self.assertEqual(send(handler).body, b"hello")
 
 
-class WatchdogOnlyShutsTheSocketDown(unittest.TestCase):
-    def test_the_connection_is_closed_on_the_calling_thread_only(self):
-        closers = []
-        original = http.client.HTTPConnection.close
-
-        def spy(self):
-            closers.append(threading.current_thread())
-            return original(self)
+class WatchdogRace(unittest.TestCase):
+    def test_the_attribute_error_of_the_close_race_becomes_the_budget_error(self):
+        # the exact failure the Linux runners showed: http.client's `_close_conn` on a response whose `fp` the watchdog's close dropped
+        def raced(self, *args):
+            threading.Event().wait(1.5)       # the watchdog (1.0 s) shuts the socket down and closes the connection meanwhile
+            raise AttributeError("'NoneType' object has no attribute 'close'")
 
         server = Server(trickle("body"))
         try:
-            with mock.patch.object(http.client.HTTPConnection, "close", spy):
+            with mock.patch.object(http.client.HTTPResponse, "read1", raced):
                 with self.assertRaises(transport.TransportError) as cm:
                     transport.UrllibTransport().send("POST", f"http://127.0.0.1:{server.port}/v1/x", {}, b"{}", 1.0)
         finally:
             server.stop()
         self.assertIn("time budget", str(cm.exception))
         self.assertTrue(cm.exception.sent)
-        self.assertTrue(closers)
-        self.assertEqual({t for t in closers}, {threading.current_thread()}, "the watchdog thread closed the connection")
 
     def test_an_exception_after_the_watchdog_fired_becomes_the_budget_error(self):
         class Boom(Exception):
