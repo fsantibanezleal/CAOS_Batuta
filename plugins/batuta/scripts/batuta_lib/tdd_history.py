@@ -321,10 +321,11 @@ def judge_red(rc, output, paths, passes_paths):
     """[(path, ok, reason)] for the test files of a red commit, from one run's exit code and output. A red counts only when
     a test of its own failed or errored: exit 0, exit 5, `Ran 0 tests` and a failure of somebody else's test do not."""
     ran = re.search(r"^Ran (\d+) tests?\b", output, re.MULTILINE)
-    if rc == 0:
-        return [(p, False, f"tests pass at the red commit (exit 0); a red test must fail before the code exists") for p in paths]
+    # an empty run is told first: before Python 3.12 unittest exits 0 on `Ran 0 tests`, from 3.12 it exits 5
     if rc == 5 or (ran and int(ran.group(1)) == 0) or _NO_TESTS.search(output):
         return [(p, False, f"no test ran (exit {rc}); a red reports a failing test of its own, not an empty run") for p in paths]
+    if rc == 0:
+        return [(p, False, f"tests pass at the red commit (exit 0); a red test must fail before the code exists") for p in paths]
     failing = "\n".join(_FAILED_LINE.findall(output))
     out = []
     for p in paths:
