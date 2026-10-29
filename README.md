@@ -7,8 +7,8 @@ session's model and reasoning; Batuta governs everything else: who does each tas
 which tests, guards and gates, what loads into context, and how a device is set up. Only results that pass deterministic
 gates and an independent adversarial check are approved and promoted.
 
-**Status: pre-release, under construction toward 0.01.000.** Version `0.01.000` (`VERSION`). The release is cut by the
-last unit of the plan; nothing is published to a registry.
+**Status: 0.01.000, the first release** (`VERSION`, tag `v0.01.000`). The channels below install from this repository;
+nothing is published to a package registry.
 
 ## Who it is for
 
