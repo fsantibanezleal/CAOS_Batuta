@@ -19,6 +19,7 @@ Exit codes: 0 ok, 1 refused (bad input, lock timeout), 2 never.
 import datetime as dt
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -92,6 +93,15 @@ class _Lock:
             except FileExistsError:
                 if time.monotonic() > deadline:
                     raise ReserveError(f"lock {self.path.as_posix()} held for over {LOCK_TIMEOUT_S:g}s; remove it if stale")
+                time.sleep(0.01)
+            except PermissionError as exc:
+                # Windows denies the create while the previous holder's lock file is still pending deletion: wait for it
+                # as for a held lock. Elsewhere a denied create is a folder that is not writable, which no wait clears.
+                if not sys.platform.startswith("win"):
+                    raise ReserveError(f"cannot create the lock {self.path.as_posix()}: access denied ({exc.strerror})") from exc
+                if time.monotonic() > deadline:
+                    raise ReserveError(f"lock {self.path.as_posix()} could not be created for over {LOCK_TIMEOUT_S:g}s "
+                                       f"(access denied); check the folder's permissions") from exc
                 time.sleep(0.01)
 
     def __exit__(self, *exc):
