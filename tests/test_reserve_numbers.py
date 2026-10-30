@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,10 +69,15 @@ class ReserveTests(unittest.TestCase):
         self.assertEqual(self.number("api", "alembic"), 8)
 
     def test_concurrent_reservations_never_share_a_number(self):
-        results, lock = [], threading.Lock()
+        results, errors, lock = [], [], threading.Lock()
 
         def worker():
-            n = reserve.reserve(self.file, "api", "alembic", None, True)
+            try:
+                n = reserve.reserve(self.file, "api", "alembic", None, True)
+            except BaseException as exc:      # a worker's exception is reported, never lost with its thread
+                with lock:
+                    errors.append(repr(exc))
+                return
             with lock:
                 results.append(n)
 
@@ -80,7 +86,37 @@ class ReserveTests(unittest.TestCase):
             t.start()
         for t in threads:
             t.join()
+        self.assertEqual(errors, [])
         self.assertEqual(sorted(results), list(range(1, 13)))
+
+    @unittest.skipUnless(sys.platform.startswith("win"), "the pending-deletion denial is a Windows behaviour")
+    def test_a_lock_file_still_being_deleted_is_waited_for(self):
+        # Windows: creating the lock file while the previous holder's copy is pending deletion fails with access denied
+        # (PermissionError), not FileExistsError; the lock waits for it as for a held lock, within the same deadline
+        real_open, calls = reserve.os.open, []
+
+        def pending_once(path, flags, *args):
+            calls.append(path)
+            if len(calls) == 1:
+                raise PermissionError(13, "Access is denied", str(path))
+            return real_open(path, flags, *args)
+
+        with mock.patch.object(reserve.os, "open", pending_once):
+            self.assertEqual(reserve.reserve(self.file, "api", "alembic", None, True), 1)
+        self.assertEqual(len(calls), 2)
+
+    def test_a_lock_that_stays_denied_is_a_reserve_error(self):
+        # Windows waits up to the deadline (a pending deletion clears); elsewhere a denied create is a folder that is not
+        # writable, refused at once; either way the error names the lock and nothing else escapes
+        def denied(path, flags, *args):
+            raise PermissionError(13, "Access is denied", str(path))
+
+        with mock.patch.object(reserve.os, "open", denied), mock.patch.object(reserve, "LOCK_TIMEOUT_S", 0.05):
+            with self.assertRaises(reserve.ReserveError) as cm:
+                reserve.reserve(self.file, "api", "alembic", None, True)
+        self.assertIn("lock", str(cm.exception))
+        self.assertIn("access denied", str(cm.exception).lower())
+        self.assertFalse(self.file.exists())
 
     def test_list_prints_the_table_and_a_missing_file_is_empty(self):
         code, out, _ = run("reserve", "list", "--root", str(self.root), env=self.env)
