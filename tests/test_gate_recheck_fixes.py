@@ -172,7 +172,7 @@ class N3BaseEqualsHead(Check):
 
     def test_ci_passing_the_pull_request_base_is_documented(self):
         root = Path(__file__).resolve().parents[1]
-        text = " ".join((root / "changes/u5-plugin-readme.md").read_text(encoding="utf-8").split())
+        text = " ".join((root / "plugins/batuta/README.md").read_text(encoding="utf-8").split())
         self.assertIn("CI passes the pull-request base explicitly with --against", text)
 
 

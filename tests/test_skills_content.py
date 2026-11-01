@@ -260,7 +260,7 @@ class SkillReviewFixes(unittest.TestCase):
         self.assertNotIn("with the `freeze` skill", text)
 
     def test_the_readme_fragment_states_the_minimum_claude_code_version_for_on_failure(self):
-        fragment = (ROOT / "changes" / "u9a-plugin-readme.md").read_text(encoding="utf-8")
+        fragment = (ROOT / "plugins" / "batuta" / "README.md").read_text(encoding="utf-8")
         self.assertIn("v2.1.295", fragment)
         self.assertIn("https://code.claude.com/docs/en/hooks", fragment)
         self.assertIn("onFailure", fragment)
