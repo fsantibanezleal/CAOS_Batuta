@@ -8,7 +8,7 @@
     {
       "name": "batuta",
       "source": "./plugins/batuta",
-      "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code (pre-release)."
+      "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code."
     }
   ]
 }

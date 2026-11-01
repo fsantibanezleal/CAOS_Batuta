@@ -50,9 +50,12 @@ class ReadmeHonestyTests(unittest.TestCase):
     def setUp(self):
         self.text = read("README.md")
 
-    def test_states_pre_release_status(self):
-        self.assertIn("pre-release", self.text)
-        self.assertIn("under construction toward 0.01.000", self.text)
+    def test_states_its_release_status(self):
+        # 0.01.000: the README names the release and its tag, and no longer calls the repository a work in progress
+        self.assertIn("Status: 0.01.000, the first release", self.text)
+        self.assertIn("v0.01.000", self.text)
+        self.assertNotIn("under construction", self.text)
+        self.assertNotIn("pre-release", self.text)
 
     def test_install_channels_are_stated_as_they_work(self):
         # U10: the channels exist after U9; the README states them and the one-step marketplace line.

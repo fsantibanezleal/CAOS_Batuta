@@ -278,7 +278,7 @@ class F4AgentToolScope(unittest.TestCase):
         text = " ".join((root / "plugins/batuta/agents/adversary.md").read_text(encoding="utf-8").split())
         self.assertIn("front matter cannot scope Write or Bash to a path", text)
         self.assertIn("enforced by the guards, not by this definition", text)
-        readme = (root / "changes/u5-plugin-readme.md").read_text(encoding="utf-8")
+        readme = (root / "plugins/batuta/README.md").read_text(encoding="utf-8")
         self.assertIn("guards unit", readme)
         self.assertIn("specs/*/evidence/*.md", readme)
 
@@ -322,7 +322,7 @@ class F5StopScope(Case):
 
     def test_the_scope_key_is_documented(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertIn("scope: [paths]", (root / "changes/u5-plugin-readme.md").read_text(encoding="utf-8"))
+        self.assertIn("scope: [paths]", (root / "plugins/batuta/README.md").read_text(encoding="utf-8"))
         self.assertIn("scope:", (root / "plugins/batuta/templates/gates/status.md").read_text(encoding="utf-8"))
 
 

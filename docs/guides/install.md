@@ -52,10 +52,11 @@ Check the install with the skill `/batuta:doctor`, or in a shell:
 python "<plugin folder>/scripts/batuta.py" init doctor --channel plugin
 ```
 
-What was verified: the plugin and marketplace manifests pass `claude plugin validate --strict` (Claude Code 2.1.301, run by the
-maintainers on the U9a head). What was not: no unit installed the plugin from the GitHub repository through
-`/plugin install` (no release tag has been cut yet; the first release is unit U11), so the end-to-end install from GitHub is
-UNVERIFIED here.
+What was verified: the plugin and marketplace manifests pass `claude plugin validate --strict` (Claude Code 2.1.301 and 2.1.310),
+and on 2026-10-26 the install from the GitHub repository worked end to end in an empty configuration folder:
+`claude plugin marketplace add fsantibanezleal/CAOS_Batuta`, then `claude plugin install batuta@caos-batuta` (Claude Code
+2.1.310), left the plugin installed and enabled, with the `python` option still to set. Clients older than 2.1.301 were not
+tried ([known limits](../reference/known-limits.md#install-channels)).
 
 Update with `claude plugin update batuta@caos-batuta`. Third-party marketplaces do not auto-update, and Claude Code keeps the
 cached copy until the plugin's `version` string changes, so a release bumps `version` in `plugin.json` and tags the commit

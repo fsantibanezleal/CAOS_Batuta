@@ -63,19 +63,30 @@ reasoning is in [hooks and guardrails](../concepts/hooks-and-guardrails.md).
   code's.
 - The plan's lifecycle table names the reviewer on the strongest model at L8, but the default `gates.critical` is `L2-decide`,
   `L5-freeze`, `L9-promote`; list `L8-integrate` in `gates.critical` to get it.
+- `gate promote` proves a green head for the exact commit; it does not read the feature's gate statuses (decision 38). The gates
+  reach a promotion through the required `batuta-gates` check (`gate promote --require batuta-gates`), whose workflow runs
+  `gate check`. A local promotion with `--local-evidence` (a repository without CI) does not run `gate check` itself: run it
+  first.
 
-## Install channels not yet verified end to end
+## Install channels
 
-- No unit installed the plugin from the GitHub repository with `/plugin install` (no release tag exists yet; unit U11 cuts it).
-  The manifests pass `claude plugin validate --strict` on Claude Code 2.1.301.
-- `npx github:fsantibanezleal/CAOS_Batuta` was not run against the real repository; the entry is tested locally with Node. That
-  npx accepts a `github:` spec as an exec spec is inferred from the npm spec grammar, not stated on its page (UNVERIFIED).
-- The copier channel was verified with copier 9.19.1 in a throwaway environment; the equivalence test skips where copier is absent.
-- The generated reference was checked on Python 3.14 only; CI runs the drift test on 3.10 and 3.13.
+Verified from the GitHub repository on 2026-10-26 and 2026-10-27, each in an empty folder with a temporary home:
+
+- Plugin marketplace: `claude plugin marketplace add fsantibanezleal/CAOS_Batuta`, then `claude plugin install
+  batuta@caos-batuta`, on Claude Code 2.1.310: installed and enabled (version 0.1.0); the plugin's `python` option is left to set.
+  The manifests pass `claude plugin validate --strict` on Claude Code 2.1.301 and 2.1.310.
+- npx: `npx --yes github:fsantibanezleal/CAOS_Batuta version show` and `--help` on Node 24.15.0 and npm 11.12.1.
+- copier: the end-to-end channel test renders the same files through `copier copy` (copier 9.19.1) and `init project`.
+
+Not covered: Claude Code clients older than 2.1.301 were not tried, and the real `npx github:` run was tried on Node 24 only (the
+entry needs Node 18 or newer; the CI end-to-end job runs the local entry with the runner's Node). The end-to-end channel tests
+skip, with the reason printed, where `claude`, Node or copier is missing, so the CI jobs exercise the device, project and npx
+channels only. The generated reference was checked on Python 3.14 only; CI runs the drift test on 3.10
+and 3.13.
 
 ## Sources
 
-- Software design document: decisions 30, 32, 33, 34, 35, 36 and 37, section 7; the [enforcement matrix](enforcement-matrix.md).
+- Software design document: decisions 30, 32, 33, 34, 35, 36, 37 and 38, section 7; the [enforcement matrix](enforcement-matrix.md).
 - The `spec`, `tdd`, `gate`, `device`, `dispatch`, `init` and `guard` area fragments in `changes/`; `plugins/batuta/skills/doctor/SKILL.md`.
 - https://code.claude.com/docs/en/hooks, /sandboxing, /plugins, /permissions;
   https://github.com/anthropics/claude-code/issues/82167.
