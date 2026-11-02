@@ -1,6 +1,6 @@
 # Install
 
-Batuta has three install channels. They deliver different things (a plugin cannot carry settings or a CLAUDE.md, see
+Batuta has three install channels, plus a GitHub template for adapting the harness itself. They deliver different things (a plugin cannot carry settings or a CLAUDE.md, see
 [devices and portability](../concepts/devices-and-portability.md)), so most people use the plugin and one of the other two.
 Requirements: Python 3.10 or newer (standard library only), Git 2.30 or newer for `tdd`, Node 18 or newer only for the npx
 channel, and on Windows Git Bash for the hooks of the plugin channel.
@@ -10,6 +10,7 @@ channel, and on Windows Git Bash for the hooks of the plugin channel.
 | Claude Code plugin marketplace | 7 agents, 13 skills, the hooks and the scripts | the guards, skills and agents in every session |
 | `npx github:fsantibanezleal/CAOS_Batuta` | the command line, with no install | a one-off command, CI, a machine without the plugin |
 | `init user`, `init project` and copier | the settings presets, the rendered user core, the project files and the CI workflow | a device and a project |
+| GitHub template (the repository's "Use this template") | a new repository with the harness itself: the plugin, the scripts, the contracts and the documentation | adapting the harness; not for starting a project |
 
 ## 1. The plugin marketplace
 
@@ -120,6 +121,20 @@ yours after the first install and is never overwritten, even with `--force`. A m
 agent files) is rewritten only while it is an unchanged installed copy; a hand-edited one is kept and reported `DIFFERENT`
 (exit 2) unless `--force` replaces it after a backup. An existing `CLAUDE.md` keeps its content and gains one block between
 `<!-- batuta:begin ... -->` and `<!-- batuta:end -->`, rewritten in place by `init update`.
+
+## 4. The GitHub template
+
+The repository is marked as a GitHub template, so "Use this template" on its page, or
+
+```
+gh repo create <name> --template fsantibanezleal/CAOS_Batuta
+```
+
+creates a new repository that holds the harness itself (the plugin, the scripts, the contracts, the tests and the wiki), to
+adapt it. It does not start a project that uses Batuta: for that, run `init project` or `copier copy
+gh:fsantibanezleal/CAOS_Batuta <destination>` (section 3), which render only the project files and the `batuta-gates`
+workflow. The template flag is a repository setting that the maintainer turns on at the release; when it is off, the button is
+absent and the other channels are unaffected.
 
 ## Update and uninstall
 

@@ -14,22 +14,22 @@ end-to-end self-test, with CI green on Linux and Windows for Python 3.10 and 3.1
 
 ### Added
 
-- Repository skeleton: the layout of the architecture (ADR-0001), `plugins/harness` plugin, `bin/harness.mjs` npx
+- Repository skeleton: the layout of the architecture (ADR-0001), `plugins/batuta` plugin, `bin/batuta.mjs` npx
   entry and a docs wiki index.
 - Community files: README, Apache-2.0 LICENSE, CODE_OF_CONDUCT, CONTRIBUTING, SECURITY, `LESSONS.md`,
   `.editorconfig`, `.gitattributes`, `.gitignore`.
 - Versioning: `VERSION` 0.01.000 with the semver form 0.1.0 in `package.json` and `plugin.json`.
-- Plugin manifest (`plugins/harness/.claude-plugin/plugin.json`) and marketplace listing
+- Plugin manifest (`plugins/batuta/.claude-plugin/plugin.json`) and marketplace listing
   (`.claude-plugin/marketplace.json`).
-- Command dispatcher `plugins/harness/scripts/harness.py`: discovers area modules in `harness_lib/areas/`,
+- Command dispatcher `plugins/batuta/scripts/batuta.py`: discovers area modules in `batuta_lib/areas/`,
   global options `--config`, `--json`, `--version`, and reports a module that fails to load as a warning.
-- Area `version` (`harness.py version show`).
+- Area `version` (`batuta.py version show`).
 - `scripts/check_content_standards.py`: no em-dash, no emoji, no absolute user path in repository text.
 - CI (`.github/workflows/ci.yml`): unit tests on Python 3.10 and 3.13 on Linux and Windows, and the content
   standards check; push to `develop` and `main` and manual dispatch only.
 - Tests for the dispatcher, the version area, the manifests, the root files, the workflow and the content
   standards script.
-- Contracts aligned with the dimensioned contract-first method (ADR-0002): C23 inventory, C25 evaluations, C26 availability (declaration and runtime block), C27 readiness, C28 model registry and C21 units, `contract graph --inventory`, one-level maps in the front matter, and the contracts moved into `plugins/harness/contracts/`.
+- Contracts aligned with the dimensioned contract-first method (ADR-0002): C23 inventory, C25 evaluations, C26 availability (declaration and runtime block), C27 readiness, C28 model registry and C21 units, `contract graph --inventory`, one-level maps in the front matter, and the contracts moved into `plugins/batuta/contracts/`.
 - Contracts revised after the adversarial review (ADR-0003): the product is named Batuta (plugin, CLI, package, `batuta.json`, `.batuta/`); C23 is the contract of `sizing.md` and C22 of the contract catalog, C21 and C25 re-keyed, `contract graph --catalog --sizing --tasks` with one wave numbering; availability states `available`, `partial`, `stale`, `provider`, `training`, `missing`; lifecycle gate names `L0-understand` to `L10-lessons`; C02 and C03 describe the briefs and reports the tools write; new contracts C30 (dispatch), C31 (hooks) and C32 (commit grammar); shared helpers `batuta_lib/config.py` and `batuta_lib/output.py`; a stricter validator (whole-text patterns, no NaN or duplicate keys, sections files checked, `$ref` cycles refused) and every finding F01 to F31 covered by a test.
 - Fix: the head check of the locked-test replay reads the verbose unittest output of every supported interpreter. Before Python 3.11 a line reads `test_x (module.Class) ... ok` (the parentheses stop at the class); `parse_unittest_verbose` now returns `module.Class.method` for both forms, so a locked test no longer "disappears from the runtime listing" on Python 3.10.
 - Fix: the HTTP transport of `dispatch` never returns a partial body and raises nothing but `TransportError`. The time-budget watchdog only shuts the socket down (the calling thread closes the connection, which removes a race that raised `AttributeError` on Linux), a body shorter than its `Content-Length` is an error, and a read that ends after the watchdog fired, or any exception after it, is the time-budget error.
@@ -137,9 +137,16 @@ end-to-end self-test, with CI green on Linux and Windows for Python 3.10 and 3.1
 - Shared module `batuta_lib/install_manifest.py` (the install manifest of `init`).
 - Ownership in `init`: seed files (`.batuta/batuta.json`, the constitution, thresholds, the example feature, the foundation test) are yours after the first install and are never overwritten, not even with `--force`; managed files (AGENTS.md, the workflow, agent files) are updated only while they are an unchanged installed copy, a hand-edited one is kept (DIFFERENT, exit 2) unless `--force`, which backs it up first; an existing CLAUDE.md (project or user core) keeps its content and gains one marker-delimited managed block.
 - Safety: `Manifest.load` refuses a base that leaves the project or the Batuta home (a committed manifest is untrusted input) and `init uninstall` refuses the whole manifest, deleting nothing, for a base, a path or a link that points elsewhere; the dispatcher's usage errors exit 1 (2 means WARN only) and the workflow's gates step fails when the Batuta script is missing; `render.write_atomic` and the new `write_atomic_bytes` retry `os.replace` a few times on a transient Windows access error.
-- The example feature carries one valid requirement and task (C05 and C21 hold for every rendered file); `changes/u0r3.md` holds bullets only and `fragments changelog` skips `*-plugin-readme.md`.
+- The example feature carries one valid requirement and task (C05 and C21 hold for every rendered file); the plugin README sections and the changelog lines are written in place, with no fragment files.
 - The doctor skill runs `init doctor --channel plugin` first and keeps its other checks.
 - Manifest anchor: it holds folders only, and only folders on the project's own path or inside it; the settings merge and the device area write through the shared retrying writer.
+- Fix: a reserve lock create that is denied while the previous lock is pending deletion waits and tries again on Windows (the file system keeps the name for a moment after a delete); on every other system the denial is refused at once (#20).
+- Fix: `route check` compares the `effort` of an agent file with the `effort` of its role in the configuration, next to the model; a mismatch is a FAIL naming both values. A role that names no effort compares the model only.
+- Fix: `contract lint --against REF` compares every contract schema with its content at a git ref and fails a changed schema whose `contract_version` does not follow the rule (a breaking change needs a higher major version, an additive change a higher minor version; a deleted contract fails, a new one passes). The `standards` job of CI and the `batuta-gates` workflow of the project template run it against the previous revision.
+- Fix: the gate files (status, thresholds history, Stop state) are written through `render.write_atomic`, which retries a transient Windows access error; before, a single denial failed the write.
+- Fix: the enforcement matrix has a row for every handler `hooks/hooks.json` wires (`gate-stop`, `subagent-stop`, `session-check`, `spec-approval`, `tdd-change-request` were missing), and its test reads the handler ids from `hooks.json`.
+- Fix: `init user --apply` reports what it did with the user core: an OK line names the template it rendered and how to change it (`user_core.template`), and a configuration with no user core says that nothing was rendered, instead of a false WARN that raised the exit code.
+- Documentation: the GitHub template channel (the install table and the install guide), a section for the areas `contract` and `version` in the plugin README, and `LESSONS.md` in the C19 line format that `lessons check` reads.
 
 [Unreleased]: https://github.com/fsantibanezleal/CAOS_Batuta/compare/v0.01.000...develop
 [0.01.000]: https://github.com/fsantibanezleal/CAOS_Batuta/releases/tag/v0.01.000

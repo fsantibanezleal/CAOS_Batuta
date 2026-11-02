@@ -195,7 +195,7 @@ Data contracts: lint schemas, fixtures and a project's artifacts, validate an ar
 Check Batuta's own contracts, or a project's sizing, catalog, readiness and contracts.
 
 ```
-batuta.py contract lint [--root ROOT] [--sizing SIZING] [--catalog CATALOG] [--readiness READINESS] [--json]
+batuta.py contract lint [--root ROOT] [--sizing SIZING] [--catalog CATALOG] [--readiness READINESS] [--against REF] [--json]
 ```
 
 | Argument | Required | Type | Default | Description |
@@ -204,6 +204,7 @@ batuta.py contract lint [--root ROOT] [--sizing SIZING] [--catalog CATALOG] [--r
 | `--sizing SIZING` | no | str | none | the sizing.md to lint (default: found under the coordination root) |
 | `--catalog CATALOG` | no | str | none | the contract catalog (default: docs/contracts/catalog.md under --root) |
 | `--readiness READINESS` | no | str | none | the readiness document (default: data/derived/readiness.json or docs/design/readiness.json under --root) |
+| `--against REF` | no | str | none | also compare every contract schema with its content at this git ref: a breaking change needs a higher major contract_version, an additive change a higher minor one |
 | `--json` | no | flag | none | print the C20 JSON object |
 
 ### `contract validate`

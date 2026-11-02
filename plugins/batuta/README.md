@@ -647,6 +647,39 @@ python scripts/batuta.py dispatch resume --result FILE [--apply] [--hours H] [--
   and `NO_PROXY` (host names and domain suffixes, `*`, an optional port; no CIDR ranges). `HTTP_PROXY` is not used because only local
   hosts may use plain HTTP.
 
+## Areas `contract` and `version`: the data contracts and the installed release
+
+The 34 contracts in `contracts/` (C01 to C34) are JSON Schemas with a `contract_id`, a `contract_version`, and valid and invalid
+fixtures. `contract` checks them and validates the artifacts that follow them.
+
+```
+python scripts/batuta.py contract lint [--root DIR] [--against REF] [--sizing FILE] [--catalog FILE] [--readiness FILE]
+python scripts/batuta.py contract validate C02 FILE [--root DIR]
+python scripts/batuta.py contract graph --catalog FILE [--sizing FILE] [--tasks FILE]
+python scripts/batuta.py version show [--json]
+```
+
+- `contract lint` with no option checks Batuta's own contracts: each schema loads and is listed in the catalog
+  (`contracts/README.md`), each fixture behaves as labeled (every `invalid-` fixture states why), the shared patterns agree
+  across contracts, and `hooks/hooks.json` satisfies C31. With `--root DIR` it lints a project: its `contracts/` folder, its
+  `batuta.json`, `sizing.md`, the contract catalog, the readiness document, the technology decisions and the specs and tasks
+  that name catalog ids.
+- `contract lint --against REF` adds the version rule (CONTRACT-5): every contract schema is compared, as JSON and not as
+  text (so reformatting is no change), with the same file at the git ref. A changed schema must change its
+  `contract_version`: a breaking change (a property removed, a property added to `required`, an enum or `const` value removed
+  or changed, a type narrowed, a `pattern`, `format` or bound made stricter or added, `additionalProperties` closed, a `$ref`
+  retargeted) needs a higher major version, and an additive change (a new optional property, an enum value added, a constraint
+  relaxed, a description edited) needs at least a higher minor version. The FAIL line names the contract, the changes with their
+  JSON paths and the version it needs. A new contract file passes, a deleted one fails, and a ref that does not exist, a folder
+  outside a git repository or a missing git exits 1 with the cause. CI runs it against the previous commit, and the project
+  template's `batuta-gates` workflow runs it against its base revision when the project has a `contracts/` folder.
+- `contract validate ID FILE` validates one artifact (`.json`, `.jsonl`, `.md`, or `.txt` for C32) against a contract; with
+  `--root` the project's `contracts/` is searched first.
+- `contract graph` computes the parallel waves from the catalog (a contract is frozen when its row says `frozen: yes`), the
+  sizing units (waves 2 and up) and a tasks file, in one numbering.
+- `version show` prints the release in display form (`0.01.000`, from the `VERSION` file, else converted from the plugin
+  manifest); with `--json` it prints `{"version": ...}`. The npm and plugin manifests carry the semver form (`0.1.0`).
+
 ## Adding an area
 
 Create `scripts/batuta_lib/areas/<name>.py`:
