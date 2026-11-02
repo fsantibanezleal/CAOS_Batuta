@@ -90,6 +90,10 @@ def check_agents(roles, agents_dir):
         if model != role.get("model"):
             items.append(item("FAIL", f"agent {stem}: model {model!r} differs from the model {role.get('model')!r} of its role", rel))
             bad = True
+        effort = str(meta.get("effort", "")).strip()
+        if role.get("effort") is not None and effort != role.get("effort"):
+            items.append(item("FAIL", f"agent {stem}: effort {effort!r} differs from the effort {role.get('effort')!r} of its role", rel))
+            bad = True
         if role.get("model") == "haiku" and meta.get("omitClaudeMd") is not True:
             items.append(item("FAIL", f"agent {stem}: its role runs on haiku, so the file needs omitClaudeMd: true", rel))
             bad = True
