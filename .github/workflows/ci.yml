@@ -56,8 +56,20 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Content standards (no em-dash, no emoji, no user path)
         run: python scripts/check_content_standards.py
+      - name: Contract versions (a breaking change needs a higher major, an additive change a higher minor)
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          # skipped on a manual dispatch and on a new branch (no earlier commit to compare with)
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "no earlier commit to compare with; the contract version rule is skipped"
+          else
+            python plugins/batuta/scripts/batuta.py contract lint --against "$BEFORE_SHA"
+          fi
