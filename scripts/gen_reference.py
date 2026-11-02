@@ -129,7 +129,7 @@ ENV_VARS = (
     ("BATUTA_TEMP", None, "Usual value of `roots.temp` (`$BATUTA_TEMP`). Unset falls back to `<BATUTA_HOME>/temp`."),
     ("BATUTA_DATA", None, "Usual value of `roots.data` (`$BATUTA_DATA`). Unset falls back to `<BATUTA_HOME>/data`."),
     ("BATUTA_WORKTREES", None, "Usual value of `roots.worktrees` (`$BATUTA_WORKTREES`). Unset falls back to `<BATUTA_HOME>/worktrees`."),
-    ("BATUTA_PYTHON", None, "Python interpreter the npx entry uses before it tries `py -3`, `python3` and `python` (changes/u9b-plugin-readme.md)."),
+    ("BATUTA_PYTHON", None, "Python interpreter the npx entry uses before it tries `py -3`, `python3` and `python` (`plugins/batuta/README.md`, `docs/guides/install.md`)."),
     ("BATUTA_LEAKS_DENY_LIST", None, "Path of the private deny-list file of `leaks scan`, outside the repository (docs/reference/enforcement-matrix.md)."),
 )
 
