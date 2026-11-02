@@ -1,0 +1,56 @@
+{
+  "contract_version": "1.0",
+  "tool": "Litestar",
+  "version": "2.12.1",
+  "primary_source_url": "https://litestar.dev/",
+  "verified_date": "2026-10-12",
+  "ring": "trial",
+  "evaluation": {
+    "concern": "HTTP API framework",
+    "chosen": "Litestar",
+    "candidates": [
+      {
+        "name": "FastAPI",
+        "version": "0.115.2",
+        "source_url": "https://fastapi.tiangolo.com/",
+        "verified": "2026-10-12",
+        "license": "MIT",
+        "maturity": {
+          "last_release": "2026-09-30",
+          "maintainers": 3,
+          "stars": 80000
+        },
+        "maintenance": "monthly releases, three active maintainers",
+        "size": "about 40 transitive dependencies",
+        "fit": "typed request and response models match the catalog schemas",
+        "risks": [
+          "pydantic major upgrades"
+        ]
+      },
+      {
+        "name": "Litestar",
+        "version": "2.12.1",
+        "source_url": "https://litestar.dev/",
+        "verified": "2026-10-12",
+        "license": "MIT",
+        "maturity": {
+          "last_release": "2026-09-30",
+          "maintainers": 3,
+          "stars": 80000
+        },
+        "maintenance": "monthly releases, three active maintainers",
+        "size": "about 40 transitive dependencies",
+        "fit": "typed request and response models match the catalog schemas",
+        "risks": [
+          "small maintainer pool"
+        ],
+        "risky": true,
+        "spike": {
+          "command": "python spikes/litestar_alert_api.py",
+          "result": "pass",
+          "evidence": "spikes/litestar_alert_api.out: 200 on all 4 routes"
+        }
+      }
+    ]
+  }
+}

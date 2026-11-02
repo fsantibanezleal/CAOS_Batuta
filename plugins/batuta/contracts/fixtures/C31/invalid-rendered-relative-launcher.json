@@ -1,0 +1,14 @@
+{
+  "_why": "a rendered launcher is an absolute path",
+  "_expect": "absolute",
+  "profile": "rendered",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["plugins/batuta/scripts/hook.py", "automation-guard"] }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "contract_version": "1.0",
+  "roots": {
+    "temp": "$BATUTA_TEMP",
+    "data": "$BATUTA_DATA",
+    "worktrees": "$BATUTA_WORKTREES"
+  },
+  "roles": {
+    "searcher": {
+      "model": "haiku",
+      "effort": "low"
+    },
+    "runner": {
+      "model": "haiku",
+      "effort": "low"
+    },
+    "implementer": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "test-author": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "doc-writer": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "adversary": {
+      "model": "sonnet",
+      "effort": "high"
+    },
+    "reviewer": {
+      "model": "opus",
+      "effort": "high"
+    }
+  },
+  "caps": {
+    "max_concurrent_agents": 4,
+    "max_agents_per_task": 8,
+    "max_opus_reviews_per_task": 1,
+    "spawn_depth": 1,
+    "max_cost_usd_per_task": 5
+  },
+  "gates": {
+    "critical": [
+      "L2-decide",
+      "L5-freeze",
+      "L9-promote"
+    ],
+    "critical_units": [],
+    "adversary_model_critical": "opus",
+    "adversary_model_routine": "sonnet"
+  },
+  "dispatch": {
+    "default_lane": "subagent",
+    "lanes": [
+      "subagent",
+      "sdk"
+    ],
+    "providers": {
+      "anthropic": {
+        "kind": "anthropic",
+        "credential_env": "ANTHROPIC_API_KEY"
+      }
+    }
+  },
+  "coordination_root": ".batuta",
+  "knowledge_manifest": ".batuta/knowledge/manifest.json",
+  "budgets": {
+    "user_core_bytes": 7000,
+    "project_core_bytes": 7000,
+    "memory_index_bytes": 4000,
+    "memory_index_lines": 60,
+    "unscoped_rules_bytes": 2000
+  }
+}

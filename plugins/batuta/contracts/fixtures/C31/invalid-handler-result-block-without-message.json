@@ -1,0 +1,7 @@
+{
+  "_why": "a block states why",
+  "_expect": "message",
+  "contract_version": "1.0",
+  "exit_code": 2,
+  "output": null
+}

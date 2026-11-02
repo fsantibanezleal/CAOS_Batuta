@@ -1,0 +1,3 @@
+# why: a TDD commit starts with [red], [green] or [refactor]
+# expect: must be '[red|green|refactor] T-NNN <title>'
+add the ingest tests

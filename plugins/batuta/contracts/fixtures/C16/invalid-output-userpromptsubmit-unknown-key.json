@@ -1,0 +1,10 @@
+{
+  "_recorded": false,
+  "_why": "the output is closed: an unknown top-level key is refused",
+  "_expect": "surprise",
+  "systemMessage": "x",
+  "surprise": 1,
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit"
+  }
+}

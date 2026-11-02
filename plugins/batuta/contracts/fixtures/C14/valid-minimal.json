@@ -1,0 +1,7 @@
+{
+  "user_core_bytes": 7000,
+  "project_core_bytes": 7000,
+  "unscoped_rules_bytes": 2000,
+  "memory_index_bytes": 4000,
+  "memory_index_lines": 60
+}

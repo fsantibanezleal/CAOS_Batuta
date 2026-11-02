@@ -1,0 +1,5 @@
+# why: the trailer carries a change request id
+# expect: /trailers/Test-Change-Approved
+[green] T-001 update the locked test
+
+Test-Change-Approved: please approve this

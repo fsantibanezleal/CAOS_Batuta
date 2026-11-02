@@ -1,0 +1,47 @@
+{
+  "_why": "summary is at most 160 chars",
+  "_expect": "/units/0/summary",
+  "contract_version": "1.0",
+  "budget": {
+    "core_bytes": 7000,
+    "index_bytes": 4000
+  },
+  "units": [
+    {
+      "id": "never-stop",
+      "title": "Never stop to wait",
+      "kind": "rule",
+      "file": "rules/never-stop.md",
+      "summary": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+      "load": "always",
+      "updated": "2026-10-11"
+    },
+    {
+      "id": "deploy-vps",
+      "title": "Deploy to the VPS",
+      "kind": "procedure",
+      "file": "procedures/deploy-vps.md",
+      "summary": "Steps to deploy a product to the production host.",
+      "load": "trigger",
+      "triggers": [
+        "deploy",
+        "vps"
+      ],
+      "requires": [
+        "never-stop"
+      ],
+      "related": []
+    },
+    {
+      "id": "ui-rules",
+      "title": "UI rules",
+      "kind": "reference",
+      "file": "reference/ui.md",
+      "summary": "Layout and navigation floor for web UIs.",
+      "load": "path",
+      "paths": [
+        "web/**"
+      ]
+    }
+  ]
+}

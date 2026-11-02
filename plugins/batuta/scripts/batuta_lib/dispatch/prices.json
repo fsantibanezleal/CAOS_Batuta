@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "unit": "USD per million tokens",
+  "note": "Each rate was read on the provider's official pricing page on the date in 'read' (through a page fetch that summarises the page, not a hand copy). Where a page lists a higher rate for long prompts, the higher rate is recorded so a cost cap is never under-counted. A status of 'unverified' means the rate was not confirmed on a primary source: the lookup treats it as unknown and paid lanes refuse it unless --allow-unpriced is given.",
+  "aliases": {
+    "anthropic": {
+      "haiku": "claude-haiku-5-5",
+      "sonnet": "claude-sonnet-5-5",
+      "opus": "claude-opus-5-5",
+      "fable": "claude-fable-5-1"
+    },
+    "vertex": {
+      "haiku": "claude-haiku-5-5",
+      "sonnet": "claude-sonnet-5-5",
+      "opus": "claude-opus-5-5",
+      "fable": "claude-fable-5-1"
+    }
+  },
+  "prices": {
+    "anthropic": {
+      "claude-fable-5-1": {"input": 10.0, "output": 50.0, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "read": "2026-10-15", "status": "verified", "note": "base input and output"},
+      "claude-opus-5-5": {"input": 4.0, "output": 20.0, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "read": "2026-10-15", "status": "verified", "note": "base input and output"},
+      "claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "read": "2026-10-15", "status": "verified", "note": "base input and output"},
+      "claude-haiku-5-5": {"input": 0.5, "output": 2.5, "source": "https://platform.claude.com/docs/en/about-claude/pricing", "read": "2026-10-15", "status": "verified", "note": "the rate for prompts over 100000 tokens (0.10 and 0.50 below that)"}
+    },
+    "openai": {
+      "gpt-5": {"input": 1.25, "output": 10.0, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier; the page lists no long-prompt tier for this model"},
+      "gpt-5-mini": {"input": 0.25, "output": 2.0, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"},
+      "gpt-5-nano": {"input": 0.05, "output": 0.4, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"},
+      "gpt-5.4": {"input": 2.5, "output": 15.0, "long_context": {"above_input_tokens": 272000, "input": 5.0, "output": 22.5}, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier; above 272000 input tokens the long_context rates apply to the whole call"},
+      "gpt-5.5": {"input": 5.0, "output": 30.0, "long_context": {"above_input_tokens": 272000, "input": 10.0, "output": 45.0}, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier; above 272000 input tokens the long_context rates apply to the whole call"},
+      "gpt-4.1": {"input": 2.0, "output": 8.0, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"},
+      "gpt-4.1-mini": {"input": 0.4, "output": 1.6, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"},
+      "gpt-4o": {"input": 2.5, "output": 10.0, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"},
+      "gpt-4o-mini": {"input": 0.15, "output": 0.6, "source": "https://developers.openai.com/api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier"}
+    },
+    "gemini": {
+      "gemini-2.5-pro": {"input": 2.5, "output": 15.0, "source": "https://ai.google.dev/gemini-api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "Legacy on the models page (not available to new keys); the rate for prompts over 200000 tokens (1.25 and 10.00 below that)"},
+      "gemini-2.5-flash": {"input": 0.3, "output": 2.5, "source": "https://ai.google.dev/gemini-api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "Legacy on the models page (not available to new keys); standard tier, text"},
+      "gemini-2.5-flash-lite": {"input": 0.1, "output": 0.4, "source": "https://ai.google.dev/gemini-api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "Legacy on the models page (not available to new keys); standard tier, text"},
+      "gemini-3.5-flash-lite": {"input": 0.3, "output": 2.5, "source": "https://ai.google.dev/gemini-api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "standard tier, text"},
+      "gemini-3.1-pro-preview": {"input": 4.0, "output": 18.0, "source": "https://ai.google.dev/gemini-api/docs/pricing", "read": "2026-10-15", "status": "verified", "note": "the rate for prompts over 200000 tokens (2.00 and 12.00 below that)"}
+    },
+    "vertex": {
+      "claude-fable-5-1": {"input": null, "output": null, "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: no readable price table on a Google page; the Claude on Vertex page only says regional and multi-region endpoints carry a 10 percent premium over the global endpoint"},
+      "claude-opus-5-5": {"input": null, "output": null, "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: see claude-fable-5-1"},
+      "claude-sonnet-5-5": {"input": null, "output": null, "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: see claude-fable-5-1"},
+      "claude-haiku-5-5": {"input": null, "output": null, "source": "https://cloud.google.com/vertex-ai/generative-ai/pricing", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: see claude-fable-5-1"}
+    },
+    "bedrock": {
+      "global.anthropic.claude-sonnet-5-5": {"input": null, "output": null, "source": "https://aws.amazon.com/bedrock/pricing/", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: the AWS pricing page text has no Claude rows for this model; the id is the global inference profile the configuration names (a us. profile prices differently)"},
+      "global.anthropic.claude-opus-5-5": {"input": null, "output": null, "source": "https://aws.amazon.com/bedrock/pricing/", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: the AWS pricing page text has no Claude rows for this model; the id is the global inference profile the configuration names (a us. profile prices differently)"},
+      "global.anthropic.claude-haiku-5-5": {"input": null, "output": null, "source": "https://aws.amazon.com/bedrock/pricing/", "read": "2026-10-15", "status": "unverified", "note": "UNVERIFIED: the AWS pricing page text has no Claude rows for this model; the id is the global inference profile the configuration names (a us. profile prices differently)"}
+    }
+  }
+}

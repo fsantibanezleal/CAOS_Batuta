@@ -1,0 +1,16 @@
+{
+  "_why": "providers map to provider names",
+  "_expect": "/entries/0/providers/sensor-feed",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "env": "preview",
+      "url": "https://preview.example.org",
+      "commit": "abc1234",
+      "providers": {
+        "sensor-feed": 1
+      },
+      "date": "2026-10-11"
+    }
+  ]
+}

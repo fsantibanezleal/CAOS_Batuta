@@ -1,0 +1,21 @@
+{
+  "_why": "a training model answers with the released model or the baseline",
+  "_expect": "a training model answers",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "grade-model",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "fixture",
+      "state": "training",
+      "reason": {
+        "en": "version 1.2.0 answers while 1.3.0 trains",
+        "es": "version 1.2.0 answers while 1.3.0 trains (es)"
+      },
+      "missing": []
+    }
+  ]
+}

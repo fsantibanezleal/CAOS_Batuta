@@ -1,0 +1,9 @@
+{
+  "_why": "a date exists on the calendar",
+  "_expect": "calendar date",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "0.115.2",
+  "primary_source_url": "https://fastapi.tiangolo.com/",
+  "verified_date": "2026-13-45"
+}

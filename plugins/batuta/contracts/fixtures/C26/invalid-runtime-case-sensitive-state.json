@@ -1,0 +1,8 @@
+{
+  "_why": "state values are case-sensitive",
+  "_expect": "not in enum",
+  "state": "Available",
+  "reason": null,
+  "source": "real",
+  "age": null
+}

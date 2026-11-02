@@ -1,0 +1,17 @@
+{
+  "_why": "the locked path has no drive letter",
+  "_expect": "/entries/0/path",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "path": "C:/work/test_x.py",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "task_id": "T-001",
+      "req_ids": [
+        "REQ-AUTH-001"
+      ],
+      "locked_commit": "abc1234",
+      "locked_at": "2026-10-11T12:00:00Z"
+    }
+  ]
+}

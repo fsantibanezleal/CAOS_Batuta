@@ -1,0 +1,12 @@
+{
+  "_why": "contract_version is required",
+  "_expect": "'contract_version'",
+  "python": "/usr/bin/python3",
+  "deploy_root": "/opt/batuta",
+  "temp_root": "/var/tmp/batuta",
+  "data_root": "/srv/data",
+  "models_root": "/srv/models",
+  "worktrees_root": "/srv/worktrees",
+  "batuta_version": "0.01.000",
+  "deployed_from": "CAOS_Batuta@v0.01.000"
+}

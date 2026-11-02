@@ -1,0 +1,30 @@
+{
+  "name": "caos-batuta",
+  "version": "0.1.0",
+  "description": "A public, device-agnostic toolkit that governs AI-assisted engineering with Claude Code: routing, specs, tests, gates and context.",
+  "license": "Apache-2.0",
+  "author": "Felipe A. Santibanez-Leal",
+  "homepage": "https://github.com/fsantibanezleal/CAOS_Batuta",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fsantibanezleal/CAOS_Batuta.git"
+  },
+  "type": "module",
+  "bin": {
+    "batuta": "bin/batuta.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "plugins/batuta",
+    "copier.yml",
+    "VERSION",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "python -m unittest discover -s tests -p \"test_*.py\"",
+    "standards": "python scripts/check_content_standards.py"
+  }
+}

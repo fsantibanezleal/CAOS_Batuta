@@ -1,0 +1,86 @@
+{
+  "contract_id": "C03",
+  "contract_version": "1.0",
+  "front_matter": "none",
+  "case_insensitive_titles": true,
+  "required_sections": [
+    "completeness"
+  ],
+  "section_patterns": [
+    {
+      "pattern": "^d\\d+( |$)",
+      "min": 1
+    }
+  ],
+  "forbidden_prose": [
+    "\\bTODO\\b",
+    "\\bTBD\\b",
+    "\\bFIXME\\b",
+    "(?i)\\blorem ipsum\\b",
+    "(?i)<(?:what|fill|describe|insert|path|slug|topic|evidence)[^<>\\n]{0,60}>"
+  ],
+  "tables": [
+    {
+      "name": "Completeness",
+      "section": "Completeness",
+      "headers": [
+        "ID",
+        "Status",
+        "Evidence"
+      ],
+      "headers_match": "contains",
+      "row_def": "completeness_row",
+      "min_rows": 1
+    }
+  ],
+  "rules": [
+    {
+      "type": "ids_match",
+      "sections_pattern": "^(d\\d+)( |$)",
+      "table": "Completeness",
+      "column": "ID"
+    },
+    {
+      "type": "unique_column",
+      "table": "Completeness",
+      "column": "ID"
+    },
+    {
+      "type": "nonempty_sections",
+      "sections": [
+        "Sources",
+        "Production path",
+        "Red run",
+        "Green run"
+      ]
+    },
+    {
+      "type": "section_order",
+      "first": "Red run",
+      "then": "Green run",
+      "message": "the 'Green run' section comes before the 'Red run' (red first)"
+    },
+    {
+      "type": "section_text",
+      "section": "Red run",
+      "pattern": "`",
+      "message": "'Red run' names no command (put it in backticks or a code fence)"
+    },
+    {
+      "type": "section_text",
+      "section": "Green run",
+      "pattern": "`",
+      "message": "'Green run' names no command (put it in backticks or a code fence)"
+    },
+    {
+      "type": "exit_code",
+      "section": "Red run",
+      "expect": "nonzero"
+    },
+    {
+      "type": "exit_code",
+      "section": "Green run",
+      "expect": "zero"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_why": "the platform ignores a matcher on UserPromptSubmit",
+  "_expect": "matcher",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "approve.*",
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"], "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "contract_version": "1.0",
+  "tool": "pytest",
+  "version": "9.0.0-rc.1",
+  "primary_source_url": "https://fastapi.tiangolo.com/",
+  "verified_date": "2026-10-12"
+}

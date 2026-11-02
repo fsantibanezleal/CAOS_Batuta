@@ -1,0 +1,38 @@
+{
+  "_why": "env is required",
+  "_expect": "'env'",
+  "contract_version": "1.0",
+  "permissions": {
+    "deny": [
+      "Agent(Explore)",
+      "Agent(model:fable)"
+    ],
+    "ask": [
+      "Agent(model:opus)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hook.py doctor",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hook.py guard"
+          }
+        ]
+      }
+    ]
+  }
+}

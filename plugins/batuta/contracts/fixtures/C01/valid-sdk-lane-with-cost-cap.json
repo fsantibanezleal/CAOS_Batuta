@@ -1,0 +1,49 @@
+{
+  "contract_version": "1.0",
+  "roots": {
+    "temp": "t",
+    "data": "d",
+    "worktrees": "w"
+  },
+  "roles": {},
+  "caps": {
+    "max_concurrent_agents": 2,
+    "max_agents_per_task": 4,
+    "max_opus_reviews_per_task": 1,
+    "spawn_depth": 1,
+    "max_cost_usd_per_task": 12.5
+  },
+  "gates": {
+    "critical": [
+      "L2-decide",
+      "L5-freeze",
+      "L7-build",
+      "L9-promote"
+    ],
+    "critical_units": [
+      "u-api",
+      "u-pipeline"
+    ],
+    "adversary_model_critical": "opus",
+    "adversary_model_routine": "sonnet"
+  },
+  "dispatch": {
+    "default_lane": "sdk",
+    "lanes": [
+      "sdk"
+    ],
+    "providers": {
+      "anthropic": {
+        "kind": "anthropic",
+        "credential_env": "ANTHROPIC_API_KEY"
+      }
+    }
+  },
+  "budgets": {
+    "user_core_bytes": 7000,
+    "project_core_bytes": 7000,
+    "unscoped_rules_bytes": 2000,
+    "memory_index_bytes": 4000,
+    "memory_index_lines": 60
+  }
+}

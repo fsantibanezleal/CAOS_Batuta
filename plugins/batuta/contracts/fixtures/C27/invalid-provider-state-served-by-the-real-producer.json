@@ -1,0 +1,21 @@
+{
+  "_why": "a provider entry names a provider kind",
+  "_expect": "a provider entry is served by a stub",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "severity-score",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "provider",
+      "reason": {
+        "en": "served by the baseline provider",
+        "es": "served by the baseline provider (es)"
+      },
+      "missing": []
+    }
+  ]
+}

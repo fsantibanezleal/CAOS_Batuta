@@ -1,0 +1,18 @@
+{
+  "_why": "status is real, active or a provider kind",
+  "_expect": "/contracts/0/status",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "frozen",
+      "provenance": "real",
+      "state": "available",
+      "reason": null,
+      "missing": []
+    }
+  ]
+}

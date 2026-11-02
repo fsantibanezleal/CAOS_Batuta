@@ -1,0 +1,22 @@
+{
+  "_why": "a timeout is at least one second",
+  "_expect": "must be >= 1",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "automation-guard"
+            ],
+            "timeout": 0
+          }
+        ]
+      }
+    ]
+  }
+}

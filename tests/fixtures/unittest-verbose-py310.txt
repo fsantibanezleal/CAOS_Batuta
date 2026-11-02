@@ -1,0 +1,16 @@
+test_add (tests.test_calc.CalcTests) ... ok
+test_error (tests.test_calc.CalcTests) ... ERROR
+test_fail (tests.test_calc.CalcTests) ... FAIL
+test_skip (tests.test_calc.CalcTests) ... skipped 'not on this machine ... really'
+test_sub (tests.test_calc.CalcTests)
+A docstring line. ... ok
+test_sub_tests (tests.test_calc.CalcTests) ... ok
+test_xfail (tests.test_calc.CalcTests) ... expected failure
+test_xpass (tests.test_calc.CalcTests) ... unexpected success
+test_other (tests.test_calc.test_twin) ... ok
+test_twin (tests.test_calc.test_twin) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.001s
+
+FAILED (failures=1, errors=1, skipped=1, expected failures=1, unexpected successes=1)

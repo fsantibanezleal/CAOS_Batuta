@@ -1,0 +1,5 @@
+[green] T-014 update the locked severity test after the spec change
+
+The expected score moved from 3 to 4 in the approved change.
+
+Test-Change-Approved: CR-003

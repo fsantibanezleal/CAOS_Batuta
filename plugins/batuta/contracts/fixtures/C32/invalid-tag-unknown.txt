@@ -1,0 +1,3 @@
+# why: the tags are red, green and refactor
+# expect: must be '[red|green|refactor] T-NNN <title>'
+[blue] T-001 add the ingest tests

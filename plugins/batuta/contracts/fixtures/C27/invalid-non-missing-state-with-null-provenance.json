@@ -1,0 +1,21 @@
+{
+  "_why": "provenance is null only when the state is missing",
+  "_expect": "provenance is null only when the state is missing",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "sensor-feed",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": null,
+      "state": "stale",
+      "reason": {
+        "en": "last bake is 3 days old",
+        "es": "last bake is 3 days old (es)"
+      },
+      "missing": []
+    }
+  ]
+}

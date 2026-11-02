@@ -1,0 +1,4 @@
+# why: a blank line separates the subject from the body
+# expect: a blank line must follow the subject
+[red] T-001 add the ingest tests
+The body starts right under the subject.

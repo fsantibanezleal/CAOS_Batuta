@@ -1,0 +1,21 @@
+{
+  "_why": "a handler id matches [a-z][a-z0-9-]*",
+  "_expect": "handler id matches",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "Report_Check"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

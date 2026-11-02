@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C21",
+  "contract_version": "1.0",
+  "title": "Tasks table",
+  "description": "One row per task: the requirements covered, the catalog contract ids used, the real ordering dependencies, the computed wave, the owner role and the row of the sizing's Parallel units table that carries it (`-` or empty: none). Waves share one numbering with `contract graph`: wave 0 is the contracts, wave 1 the walking skeleton, units and tasks start at wave 2.",
+  "type": "object",
+  "properties": {
+    "Task": {
+      "type": "string",
+      "pattern": "^T-\\d{3}$"
+    },
+    "Title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Requirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[A-Z0-9]+-\\d{3}$"
+      }
+    },
+    "Contracts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "Depends": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^T-\\d{3}$"
+      }
+    },
+    "Wave": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 2
+    },
+    "Owner role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Unit": {
+      "type": "string",
+      "pattern": "^(-|[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+    }
+  },
+  "required": [
+    "Task",
+    "Title",
+    "Requirements",
+    "Contracts",
+    "Depends",
+    "Wave",
+    "Owner role",
+    "Unit"
+  ],
+  "additionalProperties": true
+}

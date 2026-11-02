@@ -1,0 +1,7 @@
+{
+  "state": "provider",
+  "reason": "sensor feed not connected yet",
+  "source": "baseline: models/baseline_severity.py",
+  "age": "PT0S",
+  "provenance": "baseline"
+}

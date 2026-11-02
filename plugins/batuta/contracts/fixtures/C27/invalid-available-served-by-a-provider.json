@@ -1,0 +1,18 @@
+{
+  "_why": "an available entry is served by the real producer",
+  "_expect": "an available entry is served by the real producer",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "fixture",
+      "state": "available",
+      "reason": null,
+      "missing": []
+    }
+  ]
+}

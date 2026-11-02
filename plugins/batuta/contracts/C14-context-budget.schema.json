@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C14",
+  "contract_version": "1.0",
+  "title": "Context budget",
+  "description": "The budgets block of C01 as a standalone object: byte and line ceilings for always-loaded context.",
+  "type": "object",
+  "properties": {
+    "user_core_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "project_core_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unscoped_rules_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "memory_index_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "memory_index_lines": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "user_core_bytes",
+    "project_core_bytes",
+    "unscoped_rules_bytes",
+    "memory_index_bytes",
+    "memory_index_lines"
+  ],
+  "additionalProperties": true
+}

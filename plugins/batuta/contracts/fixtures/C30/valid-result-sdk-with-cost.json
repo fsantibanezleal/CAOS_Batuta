@@ -1,0 +1,14 @@
+{
+  "contract_version": "1.0",
+  "kind": "result",
+  "run_id": "ingest-api-2026-10-12",
+  "lane": "sdk",
+  "status": "complete",
+  "report": "wip/alerts/ingest-api-2026-10-12.md",
+  "provider": "anthropic",
+  "model": "sonnet",
+  "tokens_in": 182340,
+  "tokens_out": 20411,
+  "cost_usd": 1.84,
+  "duration_s": 1210.5
+}

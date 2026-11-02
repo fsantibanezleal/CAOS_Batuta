@@ -1,0 +1,23 @@
+{
+  "_why": "a row still on a provider cannot be served by the real producer",
+  "_expect": "cannot be 'real'",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-list",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "real",
+      "state": "partial",
+      "reason": {
+        "en": "two of three source files are present",
+        "es": "two of three source files are present (es)"
+      },
+      "missing": [
+        "data/raw/b.csv"
+      ]
+    }
+  ]
+}

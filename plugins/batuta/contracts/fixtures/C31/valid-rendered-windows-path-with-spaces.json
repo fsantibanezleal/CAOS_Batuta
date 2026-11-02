@@ -1,0 +1,13 @@
+{
+  "profile": "rendered",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "\"C:/Program Files/Python 3/python.exe\" -I \"D:/Tools/dev name/plugins/batuta/scripts/hook.py\" automation-guard", "onFailure": "block" }
+        ]
+      }
+    ]
+  }
+}

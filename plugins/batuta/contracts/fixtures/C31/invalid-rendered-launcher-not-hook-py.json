@@ -1,0 +1,14 @@
+{
+  "_why": "a rendered launcher is the absolute path of scripts/hook.py",
+  "_expect": "scripts/hook.py",
+  "profile": "rendered",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["/opt/tools/plugins/batuta/hook.py", "automation-guard"] }
+        ]
+      }
+    ]
+  }
+}

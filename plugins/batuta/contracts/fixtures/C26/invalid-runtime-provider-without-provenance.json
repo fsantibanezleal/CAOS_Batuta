@@ -1,0 +1,8 @@
+{
+  "_why": "a provider answer names its provider kind",
+  "_expect": "provenance",
+  "state": "provider",
+  "reason": "sensor feed not connected yet",
+  "source": "provider fixture sensors-0001",
+  "age": "PT0S"
+}

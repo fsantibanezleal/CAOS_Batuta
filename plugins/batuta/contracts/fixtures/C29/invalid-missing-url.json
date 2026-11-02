@@ -1,0 +1,15 @@
+{
+  "_why": "url is required",
+  "_expect": "'url'",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "env": "preview",
+      "commit": "abc1234",
+      "providers": {
+        "sensor-feed": "recorded-sample"
+      },
+      "date": "2026-10-11"
+    }
+  ]
+}

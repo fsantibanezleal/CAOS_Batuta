@@ -1,0 +1,8 @@
+{
+  "_why": "a training answer says which version or baseline answered",
+  "_expect": "source",
+  "state": "training",
+  "reason": "a newer model trains",
+  "source": "",
+  "age": "P1D"
+}

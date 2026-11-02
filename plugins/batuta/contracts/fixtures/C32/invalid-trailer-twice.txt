@@ -1,0 +1,6 @@
+# why: a trailer key appears once
+# expect: appears more than once
+[green] T-001 update the locked test
+
+Test-Change-Approved: CR-001
+Test-Change-Approved: CR-002

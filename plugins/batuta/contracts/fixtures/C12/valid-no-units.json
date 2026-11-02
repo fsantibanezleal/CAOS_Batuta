@@ -1,0 +1,8 @@
+{
+  "contract_version": "1.0",
+  "budget": {
+    "core_bytes": 7000,
+    "index_bytes": 4000
+  },
+  "units": []
+}

@@ -1,0 +1,43 @@
+# Copier template: `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` renders plugins/batuta/templates/project/ with the four
+# answers below (and the hidden release tag). `batuta.py init project` renders the same files with the same defaults and the same bytes; the
+# template uses {{ name }} placeholders only (no template logic), so both renderers agree.
+_subdirectory: plugins/batuta/templates/project
+_templates_suffix: ""
+
+project_name:
+  type: str
+  help: Project name, shown in AGENTS.md and CLAUDE.md
+  default: My project
+
+python_version:
+  type: str
+  help: Python version of the CI job (3.10 or newer)
+  default: "3.12"
+  validator: >-
+    {% if not (python_version | regex_search('^3\.(1[0-9]|[2-9][0-9])$')) %}
+    Use a version such as 3.12 (3.10 or newer).
+    {% endif %}
+
+test_command:
+  type: str
+  help: The project's test command; CI and the TDD replay run exactly this string. It must report each test (unittest -v or a JUnit file)
+  default: python -m unittest discover -s tests -t . -v
+  validator: >-
+    {% if (test_command | regex_search('["\\\\{}]')) or (test_command | trim) == '' %}
+    One line without double quotes, backslashes or braces (use single quotes inside the command).
+    {% endif %}
+
+default_branch:
+  type: str
+  help: The default branch (the base of the CI comparison on a new branch)
+  default: main
+  validator: >-
+    {% if not (default_branch | regex_search('^[A-Za-z0-9][A-Za-z0-9._/-]*$')) %}
+    Use letters, digits, '.', '_', '-' and '/'.
+    {% endif %}
+
+batuta_ref:
+  type: str
+  help: The Batuta release tag the CI checks are fetched from (kept in step with VERSION; `init update` moves it)
+  default: v0.01.000
+  when: false

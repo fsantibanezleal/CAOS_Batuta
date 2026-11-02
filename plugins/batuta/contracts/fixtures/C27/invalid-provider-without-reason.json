@@ -1,0 +1,18 @@
+{
+  "_why": "a provider entry states why",
+  "_expect": "must state a reason",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "severity-score",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "baseline",
+      "state": "provider",
+      "reason": null,
+      "missing": []
+    }
+  ]
+}

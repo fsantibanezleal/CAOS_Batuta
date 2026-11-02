@@ -1,0 +1,23 @@
+{
+  "_why": "requirement id pattern",
+  "_expect": "/requirements/0/id",
+  "contract_version": "1.0",
+  "spec_id": "001-example",
+  "requirements": [
+    {
+      "id": "AUTH-1",
+      "gate": "pytest tests/test_auth.py",
+      "tests": [
+        "tests/test_auth.py::test_login"
+      ],
+      "tasks": [
+        "T-001"
+      ],
+      "status": "active"
+    }
+  ],
+  "orphans": [],
+  "unknown_ids": [],
+  "untagged_tests": [],
+  "ok": true
+}

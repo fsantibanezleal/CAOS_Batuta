@@ -1,0 +1,13 @@
+{
+  "_why": "onFailure is ignored by an async hook, so a fail-closed entry would fail open",
+  "_expect": "onFailure",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"], "onFailure": "block", "async": true }
+        ]
+      }
+    ]
+  }
+}

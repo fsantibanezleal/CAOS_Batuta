@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/hook.py", "report-check"], "asyncRewake": true, "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "_why": "a handler exits 0 or 2; an error is an exception, not an exit code",
+  "_expect": "not in enum",
+  "contract_version": "1.0",
+  "exit_code": 1,
+  "output": null
+}

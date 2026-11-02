@@ -1,0 +1,8 @@
+{
+  "_why": "age is null only for available and missing",
+  "_expect": "age",
+  "state": "stale",
+  "reason": "cached",
+  "source": "cached snapshot",
+  "age": null
+}

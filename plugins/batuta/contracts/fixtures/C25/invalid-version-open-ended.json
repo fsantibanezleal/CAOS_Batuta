@@ -1,0 +1,9 @@
+{
+  "_why": "the version is exact: 3+ is a range",
+  "_expect": "/version",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "3+",
+  "primary_source_url": "https://fastapi.tiangolo.com/",
+  "verified_date": "2026-10-12"
+}

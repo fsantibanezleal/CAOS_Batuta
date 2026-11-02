@@ -1,0 +1,41 @@
+{
+  "contract_version": "1.1",
+  "roots": {
+    "temp": "t",
+    "data": "d",
+    "worktrees": "w"
+  },
+  "roles": {},
+  "caps": {
+    "max_concurrent_agents": 4,
+    "max_agents_per_task": 8,
+    "max_opus_reviews_per_task": 1,
+    "spawn_depth": 1
+  },
+  "gates": {
+    "critical": [
+      "L2-decide",
+      "L5-freeze",
+      "L9-promote"
+    ],
+    "adversary_model_critical": "opus",
+    "adversary_model_routine": "sonnet"
+  },
+  "budgets": {
+    "user_core_bytes": 7000,
+    "project_core_bytes": 7000,
+    "unscoped_rules_bytes": 2000,
+    "memory_index_bytes": 4000,
+    "memory_index_lines": 60
+  },
+  "tdd": {
+    "test_command": "python -m unittest discover -s tests",
+    "replay_timeout_seconds": 300,
+    "lock_file": ".batuta/test-locks.json",
+    "markers": [
+      "skip",
+      "xfail",
+      "todo"
+    ]
+  }
+}

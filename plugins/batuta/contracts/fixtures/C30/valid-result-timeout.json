@@ -1,0 +1,13 @@
+{
+  "contract_version": "1.0",
+  "kind": "result",
+  "run_id": "ingest-api-2026-10-12",
+  "lane": "sdk",
+  "status": "timeout",
+  "provider": "anthropic",
+  "model": "sonnet",
+  "tokens_in": 1000,
+  "tokens_out": 50,
+  "cost_usd": 0.01,
+  "error": "no report after 3600 seconds"
+}

@@ -1,0 +1,17 @@
+{
+  "_why": "the launcher is the placeholder, never a machine path",
+  "_expect": "double quotes",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"/opt/me/plugin/scripts/hook.py\" report-check"
+          }
+        ]
+      }
+    ]
+  }
+}

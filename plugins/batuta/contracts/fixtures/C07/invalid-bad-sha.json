@@ -1,0 +1,17 @@
+{
+  "_why": "sha256 is 64 hex",
+  "_expect": "/entries/0/sha256",
+  "contract_version": "1.0",
+  "entries": [
+    {
+      "path": "tests/test_a.py",
+      "sha256": "nothex",
+      "task_id": "T-001",
+      "req_ids": [
+        "REQ-AUTH-001"
+      ],
+      "locked_commit": "abc1234",
+      "locked_at": "2026-10-11T12:00:00Z"
+    }
+  ]
+}

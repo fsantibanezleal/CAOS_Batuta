@@ -1,0 +1,23 @@
+{
+  "_why": "io_contract is a relative POSIX path with no ..",
+  "_expect": "/io_contract",
+  "contract_version": "1.0",
+  "id": "ore-grade-regressor",
+  "alias": "champion",
+  "version": "1.2.0",
+  "io_contract": "../../models/io.schema.json",
+  "status": "released",
+  "baseline": {
+    "kind": "constant",
+    "description": "returns the historical mean grade"
+  },
+  "metrics": {
+    "mae": 0.42
+  },
+  "data_card": "data/cards/grade.md",
+  "training_run": "run-0002",
+  "serving": {
+    "answered_by": "1.2.0",
+    "alias": "champion"
+  }
+}

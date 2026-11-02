@@ -1,0 +1,116 @@
+{
+  "contract_id": "C04",
+  "contract_version": "1.0",
+  "front_matter": "none",
+  "tables": [
+    {
+      "name": "Ledger",
+      "headers": [
+        "ID",
+        "Agent",
+        "Model",
+        "Brief",
+        "Report",
+        "Status",
+        "Accepted"
+      ],
+      "optional_headers": [
+        "Provider",
+        "Tokens in",
+        "Tokens out",
+        "Cost USD",
+        "Superseded by",
+        "Notes"
+      ],
+      "headers_match": "contains",
+      "headers_lead": true,
+      "row_def": "ledger_row",
+      "min_rows": 1,
+      "coerce": {
+        "Accepted": "yesno",
+        "Tokens in": "int",
+        "Tokens out": "int"
+      }
+    }
+  ],
+  "rules": [
+    {
+      "type": "unique_column",
+      "table": "Ledger",
+      "column": "ID"
+    },
+    {
+      "type": "forbid_rows",
+      "table": "Ledger",
+      "match": {
+        "Status": [
+          "accepted"
+        ],
+        "Accepted": [
+          "no",
+          ""
+        ]
+      },
+      "message": "a row with status accepted has Accepted yes"
+    },
+    {
+      "type": "forbid_rows",
+      "table": "Ledger",
+      "match": {
+        "Status": [
+          "superseded"
+        ],
+        "Superseded by": [
+          "",
+          "-"
+        ]
+      },
+      "message": "a superseded row names the row that replaces it (Superseded by)"
+    },
+    {
+      "type": "row_requires",
+      "table": "Ledger",
+      "when_column": "Provider",
+      "when_not_in": [
+        "",
+        "-",
+        "none",
+        "n/a",
+        "na"
+      ],
+      "column": "Tokens in",
+      "pattern": "^(?!(?:-|None)?$).+$",
+      "message": "a billed row (a Provider other than -) records Tokens in"
+    },
+    {
+      "type": "row_requires",
+      "table": "Ledger",
+      "when_column": "Provider",
+      "when_not_in": [
+        "",
+        "-",
+        "none",
+        "n/a",
+        "na"
+      ],
+      "column": "Tokens out",
+      "pattern": "^(?!(?:-|None)?$).+$",
+      "message": "a billed row (a Provider other than -) records Tokens out"
+    },
+    {
+      "type": "row_requires",
+      "table": "Ledger",
+      "when_column": "Provider",
+      "when_not_in": [
+        "",
+        "-",
+        "none",
+        "n/a",
+        "na"
+      ],
+      "column": "Cost USD",
+      "pattern": "^(?!-?$).+$",
+      "message": "a billed row (a Provider other than -) records Cost USD, a number"
+    }
+  ]
+}

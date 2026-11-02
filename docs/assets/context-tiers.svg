@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" role="img" aria-labelledby="t d">
+  <title id="t">Context tiers and their budgets</title>
+  <desc id="d">Three tiers of what an agent reads. Tier L0 loads at every session start and is held under byte budgets. Tier L1 loads only when a file matching its path pattern is read. Tier L2 is listed in an index and read on demand. A fourth band, enforcement, is not text at all: hooks and CI checks block what must never happen.</desc>
+  <style>
+    :root { --bg:#ffffff; --fg:#1f2933; --muted:#52606d; --box:#eef3f9; --line:#3b6ea5; --accent:#b45309; --accent-bg:#fff4e0; --ok:#2f855a; --ok-bg:#e8f5ee; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9aa7b4; --box:#161f2b; --line:#6aa5e0; --accent:#f0a64a; --accent-bg:#2b2113; --ok:#56c28a; --ok-bg:#12261c; }
+    }
+    .bg { fill:var(--bg); }
+    .box { fill:var(--box); stroke:var(--line); stroke-width:1.5; }
+    .warm { fill:var(--accent-bg); stroke:var(--accent); stroke-width:1.5; }
+    .good { fill:var(--ok-bg); stroke:var(--ok); stroke-width:1.5; }
+    text { font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill:var(--fg); font-size:13.5px; }
+    .h { font-size:15px; font-weight:600; }
+    .s { font-size:12.5px; fill:var(--muted); }
+    .arrow { stroke:var(--line); stroke-width:1.8; fill:none; marker-end:url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--line)"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="900" height="470"/>
+
+  <rect class="warm" x="14" y="14" width="872" height="104" rx="8"/>
+  <text class="h" x="30" y="40">L0: loads at every session start, paid by every agent that loads CLAUDE.md</text>
+  <text x="30" y="62">user core, project CLAUDE.md chain, unscoped rules, MEMORY.md (first 200 lines or 25 KB), skill names and descriptions</text>
+  <text class="s" x="30" y="84">Budgets (C01 defaults, enforced by context check): user core 7000 bytes, project core 7000, unscoped rules 2000,</text>
+  <text class="s" x="30" y="102">memory index 4000 bytes and 60 lines. Skill listing: 2008 characters for the 13 skills (measured, cap 1% of the window).</text>
+
+  <rect class="box" x="14" y="136" width="872" height="86" rx="8"/>
+  <text class="h" x="30" y="162">L1: loads only when a file that matches its paths is read</text>
+  <text x="30" y="184">.claude/rules/ stubs with paths front matter, nested CLAUDE.md, skills with paths</text>
+  <text class="s" x="30" y="204">Each stub is a short summary plus a link to the full unit; the stubs come from the knowledge manifest (context build).</text>
+
+  <rect class="good" x="14" y="240" width="872" height="104" rx="8"/>
+  <text class="h" x="30" y="266">L2: listed in INDEX.md with triggers, opened when the task matches</text>
+  <text x="30" y="288">reference units, procedures (skill bodies), memory topic pages (topics/&lt;id&gt;.md, one page per topic)</text>
+  <text class="s" x="30" y="308">Zero tokens until read. memory index keeps MEMORY.md to pinned lines plus one line per topic (under 200 lines, 25 KB).</text>
+  <text class="s" x="30" y="326">Subagents start with fresh context: only the brief and the files it names reach them (haiku roles also skip CLAUDE.md).</text>
+
+  <rect class="box" x="14" y="362" width="872" height="94" rx="8"/>
+  <text class="h" x="30" y="388">Enforcement is not a tier of text</text>
+  <text x="30" y="410">Anything that must never happen is a hook (PreToolUse guards, SubagentStop report check) with a script and a CI twin,</text>
+  <text x="30" y="430">because instructions in CLAUDE.md are context, not enforcement (Claude Code memory documentation).</text>
+
+  <path class="arrow" d="M868 118 L868 134"/>
+  <path class="arrow" d="M868 222 L868 238"/>
+  <path class="arrow" d="M868 344 L868 360"/>
+</svg>

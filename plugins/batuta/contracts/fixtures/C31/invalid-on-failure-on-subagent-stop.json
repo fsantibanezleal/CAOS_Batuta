@@ -1,0 +1,22 @@
+{
+  "_why": "a Stop-type hook returns decision block itself, so onFailure is refused",
+  "_expect": "cannot block through onFailure",
+  "hooks": {
+    "SubagentStop": [
+      {
+        "matcher": "implementer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py",
+              "report-check"
+            ],
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_why": "a provider artifact states why",
+  "_expect": "reason",
+  "state": "provider",
+  "reason": null,
+  "source": "provider fixture",
+  "age": "PT0S",
+  "provenance": "fixture"
+}

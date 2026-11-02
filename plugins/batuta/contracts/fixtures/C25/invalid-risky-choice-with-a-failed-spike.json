@@ -1,0 +1,39 @@
+{
+  "_why": "a risky chosen candidate needs a spike that passed",
+  "_expect": "is risky and can be chosen only after a spike that passed",
+  "contract_version": "1.0",
+  "tool": "Litestar",
+  "version": "2.12.1",
+  "primary_source_url": "https://litestar.dev/",
+  "verified_date": "2026-10-12",
+  "evaluation": {
+    "concern": "HTTP API framework",
+    "chosen": "Litestar",
+    "candidates": [
+      {
+        "name": "Litestar",
+        "version": "2.12.1",
+        "source_url": "https://litestar.dev/",
+        "verified": "2026-10-12",
+        "license": "MIT",
+        "maturity": {
+          "last_release": "2026-09-30",
+          "maintainers": 3,
+          "stars": 80000
+        },
+        "maintenance": "monthly releases, three active maintainers",
+        "size": "about 40 transitive dependencies",
+        "fit": "typed request and response models match the catalog schemas",
+        "risks": [
+          "small maintainer pool"
+        ],
+        "risky": true,
+        "spike": {
+          "command": "python spikes/litestar_alert_api.py",
+          "result": "fail",
+          "evidence": "route 3 returned 500"
+        }
+      }
+    ]
+  }
+}

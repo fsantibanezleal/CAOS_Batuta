@@ -1,0 +1,20 @@
+{
+  "contract_version": "1.0",
+  "kind": "request",
+  "run_id": "ingest-api-2026-10-12",
+  "brief": ".batuta/delegation/ingest-api-2026-10-12.brief.md",
+  "report": "wip/alerts/ingest-api-2026-10-12.md",
+  "lane": "provider:openai",
+  "role": "reviewer",
+  "model": "gpt-5",
+  "effort": "medium",
+  "write_scope": [
+    "api/",
+    "tests/api/"
+  ],
+  "max_turns": 40,
+  "timeout_s": 3600,
+  "provider": "openai",
+  "max_cost_usd": 2.5,
+  "credential_env": "OPENAI_API_KEY"
+}

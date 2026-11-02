@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract_id": "C26",
+  "contract_version": "1.0",
+  "title": "Availability runtime block",
+  "description": "The block an API response or artifact carries when a source is not fully available: `{state, reason, source, age, provenance}`. The state vocabulary (available, partial, stale, provider, training, missing) is ADR-0080 section 3's and is declared per boundary in the missing-data behavior column of the contract catalog (C22), with the test of each state; this contract keeps only the vocabulary and the block. `reason` is required for every state but available, `age` is an ISO 8601 duration and may be null only for available and missing, a provider answer names its provenance kind.",
+  "type": "object",
+  "properties": {
+    "state": {
+      "$ref": "#/$defs/state"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "object",
+        "null"
+      ],
+      "description": "A reason: a string, or an object with an 'en' string (bilingual products add 'es'); null only when available."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What answered: the real producer, a cached snapshot, the provider's path, a model version or the baseline."
+    },
+    "age": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^P(?!$)(\\d+(\\.\\d+)?Y)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?W)?(\\d+(\\.\\d+)?D)?(T(?=\\d)(\\d+(\\.\\d+)?H)?(\\d+(\\.\\d+)?M)?(\\d+(\\.\\d+)?S)?)?$",
+      "description": "An ISO 8601 duration, or null (allowed only for available and missing)."
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "real",
+        "stub",
+        "simulator",
+        "fixture",
+        "baseline"
+      ],
+      "description": "Required when state is provider: the kind of provider that answered (stub, simulator, fixture or baseline)."
+    }
+  },
+  "required": [
+    "state",
+    "reason",
+    "source",
+    "age"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "available",
+        "partial",
+        "stale",
+        "provider",
+        "training",
+        "missing"
+      ],
+      "description": "available, partial, stale, provider, training or missing (case-sensitive): the six states of the dimensioned contract-first method. A provider answer carries the provider kind as provenance."
+    }
+  }
+}

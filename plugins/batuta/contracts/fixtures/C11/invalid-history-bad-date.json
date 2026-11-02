@@ -1,0 +1,20 @@
+{
+  "_why": "history date is YYYY-MM-DD",
+  "_expect": "/history/0/date",
+  "contract_version": "1.0",
+  "values": {
+    "coverage_branch_min": 80,
+    "patch_coverage_min": 90,
+    "mutation_min": 60.5,
+    "property_examples_ci": 200
+  },
+  "history": [
+    {
+      "date": "yesterday",
+      "name": "coverage_branch_min",
+      "from": 70,
+      "to": 80,
+      "reason": "ratchet after U3"
+    }
+  ]
+}

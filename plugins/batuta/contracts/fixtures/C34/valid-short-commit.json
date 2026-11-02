@@ -1,0 +1,8 @@
+{
+  "contract_version": "1.0",
+  "commit": "0123abc",
+  "generated": "2026-10-13",
+  "results": {
+    "tests/test_a.py": "pass"
+  }
+}

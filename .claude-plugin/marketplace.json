@@ -1,0 +1,14 @@
+{
+  "name": "caos-batuta",
+  "owner": {
+    "name": "Felipe A. Santibanez-Leal"
+  },
+  "description": "CAOS_Batuta: governed, test-driven AI-assisted engineering with Claude Code.",
+  "plugins": [
+    {
+      "name": "batuta",
+      "source": "./plugins/batuta",
+      "description": "Routing, briefs, specs, tests, gates and context governance for Claude Code."
+    }
+  ]
+}

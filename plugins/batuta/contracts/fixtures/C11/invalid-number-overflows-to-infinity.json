@@ -1,0 +1,12 @@
+{
+  "_why": "a number that overflows a double is not finite",
+  "_expect": "finite",
+  "contract_version": "1.0",
+  "values": {
+    "coverage_branch_min": 80,
+    "patch_coverage_min": 90,
+    "mutation_min": 60.5,
+    "property_examples_ci": 1e999
+  },
+  "history": []
+}

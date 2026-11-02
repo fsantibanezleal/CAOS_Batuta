@@ -1,0 +1,12 @@
+{
+  "profile": "rendered",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/usr/bin/python3", "args": ["-I", "/opt/tools/plugins/batuta/scripts/hook.py", "automation-guard"], "onFailure": "block" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "_why": "only a partial entry lists what is missing",
+  "_expect": "only a partial entry lists what is missing",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "sensor-feed",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "stale",
+      "reason": {
+        "en": "last bake is 3 days old",
+        "es": "last bake is 3 days old (es)"
+      },
+      "missing": [
+        "x"
+      ]
+    }
+  ]
+}

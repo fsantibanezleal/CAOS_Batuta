@@ -1,0 +1,21 @@
+{
+  "_why": "nothing answered, so provenance is null",
+  "_expect": "provenance must be null when the state is missing",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alerts-api",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "fixture",
+      "state": "missing",
+      "reason": {
+        "en": "the API lane is dormant",
+        "es": "the API lane is dormant (es)"
+      },
+      "missing": []
+    }
+  ]
+}

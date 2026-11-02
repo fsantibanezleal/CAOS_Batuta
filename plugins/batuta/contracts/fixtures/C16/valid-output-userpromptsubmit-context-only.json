@@ -1,0 +1,7 @@
+{
+  "_recorded": false,
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "The spec is frozen."
+  }
+}

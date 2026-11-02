@@ -1,0 +1,16 @@
+{
+  "_why": "summary is required",
+  "_expect": "'summary'",
+  "contract_version": "1.0",
+  "tool": "batuta",
+  "area": "contract",
+  "verb": "lint",
+  "exit_code": 0,
+  "items": [
+    {
+      "tag": "OK",
+      "message": "C01 schema loads",
+      "path": "contracts/C01-batuta-config.schema.json"
+    }
+  ]
+}

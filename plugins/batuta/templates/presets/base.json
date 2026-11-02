@@ -1,0 +1,12 @@
+{
+  "contract_version": "1.0",
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "{{spawn_depth}}",
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "{{max_concurrent_agents}}"
+  },
+  "permissions": {
+    "deny": ["Agent(Explore)", "Agent(Plan)", "Agent(model:fable)"],
+    "ask": ["Agent(model:opus)"]
+  }
+}

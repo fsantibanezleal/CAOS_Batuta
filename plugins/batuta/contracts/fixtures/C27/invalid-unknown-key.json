@@ -1,0 +1,81 @@
+{
+  "_why": "the document is closed",
+  "_expect": "unexpected property",
+  "schema": "alerts.readiness/v1",
+  "product_version": "0.04.000",
+  "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "contracts": [
+    {
+      "id": "alert-event",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "available",
+      "reason": null,
+      "missing": []
+    },
+    {
+      "id": "alert-list",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "partial",
+      "reason": {
+        "en": "two of three source files are present",
+        "es": "two of three source files are present (es)"
+      },
+      "missing": [
+        "data/raw/b.csv"
+      ]
+    },
+    {
+      "id": "sensor-feed",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "stale",
+      "reason": {
+        "en": "last bake is 3 days old",
+        "es": "last bake is 3 days old (es)"
+      },
+      "missing": []
+    },
+    {
+      "id": "severity-score",
+      "version": "1.0.0",
+      "status": "active",
+      "provenance": "baseline",
+      "state": "provider",
+      "reason": {
+        "en": "served by the baseline provider",
+        "es": "served by the baseline provider (es)"
+      },
+      "missing": []
+    },
+    {
+      "id": "grade-model",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": "real",
+      "state": "training",
+      "reason": {
+        "en": "version 1.2.0 answers while 1.3.0 trains",
+        "es": "version 1.2.0 answers while 1.3.0 trains (es)"
+      },
+      "missing": []
+    },
+    {
+      "id": "alerts-api",
+      "version": "1.0.0",
+      "status": "real",
+      "provenance": null,
+      "state": "missing",
+      "reason": {
+        "en": "the API lane is dormant",
+        "es": "the API lane is dormant (es)"
+      },
+      "missing": []
+    }
+  ],
+  "components": []
+}

@@ -1,0 +1,9 @@
+{
+  "_why": "a decision names its primary source",
+  "_expect": "/primary_source_url",
+  "contract_version": "1.0",
+  "tool": "FastAPI",
+  "version": "0.115.2",
+  "primary_source_url": "the docs",
+  "verified_date": "2026-10-12"
+}
