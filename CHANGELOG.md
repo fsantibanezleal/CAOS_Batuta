@@ -6,7 +6,7 @@ the single source and every release is tagged `vX.XX.XXX`.
 
 ## [Unreleased]
 
-## [0.01.000] - 2026-10-29
+## [0.01.000] - 2026-11-02
 
 The first release: the data contracts C01 to C34, the command areas, the hook launcher and its guards, the agents and
 skills, the plugin marketplace, the npx entry and the copier-compatible project template, the documentation wiki and the
