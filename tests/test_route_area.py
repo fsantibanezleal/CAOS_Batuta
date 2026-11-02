@@ -140,7 +140,7 @@ class RouteCheck(TempCase):
     def test_the_role_model_comes_from_the_configuration(self):
         write_config(self.root, roles={"implementer": {"model": "opus", "effort": "high"}})
         d = self.agents_dir(implementer=agent_file("implementer", "opus", effort="high"))
-        self.assertEqual(self.check(d)[0], 0
+        self.assertEqual(self.check(d)[0], 0)
         d2 = self.agents_dir(implementer=agent_file("implementer", "sonnet", effort="high"))
         self.assertEqual(self.check(d2)[0], 1)
 
