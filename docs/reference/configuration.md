@@ -94,5 +94,5 @@ Source: `docs/reference/enforcement-matrix.md`. Every key is optional; a missing
 | `BATUTA_TEMP` | Usual value of `roots.temp` (`$BATUTA_TEMP`). Unset falls back to `<BATUTA_HOME>/temp`. |
 | `BATUTA_DATA` | Usual value of `roots.data` (`$BATUTA_DATA`). Unset falls back to `<BATUTA_HOME>/data`. |
 | `BATUTA_WORKTREES` | Usual value of `roots.worktrees` (`$BATUTA_WORKTREES`). Unset falls back to `<BATUTA_HOME>/worktrees`. |
-| `BATUTA_PYTHON` | Python interpreter the npx entry uses before it tries `py -3`, `python3` and `python` (changes/u9b-plugin-readme.md). |
+| `BATUTA_PYTHON` | Python interpreter the npx entry uses before it tries `py -3`, `python3` and `python` (`plugins/batuta/README.md`, `docs/guides/install.md`). |
 | `BATUTA_LEAKS_DENY_LIST` | Path of the private deny-list file of `leaks scan`, outside the repository (docs/reference/enforcement-matrix.md). |
