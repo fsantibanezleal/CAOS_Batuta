@@ -582,6 +582,15 @@ def _user_core_text(cfg_arg, values, deploy, items):
         return None
     scratch = []
     text = device._user_core(cfg, profile, deploy, scratch)
+    if text is None and not any(i["tag"] in ("FAIL", "REFUSED") for i in scratch):
+        # the device area warns that no template is configured; for init that is a plain fact, not a failure
+        scratch = [item("SKIP", "user core: nothing rendered, the configuration names no user_core.template; set "
+                                "user_core.template (and user_core.values) in batuta.json to render one")]
+    elif text is not None:
+        template = (cfg.get("user_core") or {}).get("template")
+        which = "the default template" if template == USER_CORE_TEMPLATE else "the configured template"
+        scratch.append(item("OK", f"user core rendered from {which} {template}; set user_core.template in batuta.json "
+                                  "to use another"))
     items.extend(scratch)
     return text
 
@@ -677,7 +686,8 @@ def _user_flow(args, items, mode):
         with _config_without_user_core(cfg_arg, values, deploy) as restore_cfg:
             code, ritems = _call_device(device._restore, config=restore_cfg, home=str(home), deploy_root=str(deploy),
                                         apply=apply, stubs=None, force=False)
-        items.extend(ritems)
+        # the restore ran without `user_core` on purpose (init renders the core itself as a managed block below)
+        items.extend(i for i in ritems if not i["message"].startswith("user core skipped"))
         if apply:
             after = settings.read_bytes() if settings.is_file() else None
             if after is not None and after != before:

@@ -77,6 +77,9 @@ Verified from the GitHub repository on 2026-10-26 and 2026-10-27, each in an emp
   The manifests pass `claude plugin validate --strict` on Claude Code 2.1.301 and 2.1.310.
 - npx: `npx --yes github:fsantibanezleal/CAOS_Batuta version show` and `--help` on Node 24.15.0 and npm 11.12.1.
 - copier: the end-to-end channel test renders the same files through `copier copy` (copier 9.19.1) and `init project`.
+- GitHub template: "Use this template" and `gh repo create <name> --template fsantibanezleal/CAOS_Batuta` copy the repository
+  as it is; they need the repository's template flag, a setting the maintainer turns on at the release. No test exercises
+  this channel, which delivers the harness itself and not a project ([install guide](../guides/install.md)).
 
 Not covered: Claude Code clients older than 2.1.301 were not tried, and the real `npx github:` run was tried on Node 24 only (the
 entry needs Node 18 or newer; the CI end-to-end job runs the local entry with the runner's Node). The end-to-end channel tests
@@ -87,6 +90,7 @@ and 3.13.
 ## Sources
 
 - Software design document: decisions 30, 32, 33, 34, 35, 36, 37 and 38, section 7; the [enforcement matrix](enforcement-matrix.md).
-- The `spec`, `tdd`, `gate`, `device`, `dispatch`, `init` and `guard` area fragments in `changes/`; `plugins/batuta/skills/doctor/SKILL.md`.
+- The `spec`, `tdd`, `gate`, `device`, `dispatch`, `init` and `guard` area sections of `plugins/batuta/README.md` and the
+  [changelog](../../CHANGELOG.md); `plugins/batuta/skills/doctor/SKILL.md`.
 - https://code.claude.com/docs/en/hooks, /sandboxing, /plugins, /permissions;
   https://github.com/anthropics/claude-code/issues/82167.

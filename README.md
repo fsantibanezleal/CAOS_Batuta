@@ -42,6 +42,7 @@ What ships:
 | npx, no install | `npx github:fsantibanezleal/CAOS_Batuta <area> <verb>` (Node 18 or newer) |
 | A project | `python plugins/batuta/scripts/batuta.py init project --target . --apply`, or `copier copy gh:fsantibanezleal/CAOS_Batuta <destination>` |
 | A device | `python plugins/batuta/scripts/batuta.py init user --apply` |
+| GitHub template | "Use this template" on the repository page, or `gh repo create <name> --template fsantibanezleal/CAOS_Batuta`: a new repository holding the harness itself, to adapt it (a project is started with copier or `init project`, above) |
 
 Every write is a dry run until `--apply`. The one-step line is the form `claude plugin validate` advises; from a shell it needs
 Claude Code 2.1.292 or later. The [install guide](docs/guides/install.md) has the details, the plugin option `python` the hooks

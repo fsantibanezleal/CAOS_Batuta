@@ -11,13 +11,11 @@ slow on a loaded machine.
 import datetime
 import hashlib
 import json
-import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
-from batuta_lib import config, evidence
+from batuta_lib import config, evidence, render
 from batuta_lib import contract as core
 from batuta_lib import frontmatter as fm
 from batuta_lib.output import item
@@ -149,18 +147,9 @@ def today_iso():
 
 
 def write_atomic(path, text):
-    """Write UTF-8 with LF through a temp file in the same folder, then `os.replace`."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-", suffix=path.suffix)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(text.replace("\r\n", "\n").encode("utf-8"))
-        os.replace(tmp, path)
-    except BaseException:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-        raise
+    """Write UTF-8 with LF through a temp file in the same folder, then `os.replace`, retried on a transient Windows
+    access error (`render.write_atomic`)."""
+    render.write_atomic(path, text)
 
 
 def read(path):

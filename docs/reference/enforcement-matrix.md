@@ -33,6 +33,24 @@ Why `guard-require-brief` continues: it is a delegation discipline check, not a 
 the session, and the ledger and report checkers catch an undelegated launch afterwards. The other five guards protect
 state that cannot be restored, so a failure to decide blocks.
 
+## Session, stop and prompt handlers
+
+The other five handlers `hooks/hooks.json` wires are not guards: they run on the SessionStart, Stop, SubagentStop and
+UserPromptSubmit events. Each has a script twin that runs without hooks, and the same column of requirements and failure
+modes applies. None of them is wired with `"onFailure": "block"`: a crash or a timeout of these handlers must not stop the
+session, and each one fails open by its own code (the handler allows the stop or the prompt and says why).
+
+| Rule | Handler id | Script or CI equivalent | Requirement | onFailure |
+|---|---|---|---|---|
+| A session that changed a unit is not ended while that unit's gate check fails: the Stop is blocked once, and on the second attempt an UNVERIFIED line is appended to the unit's status file and the stop is allowed | `gate-stop` | `batuta.py gate hook-stop` (payload on stdin); CI: `batuta.py gate check <spec id> --against <base>` | GATE-1 | continue |
+| A briefed agent does not end without a report that satisfies C03 and names its BRIEF and REPORT lines: the SubagentStop is blocked once, then UNVERIFIED is logged | `subagent-stop` | `batuta.py report hook-subagent-stop` (payload on stdin); CI: `batuta.py report check` | REPORT-1 | continue |
+| A session starts with the device setup complete, or is told the exact fix command (OK or INCOMPLETE) | `session-check` | `batuta.py device check --hook`; the same check without the hook: `batuta.py device check` | DEV-3 | continue |
+| A typed approval phrase in the prompt writes the spec approval record (a human act; agents are denied the command by `guard-approvals`) | `spec-approval` | `batuta.py spec hook-approval` (a dry run that writes nothing), and `batuta.py spec approve` in the human's own terminal; CI: the spec area's approval hash check | SDD-3 | continue |
+| A typed change-request decision in the prompt records the human's decision on a locked-test change (C33); the `new` verb only appends open rows | `tdd-change-request` | `batuta.py tdd change-request decide` in the human's own terminal; CI: `batuta.py tdd check --replay` | TDD-4 | continue |
+
+The last two rows create records, they do not refuse anything: the enforcement is `guard-approvals`, which denies an agent
+every route to the same records.
+
 ## Public hygiene (area `leaks`)
 
 | Rule | Hook | Script or CI equivalent | Requirement | onFailure |

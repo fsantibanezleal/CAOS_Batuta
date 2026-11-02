@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from batuta_lib import config
+from batuta_lib import config, contract_compat
 from batuta_lib import contract as core
 from batuta_lib import frontmatter as fm
 from batuta_lib.output import emit, exit_code, item  # noqa: F401  (item and exit_code are part of this module's surface)
@@ -414,16 +414,19 @@ def _sizing_candidates(root, coord):
     return found
 
 
-def lint(root=None, sizing=None, catalog=None, readiness=None):
+def lint(root=None, sizing=None, catalog=None, readiness=None, against=None):
     """Lint the plugin's own contracts (root None), or a project under `root`: its contracts/ folder when present,
     its configuration, `sizing.md` (C23), the contract catalog (C22), the readiness document (C27), the technology
     decisions (C25), and the specs and tasks that name catalog ids, with the cross-file rules between them.
-    Returns a list of items."""
+    With `against` (a git ref) every contract schema is also compared with its content at that ref and a changed schema
+    must follow the version rule (`contract_compat`). Returns a list of items."""
     items = []
     if root is None:
         cdir = _own_contracts_dir()
         _lint_contracts_folder(cdir, cdir.parent, items)
         _lint_hooks(cdir.parent, items)
+        if against:
+            items.extend(contract_compat.check_against(cdir, against))
         return items
     root = Path(root)
     found_any = False
@@ -431,6 +434,10 @@ def lint(root=None, sizing=None, catalog=None, readiness=None):
     if cdir.is_dir():
         found_any = True
         _lint_contracts_folder(cdir, root, items)
+        if against:
+            items.extend(contract_compat.check_against(cdir, against))
+    elif against:
+        items.append(item("FAIL", f"--against needs a contracts folder: {cdir.as_posix()} does not exist", "contracts"))
     coord = config.PROJECT_DIR
     cfg = root / config.PROJECT_DIR / config.FILE_NAME
     if cfg.is_file():
@@ -783,7 +790,7 @@ def _wants_json(args):
 
 
 def _cmd_lint(args):
-    items = lint(args.root, args.sizing, args.catalog, args.readiness)
+    items = lint(args.root, args.sizing, args.catalog, args.readiness, args.against)
     n_ok = sum(1 for i in items if i["tag"] == "OK")
     n_fail = sum(1 for i in items if i["tag"] == "FAIL")
     n_warn = sum(1 for i in items if i["tag"] == "WARN")
@@ -819,6 +826,9 @@ def register(subparsers):
     p.add_argument("--sizing", help="the sizing.md to lint (default: found under the coordination root)")
     p.add_argument("--catalog", help=f"the contract catalog (default: {CATALOG_PATH} under --root)")
     p.add_argument("--readiness", help="the readiness document (default: data/derived/readiness.json or docs/design/readiness.json under --root)")
+    p.add_argument("--against", metavar="REF", help="also compare every contract schema with its content at this git ref: a "
+                                                    "breaking change needs a higher major contract_version, an additive "
+                                                    "change a higher minor one")
     _json_flag(p)
     p.set_defaults(func=_cmd_lint)
 

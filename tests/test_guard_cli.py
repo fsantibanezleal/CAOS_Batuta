@@ -298,19 +298,45 @@ class RealLauncher(unittest.TestCase):
 class Matrix(unittest.TestCase):
     PATH = ROOT / "docs" / "reference" / "enforcement-matrix.md"
 
-    def test_the_matrix_names_every_guard_with_script_ci_and_fail_mode(self):
-        text = self.PATH.read_text(encoding="utf-8")
+    def hook_ids(self):
+        """Every handler id hooks.json wires, read from the launcher command of each entry."""
+        doc = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        ids = []
+        for entries in doc["hooks"].values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    ids.append(hook["command"].split()[-1].strip('"'))
+        return ids
+
+    def rows(self):
         rows = {}
-        for line in text.splitlines():
+        for line in self.PATH.read_text(encoding="utf-8").splitlines():
             cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
-            if len(cells) >= 5 and cells[1] in GUARD_IDS:
+            if len(cells) >= 5 and cells[1] in self.hook_ids():
                 rows[cells[1]] = cells
-        self.assertEqual(sorted(rows), sorted(GUARD_IDS))
+        return rows
+
+    def test_the_matrix_names_every_handler_hooks_json_wires_with_script_ci_and_fail_mode(self):
+        ids = self.hook_ids()
+        self.assertEqual(len(ids), len(set(ids)), "a handler is wired twice")
+        self.assertTrue(set(GUARD_IDS) <= set(ids), "hooks.json lost a guard")
+        rows = self.rows()
+        self.assertEqual(sorted(rows), sorted(ids))
         for hid, cells in rows.items():
             self.assertRegex(cells[-1], r"^(block|continue)$", hid)
-            self.assertIn("guard", cells[2], hid)
+            self.assertIn("batuta.py", cells[2], hid)
         for hid in ("guard-locked-tests", "guard-approvals", "guard-automation", "guard-secrets", "guard-destructive"):
             self.assertEqual(rows[hid][-1], "block", hid)
+
+    def test_the_failure_mode_of_each_row_is_the_one_hooks_json_wires(self):
+        doc = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+        wired = {}
+        for entries in doc["hooks"].values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    wired[hook["command"].split()[-1].strip('"')] = hook.get("onFailure", "continue")
+        for hid, cells in self.rows().items():
+            self.assertEqual(cells[-1], wired[hid], hid)
 
     def test_the_matrix_documents_the_fail_open_launcher_and_the_config_keys(self):
         text = self.PATH.read_text(encoding="utf-8")

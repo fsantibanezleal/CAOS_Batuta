@@ -128,5 +128,9 @@ jobs:
           gate "$PY" "$BATUTA_DIR/batuta.py" gate thresholds --check --against "$BATUTA_BASE"
           gate "$PY" "$BATUTA_DIR/batuta.py" guard scan --diff "$BATUTA_BASE..HEAD"
           gate "$PY" "$BATUTA_DIR/batuta.py" context check --project . --chain-root .
+          if [ -d contracts ]; then
+            # a changed contract schema needs a higher contract_version (a breaking change a higher major)
+            gate "$PY" "$BATUTA_DIR/batuta.py" contract lint --root . --against "$BATUTA_BASE"
+          fi
           gate "$PY" "$BATUTA_DIR/batuta.py" leaks scan --root .
           exit "$status"
