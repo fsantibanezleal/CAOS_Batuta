@@ -60,10 +60,19 @@ def require_git():
         raise AssertionError("git %d.%d or newer is required, found %d.%d" % (GIT_MINIMUM + version))
 
 
+def required_tools():
+    """The channel tools named in BATUTA_E2E_REQUIRE (comma separated): CI sets it where it installs them."""
+    return {t.strip() for t in os.environ.get("BATUTA_E2E_REQUIRE", "").split(",") if t.strip()}
+
+
 def skip_unless_tool(test_case, name, version_probe=None):
-    """Skip a channel test whose tool is missing, naming the tool and saying why (never a silent pass)."""
+    """Skip a channel test whose tool is missing, naming the tool and saying why (never a silent pass); a tool named in
+    BATUTA_E2E_REQUIRE fails the test instead, so a CI job that installs it cannot pass without exercising it."""
     path = shutil.which(name)
     if path is None:
+        if name in required_tools():
+            raise AssertionError("%s is not on PATH but BATUTA_E2E_REQUIRE names it: the %s channel must be exercised"
+                                 % (name, name))
         reason = "%s is not on PATH: the %s channel is not exercised on this machine" % (name, name)
         sys.stderr.write("SKIPPED: %s\n" % reason)
         test_case.skipTest(reason)

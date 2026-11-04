@@ -6,6 +6,12 @@ the single source and every release is tagged `vX.XX.XXX`.
 
 ## [Unreleased]
 
+### Changed
+
+- CI: the `e2e` job installs copier 9.19.1 with pipx and sets `BATUTA_E2E_REQUIRE=copier`, so the copier channel test
+  runs on every push instead of being skipped. A channel tool named in `BATUTA_E2E_REQUIRE` that is missing fails its
+  test instead of skipping it.
+
 ## [0.01.000] - 2026-11-02
 
 The first release: the data contracts C01 to C34, the command areas, the hook launcher and its guards, the agents and

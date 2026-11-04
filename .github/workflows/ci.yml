@@ -48,7 +48,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install copier (the copier channel test; pipx keeps it out of the interpreter the engine runs on, ADR-0001)
+        run: pipx install "copier==9.19.1"
       - name: End-to-end self-test
+        env:
+          BATUTA_E2E_REQUIRE: copier
         run: python -m unittest discover -s tests/e2e -p "test_*.py"
 
   standards:
