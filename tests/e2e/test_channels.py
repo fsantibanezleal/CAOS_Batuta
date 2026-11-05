@@ -100,6 +100,27 @@ class MissingTools(unittest.TestCase):
         self.assertIn("not on PATH", str(caught.exception))
         self.assertTrue(err.write.called, "the reason is also printed")
 
+    def test_a_required_tool_that_is_missing_fails_instead_of_skipping(self):
+        case = unittest.TestCase()
+        with mock.patch.dict(ew.os.environ, {"BATUTA_E2E_REQUIRE": "copier, batuta-no-such-tool-xyz"}), \
+                mock.patch.object(sys, "stderr"):
+            try:
+                ew.skip_unless_tool(case, "batuta-no-such-tool-xyz")
+            except unittest.SkipTest as exc:
+                self.fail("a required tool was skipped: %s" % exc)
+            except AssertionError as exc:
+                message = str(exc)
+            else:
+                self.fail("a missing required tool raised nothing")
+        self.assertIn("BATUTA_E2E_REQUIRE", message)
+        self.assertIn("batuta-no-such-tool-xyz", message)
+
+    def test_a_tool_not_in_the_required_list_still_skips(self):
+        case = unittest.TestCase()
+        with mock.patch.dict(ew.os.environ, {"BATUTA_E2E_REQUIRE": "copier"}), mock.patch.object(sys, "stderr"):
+            with self.assertRaises(unittest.SkipTest):
+                ew.skip_unless_tool(case, "batuta-no-such-tool-xyz")
+
     def test_a_missing_git_fails_the_suite(self):
         with mock.patch.object(ew.subprocess, "run", side_effect=FileNotFoundError("git")):
             with self.assertRaises(AssertionError) as caught:

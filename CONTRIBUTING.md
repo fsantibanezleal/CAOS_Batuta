@@ -51,6 +51,16 @@ python scripts/check_content_standards.py
 
 No dependencies are installed: Batuta is stdlib Python and dependency-free Node.
 
+The suite guards your real home (`tests/_home_guard.py`). Every test runs with a temporary home, and a test fails by name
+when the real home changed during it. The only exceptions are the Claude Code state (`.claude`) and, on Windows, the
+registry hive files. The guard is strict on purpose. If another program on your machine writes into your home while the
+suite runs (a build tool's cache folder, for example), the test that happens to be running fails; run it again. A failure
+that repeats is a real write by that test.
+
+The end-to-end suite (`python -m unittest discover -s tests/e2e -p "test_*.py"`) skips a channel test whose outside tool
+is missing (`claude`, Node 18 or newer, `copier`) and says why. Set `BATUTA_E2E_REQUIRE` to a comma-separated list of
+those tools to make a missing one fail instead; CI sets `BATUTA_E2E_REQUIRE=copier`.
+
 ## License of contributions
 
 By contributing, you agree that your contributions are licensed under the same license as this repository
